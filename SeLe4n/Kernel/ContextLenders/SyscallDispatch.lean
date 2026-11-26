@@ -179,7 +179,8 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
         hGate (P.receive epId hT) h
     rename_i rid prevCaller replyBadge replyGrant hRes
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact receiveResolvedArm_lendersStage ctx decoded tid ec gate epId st st' hInv hIpc hCaller hW hGate (P.receive epId hT) h) | skip
     · exact (LendersStep.replyRecvCompletesSignalArm hInv hIpc.replyCallerLinkage.1 h).stage
     rename_i hX
     cases h

@@ -1554,7 +1554,8 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h) | skip
     · exact replyRecvCompletesSignalArm_runQueueEntryStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h

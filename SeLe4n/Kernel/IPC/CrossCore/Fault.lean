@@ -835,6 +835,48 @@ def replyTransferOnCoreChecked (ctx : LabelingContext)
         | .error e => .error e
     | (_, .error e) => .error e
 
+/-- A fault reply that succeeds found its faulted thread waiting for the
+reply (`replyRecvCallerAwaitsReply`): it runs the reply leg. -/
+theorem replyRecvCallerAwaitsReply_of_faultReplyOnCore_ok {replier faulted : SeLe4n.ThreadId}
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {c : CoreId} {st st1 : SystemState}
+    {x : FaultReplyOutcome × Option (CoreId × SgiKind)}
+    (h : faultReplyOnCore replier faulted mi regs c st = (st1, .ok x)) :
+    replyRecvCallerAwaitsReply st faulted = true := by
+  unfold faultReplyOnCore at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  cases hD : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st with
+  | mk s1 r =>
+    cases r with
+    | error e => rw [hD] at h; simp at h
+    | ok y => exact replyRecvCallerAwaitsReply_of_endpointReplyCrossCoreDispatch_ok hD
+
+/-- A checked reply transfer that succeeds found its caller waiting for the
+reply (`replyRecvCallerAwaitsReply`), on both of its branches. -/
+theorem replyRecvCallerAwaitsReply_of_replyTransferOnCoreChecked_ok {ctx : LabelingContext}
+    {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st : SystemState} {x : Unit × SystemState}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok x) :
+    replyRecvCallerAwaitsReply st callerTid = true := by
+  unfold replyTransferOnCoreChecked at h
+  split at h
+  · cases hF : faultReplyOnCore replier callerTid mi regs c st with
+    | mk s1 r =>
+      cases r with
+      | error e => rw [hF] at h; simp at h
+      | ok y => exact replyRecvCallerAwaitsReply_of_faultReplyOnCore_ok hF
+  · cases hD : endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st with
+    | mk s1 r =>
+      cases r with
+      | error e => rw [hD] at h; simp at h
+      | ok y =>
+        unfold endpointReplyCrossCoreDispatchChecked at hD
+        split at hD
+        · exact replyRecvCallerAwaitsReply_of_endpointReplyCrossCoreDispatch_ok hD
+        · simp at hD
+
 /-- **The checked reply transfer reads its words only through the fault
 decode**: two readings of the reply that agree on its label and its first
 eleven words (`Architecture.decodeFaultReply_congr`) make one transfer.  An

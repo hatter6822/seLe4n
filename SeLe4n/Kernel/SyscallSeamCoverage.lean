@@ -1377,9 +1377,23 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           hHeads hTable hOps hSched hDisp
       | some r =>
         obtain ⟨rid, prev, replyBadge, replyGrant⟩ := r
+        cases hAw : replyRecvCallerAwaitsReply st prev
+        · -- WS-SX SX33: a caller not waiting for the reply refuses it, and the
+          -- receive runs alone under the receive's footprint
+          have hSk : replyRecvSkipsReply decoded tid st = true := by
+            simp [replyRecvSkipsReply, hXc, ← hGc, hRRR, hAw]
+          have hNA : replyRecvReplyAnswers ctx st tid prev = false := by
+            simp [replyRecvReplyAnswers, hAw]
+          rw [hRRR] at hOps hDisp
+          simp only [hAw, Bool.not_false, ↓reduceIte] at hOps
+          simp only [hSk, and_self, ↓reduceIte] at hSched
+          simp only [hNA, Bool.false_eq_true, ↓reduceIte] at hDisp
+          exact receiveResolvedArm_coversWrites ctx decoded tid e gate epId st st' ops S hObjInv
+            hHeads hTable hOps hSched hDisp
         have hSk : replyRecvSkipsReply decoded tid st = false := by
-          simp [replyRecvSkipsReply, hXc, ← hGc, hRRR]
+          simp [replyRecvSkipsReply, hXc, ← hGc, hRRR, hAw]
         rw [hRRR] at hOps
+        simp only [hAw, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hOps
         simp only [hSk, Bool.false_eq_true, and_false, ↓reduceIte] at hSched
         injection hOps with hOps
         subst hOps
@@ -1390,7 +1404,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         rw [hRRR] at hDisp
         simp only at hDisp
         split at hDisp
-        · rename_i hFlow
+        · rename_i hAns
+          have hFlow := ((Bool.and_eq_true _ _).mp hAns).1
           split at hDisp
           · exact replyRecvCompletesSignalArm_coversWrites ctx epId tid rid prev _ _ _ e st st' S
               hObjInv hFlow hSched hDisp
@@ -1404,7 +1419,11 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             exact schedLockSet_replyRecvArmOnCore_coversTransfer epId tid rid prev _ _ _
               e st st₁ summary S hObjInv hSched hStep
           · exact absurd hDisp (by simp)
-        · exact absurd hDisp (by simp)
+        · -- a flow-denied reply: its receive refuses on the busy reply
+          rename_i hAns
+          rw [receiveResolvedArm_error_of_replyFlowDenied hId hRRR
+            (by simpa [replyRecvReplyAnswers, hAw] using hAns)] at hDisp
+          exact absurd hDisp (by simp)
 
 /-- **The checked dispatcher is covered**: `dispatchSyscallChecked` refuses
 unless the caller is the executing core's current thread, builds its gate from
@@ -1521,6 +1540,7 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     unfold receivesWithoutReply replyRecvSkipsReply callerReplyGate at hRecv' ⊢
     rw [hXc, callerCspaceRoot_congr_objects tid hFillObj,
       resolveReplyRecvReply_congr_objects _ decoded hFillObj]
+    simp only [replyRecvCallerAwaitsReply_congr_objects hFillObj]
     exact hRecv'
   obtain ⟨tcbF, gate, cap, hGate, -, -, -⟩ :=
     abiEntryLockOperands_gate_lookup decoded tid stSpilled ops

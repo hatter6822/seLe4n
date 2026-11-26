@@ -714,6 +714,22 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
                   executingCore)
 
+/-- A reply-receive composite that succeeds found its caller waiting for the
+reply (`replyRecvCallerAwaitsReply`): its reply leg checks that first. -/
+theorem replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok
+    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st = .ok r) :
+    replyRecvCallerAwaitsReply st prevCaller = true := by
+  unfold endpointReplyRecvAnsweringOnCore at h
+  cases hR : endpointReplyOnCore tid prevCaller msg c st with
+  | mk s1 e =>
+    cases e with
+    | error e => rw [hR] at h; simp at h
+    | ok y => exact replyRecvCallerAwaitsReply_of_endpointReplyOnCore_ok hR
+
 /-- The `.replyRecv` composite for a caller carrying **no** fault: the reply leg
 delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore`
 at `none`).  Every in-place form of the arm is proven equal to this one. -/
@@ -759,6 +775,15 @@ theorem replyRecvTransferOnCore_of_no_fault (epId : SeLe4n.ObjId) (tid : SeLe4n.
   unfold replyRecvTransferOnCore
   rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl
+
+/-- The arm's transition that succeeds found its caller waiting for the reply. -/
+theorem replyRecvCallerAwaitsReply_of_replyRecvTransferOnCore_ok {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st = .ok r) :
+    replyRecvCallerAwaitsReply st prevCaller = true :=
+  replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok h
 
 
 -- ============================================================================

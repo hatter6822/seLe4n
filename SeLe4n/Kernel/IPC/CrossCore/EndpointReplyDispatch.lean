@@ -1006,6 +1006,20 @@ def endpointReplyCrossCoreDispatchChecked
   else
     (st, .error .flowDenied)
 
+/-- A cross-core reply that succeeds found its caller waiting for it: the
+reply leg it runs first checks that (`replyRecvCallerAwaitsReply`). -/
+theorem replyRecvCallerAwaitsReply_of_endpointReplyCrossCoreDispatch_ok
+    {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {c : CoreId}
+    {st st1 : SystemState} {x : Option (CoreId × SgiKind)}
+    (h : endpointReplyCrossCoreDispatch replier target msg c st = (st1, .ok x)) :
+    replyRecvCallerAwaitsReply st target = true := by
+  unfold endpointReplyCrossCoreDispatch at h
+  cases hR : endpointReplyOnCore replier target msg c st with
+  | mk s1 r =>
+    cases r with
+    | error e => rw [hR] at h; simp at h
+    | ok y => exact replyRecvCallerAwaitsReply_of_endpointReplyOnCore_ok hR
+
 /-- WS-SM SM6.C: a disallowed flow is rejected before any state change — the
 checked cross-core reply dispatch is fail-closed (state unchanged, `.flowDenied`). -/
 theorem endpointReplyCrossCoreDispatchChecked_flow_denied

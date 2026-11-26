@@ -608,7 +608,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · cases h
     · exact hRecvArm epId h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact hRecvArm epId h) | skip
     · -- seL4-MCS `handleReplyRecv` whose receive completes the bound
       -- notification: the reply leg, the wait, then the caller's badge register.
       obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h

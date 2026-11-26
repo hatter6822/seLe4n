@@ -1342,7 +1342,8 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     · cases h
     · exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h) | skip
     · exact replyRecvCompletesSignalArm_recordsStage P.deletes.2.1.2.1 h
     rename_i hX
     cases h

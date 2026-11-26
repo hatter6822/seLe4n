@@ -630,20 +630,6 @@ theorem recvBusyReplyHolderCode_succ {ctx : LabelingContext} {tid : SeLe4n.Threa
       · simp only [busyReplyHolder?, h]
       · simp at h
 
-/-- A receive whose named reply is busy with no other thread cancels nothing. -/
-theorem cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none {ctx : LabelingContext}
-    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
-    {executingCore : Concurrency.CoreId} {st : SystemState}
-    (h : busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none) :
-    cancelRecvBusyReply ctx tid gate decoded executingCore st = st := by
-  unfold cancelRecvBusyReply
-  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
-  | zero => rfl
-  | succ k =>
-    have hB := recvBusyReplyHolderCode_succ hC
-    rw [h] at hB
-    cases hB
-
 /-- **A receive's busy-reply cancel is the identity, or a holder's cancel** —
 of a holder that is never the receiver itself. -/
 theorem cancelRecvBusyReply_cases (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
@@ -1026,14 +1012,33 @@ gate but its caller and root, `lookupReplyCap_congr`). -/
   { callerId := tid, cspaceRootCap := callerCspaceRoot st tid, capAddr := decoded.replyCPtr,
     requiredRight := .write }
 
+/-- **Whether a reply-receive's reply half answers its caller** (WS-SX SX33):
+the replier may flow to the caller and the caller waits for the reply
+(`replyRecvCallerAwaitsReply`).  A reply that does not is refused, and, as in
+seL4-MCS `SysReplyRecv` (`handleInvocation` reports a refused reply and
+`handleRecv` still runs; `doReplyTransfer` returns with nothing to do when
+the reply's caller is not blocked on reply), its error is dropped and the
+receive half runs alone: the thread sees only the receive's outcome.  A
+flow-denied reply counts as refused (the owner's ruling, 2026-11-26).  This
+is the one place that choice is made: the `.replyRecv` arm's test. -/
+def replyRecvReplyAnswers (ctx : LabelingContext) (st : SystemState)
+    (tid prevCaller : SeLe4n.ThreadId) : Bool :=
+  securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) &&
+    replyRecvCallerAwaitsReply st prevCaller
+
 /-- **Whether a reply-receive skips its reply half**: its message names an
-extra capability that does not look up, or its reply capability answers no
-caller (`receivesWithoutReply`). -/
+extra capability that does not look up, its reply capability answers no
+caller, or the caller it answers is not waiting for the reply
+(`replyRecvCallerAwaitsReply`) (`receivesWithoutReply`).  A reply the flow
+gate refuses is refused as well (`replyRecvReplyAnswers`), but its receive
+then refuses on the busy reply with nothing written, so it is not a receive
+the dispatch completes. -/
 def replyRecvSkipsReply (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (st : SystemState) : Bool :=
   (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome ||
     match resolveReplyRecvReply (callerReplyGate st tid decoded) decoded st with
     | .ok none => true
+    | .ok (some (_, prevCaller, _, _)) => !replyRecvCallerAwaitsReply st prevCaller
     | _ => false
 
 /-- **The dispatch runs the receive arm with no reply leg**: a `.receive`, or
@@ -1064,6 +1069,60 @@ theorem resolveReplyRecvReply_congr_objects (gate : SyscallGate) (decoded : Sysc
   unfold resolveReplyRecvReply
   rw [lookupReplyCap_congr_getCNode? _ st₁ st₂ hC]
   simp only [replyAnsweredCaller?, SystemState.getReply?, h]
+
+/-- **A flow-denied reply's busy reply cancels nothing** (WS-SX SX33): the
+holder a reply-receive's receive cancels is the reply's caller, and a receiver
+that may not flow to it cancels no one, so the refused reply's receive refuses
+on the busy reply with nothing written. -/
+theorem recvBusyReplyHolderCode_eq_zero_of_replyFlowDenied {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {st : SystemState} {rid : SeLe4n.ReplyId} {c : SeLe4n.ThreadId} {b : Option SeLe4n.Badge}
+    {g : Bool} (hRR : decoded.syscallId = .replyRecv)
+    (hRes : resolveReplyRecvReply gate decoded st = .ok (some (rid, c, b, g)))
+    (hF : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) = false) :
+    recvBusyReplyHolderCode ctx tid gate decoded st = 0 := by
+  unfold recvBusyReplyHolderCode
+  rw [receiveReplyAddr?_of_replyRecv' hRR]
+  simp only []
+  unfold resolveReplyRecvReply at hRes
+  cases hL : lookupReplyCap { gate with capAddr := decoded.replyCPtr } st with
+  | error lf => simp [hL] at hRes
+  | ok p =>
+    obtain ⟨rcap, rid'⟩ := p
+    rw [hL] at hRes
+    simp only at hRes ⊢
+    cases hA : replyAnsweredCaller? st rid' with
+    | none => rw [hA] at hRes; cases hRes
+    | some c' =>
+      rw [hA] at hRes
+      simp only [Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at hRes
+      obtain ⟨-, rfl, -, -⟩ := hRes
+      unfold replyAnsweredCaller? at hA
+      cases hR : st.getReply? rid' with
+      | none => rw [hR] at hA; cases hA
+      | some r =>
+        rw [hR] at hA
+        have hC : r.caller = some c' := hA
+        have hB : busyReplyHolderCode st tid rid' = if c' = tid then 0 else c'.val + 1 := by
+          unfold busyReplyHolderCode; rw [hR]; simp only [hC]
+        rw [hB]
+        by_cases hT : c' = tid
+        · simp [hT]
+        · have hE : (⟨c'.val + 1 - 1⟩ : SeLe4n.ThreadId) = c' := by simp
+          simp only [hT, if_false, Nat.add_one_ne_zero, hE, hF, Bool.false_eq_true]
+/-- A receive whose named reply is busy with no other thread cancels nothing. -/
+theorem cancelRecvBusyReply_eq_self_of_busyReplyHolder?_none {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {executingCore : Concurrency.CoreId} {st : SystemState}
+    (h : busyReplyHolder? st tid (recvReplyLookup? gate decoded st) = none) :
+    cancelRecvBusyReply ctx tid gate decoded executingCore st = st := by
+  unfold cancelRecvBusyReply
+  cases hC : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => rfl
+  | succ k =>
+    have hB := recvBusyReplyHolderCode_succ hC
+    rw [h] at hB
+    cases hB
 
 /-- A thread's CSpace root reads only the objects. -/
 theorem callerCspaceRoot_congr_objects (tid : SeLe4n.ThreadId) {st₁ st₂ : SystemState}
@@ -6697,6 +6756,46 @@ theorem receiverIpcReady_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
   | none => simp
   | some t => simp
 
+/-- **A flow-denied reply's receive refuses with nothing written** (WS-SX
+SX33): the refused reply (`replyRecvReplyAnswers`) runs the receive alone, its
+busy-reply cancel cancels no one (`recvBusyReplyHolderCode_eq_zero_of_replyFlowDenied`)
+and the receive refuses on the busy reply, `.replyCapInvalid`, as the
+reply-receive refused before seL4's order. -/
+theorem receiveResolvedArm_error_of_replyFlowDenied {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {gate : SyscallGate} {tid : SeLe4n.ThreadId}
+    {epId : SeLe4n.ObjId} {executingCore : Concurrency.CoreId} {st : SystemState}
+    {rid : SeLe4n.ReplyId} {c : SeLe4n.ThreadId} {b : Option SeLe4n.Badge} {g : Bool}
+    (hRR : decoded.syscallId = .replyRecv)
+    (hRes : resolveReplyRecvReply gate decoded st = .ok (some (rid, c, b, g)))
+    (hF : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) = false) :
+    receiveResolvedArm ctx decoded gate tid epId executingCore
+      (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .error .replyCapInvalid := by
+  have h0 := recvBusyReplyHolderCode_eq_zero_of_replyFlowDenied hRR hRes hF
+  have hC : cancelRecvBusyReply ctx tid gate decoded executingCore st = st := by
+    unfold cancelRecvBusyReply; rw [h0]
+  rw [hC]
+  unfold receiveResolvedArm resolveRecvReplyId
+  rw [receiveReplyAddr?_of_replyRecv' hRR]
+  unfold resolveReplyRecvReply at hRes
+  cases hL : lookupReplyCap { gate with capAddr := decoded.replyCPtr } st with
+  | error lf => simp [hL] at hRes
+  | ok p =>
+    obtain ⟨rcap, rid'⟩ := p
+    rw [hL] at hRes
+    simp only at hRes ⊢
+    cases hA : replyAnsweredCaller? st rid' with
+    | none => rw [hA] at hRes; cases hRes
+    | some c' =>
+      unfold replyAnsweredCaller? at hA
+      cases hR : st.getReply? rid' with
+      | none => rw [hR] at hA; cases hA
+      | some r =>
+        rw [hR] at hA
+        have hCl : r.caller = some c' := hA
+        have hNz : r.callerCode ≠ 0 := by
+          intro h; unfold SeLe4n.Kernel.Reply.caller at hCl; simp [h] at hCl
+        simp [hL, hR, hNz]
+
 /-- **seL4-MCS `handleReplyRecv` when its receive completes a signal.**
 `SysReplyRecv` runs `handleInvocation` on the reply capability, whose
 `doReplyTransfer` answers the caller, and then `handleRecv`, whose
@@ -6758,6 +6857,16 @@ theorem replyRecvCompletesSignalArm_split {ctx : LabelingContext}
     · rw [if_neg hSig] at h
       cases h
       exact .inl rfl
+
+/-- A reply-receive that completes its signal and succeeds found its caller
+waiting for the reply (`replyRecvCallerAwaitsReply`): its reply leg checks it. -/
+theorem replyRecvCallerAwaitsReply_of_replyRecvCompletesSignalArm_ok {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    replyRecvCallerAwaitsReply st prevCaller = true := by
+  obtain ⟨_, hR, -⟩ := replyRecvCompletesSignalArm_split h
+  exact replyRecvCallerAwaitsReply_of_replyTransferOnCoreChecked_ok hR
 
 /-- ...and the completion, when it runs, is the wait's consumption with the badge
 register written over it, moving no scheduler state. -/
@@ -7092,10 +7201,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
       -- WS-SM SM6.D (PR #822 review, IF-ordering): the receive-leg flow is independent
       -- of the reply cap, so it is checked **first** — a denied receive returns
       -- `.flowDenied` without `resolveReplyRecvReply` ever probing reply state.  The
-      -- reply-leg gate needs `prevCaller` (so the resolve is unavoidable there), but a
-      -- denied reply-leg flow collapses to the *same* `.replyCapInvalid` a resolve
-      -- failure returns, rather than leaking via `.flowDenied` that the reply *is*
-      -- linked to an outstanding caller the receiver may not flow to.
+      -- reply-leg gate needs `prevCaller` (so the resolve is unavoidable there), and a
+      -- denied reply-leg flow is a refused reply (WS-SX SX33): the receive runs alone,
+      -- and it refuses on the busy reply with the `.replyCapInvalid` it always
+      -- returned, nothing written, rather than leaking via `.flowDenied` that the
+      -- reply *is* linked to an outstanding caller the receiver may not flow to.
       fun st =>
         -- WS-SM SM8.C: the receive leg carries the endpoint override too; the
         -- reply leg below deliberately does not (the override governs flows that
@@ -7127,7 +7237,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
               let msg : IpcMessage :=
                 { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                   badge := replyBadge }
-              if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
+              -- WS-SX SX33: a refused reply (`replyRecvReplyAnswers`: the flow
+              -- denied, or the caller not waiting for it) lets the receive run,
+              -- its error dropped, as seL4-MCS's `SysReplyRecv` runs
+              -- `handleRecv` after a reply `doReplyTransfer` has nothing to do.
+              if replyRecvReplyAnswers ctx st tid prevCaller then
                 -- seL4-MCS `handleReplyRecv`: the reply, then `receiveIPC`, which
                 -- completes an active bound notification and leaves the endpoint
                 -- alone (the notification → receiver flow admitting it).
@@ -7150,7 +7264,9 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 | .ok (summary, st') =>
                     .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
                 | .error e => .error e
-              else .error .replyCapInvalid
+              else
+                receiveResolvedArm ctx decoded gate tid epId executingCore
+                  (cancelRecvBusyReply ctx tid gate decoded executingCore st)
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM8.C.9: **the live declassification.**
   --
@@ -8560,9 +8676,11 @@ theorem dispatchArm_replyRecv_matches_returnShape
         = (Architecture.returnFrameOfMessage msg summary.capInfo
             (Architecture.messageOverflowWrites stB tcb msg).length).deliveredOver
             tcb.registerContext := by
+  have hAns : replyRecvReplyAnswers ctx st tid prevCaller = true := by
+    simp [replyRecvReplyAnswers, hReplyFlow, replyRecvCallerAwaitsReply_of_replyRecvTransferOnCore_ok hBody]
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.capInfo, ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hXc, hResolve,
-      hReplyFlow, hSig, hBody]
+      hAns, hSig, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -8606,8 +8724,11 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
   refine ⟨rfl, maybeDonateSchedContext
     (Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge))
     (receiverBoundNotification st1 tid) tid, ?_, ?_⟩
-  · simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow,
-      Bool.not_true, Bool.false_eq_true, ↓reduceIte, hXc, hResolve, hReplyFlow, hSig]
+  · have hAns : replyRecvReplyAnswers ctx st tid prevCaller = true := by
+      simp [replyRecvReplyAnswers, hReplyFlow,
+        replyRecvCallerAwaitsReply_of_replyTransferOnCoreChecked_ok hReply]
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow,
+      Bool.not_true, Bool.false_eq_true, ↓reduceIte, hXc, hResolve, hAns, hSig]
     unfold replyRecvCompletesSignalArm
     rw [hReply]
     simp only [hSig1, hReady1, Bool.and_self, ↓reduceIte, completeSignalArm, hWait]
