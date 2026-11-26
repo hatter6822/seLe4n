@@ -1,3 +1,43 @@
+## v0.37.59 — The answer's commutation toolkit (WS-SX SX30)
+
+SX30 is on SX29.  It is proof-only: no definition changes, and nothing
+compiled changes.  Its consumer is SX31.  The row ran past its estimate,
+so it was wrapped at its toolkit (D55): the rest of the toolkit and the
+answer-first equality are the new SX31, and SX31–SX44 became SX32–SX45.
+
+- **The answer as one write.**  `TCB.withAnswerSlots` writes the
+  registers, the pending message, the pending receive code and the fault
+  record.  `withMessageSlots`, a delivered frame and a fault restart's
+  frame are its instances.
+- **Its commutation family.**  In `DeliveryCommute.lean`, the answer-slot
+  write commutes with the run queue's append, enqueue, removal,
+  deschedule and requeue, the reply link and unlink, a TCB update and the
+  priority walk with its boosts, on a table with no resize due, for
+  distinct threads.  The message-slot family is now its identity
+  instance: each lemma keeps its statement and is proved from its
+  answer-slot lemma, and no copy is kept beside it.
+- **The receive side.**  `AnswerCommute.lean`: the receive side's stores,
+  the queue pop, the physical-write log through every receive-side step
+  that does not record, and the answer's two staging forms
+  (`stageDeliveredMessage`, `applyFaultRestart`) as answer-slot writes
+  that commute with any step that keeps the table and the log.
+- **Finding.**  The answer's overflow words and the receive's capability
+  transfer land in the physical-write log in different orders under the
+  two compositions.  Answer-first is seL4's order, the addresses are
+  distinct, and memory after the drain is equal; SX31's equality carries
+  it as a premise (D55).
+- **Anchors.**  13 Tier 3 anchors, each break-tested: the
+  `removeRunnableOnCore` commutation's equation, and two message-slot
+  lemmas proved from their answer-slot lemmas, among them.
+- **C and IR.**  `RefusalCarryingReplyRecv.c` is byte-identical to
+  SX29's (12,944,474 bytes), and the IR holds are unchanged at 1,498
+  (850 of them error-arm stores).
+- **Docs.**  D55 in the plan, SX30 marked landed and SX31 added, the rows
+  renumbered (SX31–SX44 to SX32–SX45) in the plan, the register, the
+  workstream context, the spec, the claim index,
+  `CONTEXT_BY_VALUE_PLAN.md`, `REFUSAL_CHECKS_FIRST_PLAN.md` and the
+  conformance table's owner strings.
+
 ## v0.37.58 — ReplyRecv's legs check before they write (WS-SX SX29)
 
 SX29 is on SX28.  SX29.1 measured the state held across a writing call

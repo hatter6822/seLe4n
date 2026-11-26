@@ -875,6 +875,24 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_reply_arm_eq
 # arm WS-HP HP3.2 moved the ceiling to 23 for.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The caller's answer commutes with the receive side's writes (WS-SX SX30):
+# the stage and the restart are one thread's answer-slot write, and each
+# commutes with a step that commutes with that write.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_eq_answerSlots[^\n]*(\n([ \t][^\n]*)?)*\(hNo : X\.objects\.noResizeDue\) :\n[ \t]*stageDeliveredMessage X c n =" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_commute[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*F \(stageDeliveredMessage X c n\) = stageDeliveredMessage \(F X\) c n := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyFaultRestart_commute[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*F \(applyFaultRestart X c f\) = applyFaultRestart \(F X\) c f := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_answer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeRunnableOnCore_answer[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*removeRunnableOnCore \(st\.mapTcbInPlace r \(TCB\.withAnswerSlots ρ μ π κ\)\) t c =\n[ \t]*\(removeRunnableOnCore st t c\)\.mapTcbInPlace r \(TCB\.withAnswerSlots ρ μ π κ\) :=" SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean'
+run_check "INVARIANT" rg -n 'TCB\.withMessageSlots ρ μ π = TCB\.withAnswerSlots ρ μ π id := rfl' SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean
+# The delivery's message-slot commutations are the answer-slot family's
+# instances, not a second proof of it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem propagatePipChainCrossCore_msg[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*rw \[TCB\.withMessageSlots_eq_answerSlots\] at \*\n[ \t]*apply propagatePipChainCrossCore_answer <;> assumption" SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem enqueueRunnableOnCore_msg[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*rw \[TCB\.withMessageSlots_eq_answerSlots\] at \*\n[ \t]*apply enqueueRunnableOnCore_answer <;> assumption" SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_mapTcbInPlace_ne[^\n]*(\n([ \t][^\n]*)?)*\(hk : Z\.objects\[k\]\? = some o0\) \(hne : k ≠ x\.toObjId\)" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem modifyTcb_mapTcbInPlace[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*modifyTcb \(Z\.mapTcbInPlace x G\) t f = \(modifyTcb Z t f\)\.map \(·\.mapTcbInPlace x G\) := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeRunnableOnCore_ledger[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*removeRunnableOnCore \(recordPhysicalWrites st ws\) t c = recordPhysicalWrites \(removeRunnableOnCore st t c\) ws := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_ledger($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueuePopHead_answer[^\n]*(\n([ \t][^\n]*)?)*\(hHead : \(if isReceiveQ then ep\.receiveQ else ep\.sendQ\)\.head ≠ some r\)" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 # The reply leg checks first (WS-SX SX29.2): its total form runs in the
 # specification's place through an unconditional `@[csimp]`, over the two
 # state readers and their bridges.

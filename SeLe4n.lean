@@ -23,6 +23,10 @@ import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 -- that links or unlinks a waiter and by each live IPC arm around it.  No kernel
 -- module consumes these theorems, so the root is what keeps them built.
 import SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch
+-- WS-SX SX30: the caller's answer commutes with the receive side's writes, the
+-- toolkit the `.replyRecv` composite's answer-first equality is proved with.
+-- No kernel module consumes it yet, so the root is what keeps it built.
+import SeLe4n.Kernel.IPC.CrossCore.AnswerCommute
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode

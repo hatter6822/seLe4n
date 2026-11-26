@@ -3,7 +3,7 @@
 > **Workstream**: WS-CV (one fixed-width register context, stored by value,
 > handed over by reference)
 > **Status**: **IN FLIGHT** — registered at `v0.36.50`; CV0 landed at `v0.36.59`, CV1.1 at `v0.36.61`, CV2.1 at `v0.36.73`; CV3.1–CV3.5 and the save-and-stage half of CV4.3 at `v0.36.74`.  Re-read against the tree at `v0.36.205` (WS-ZA ZA6.36): CV4.1, CV4.2 and the rest of CV4.3 had landed by other constructions and are recorded so; WS-ZA made the word carrier and the measured difference unnecessary, so the old CV4.3 and CV5.1 are deleted and the rows after them renumbered (CHANGELOG entries before `v0.36.205` cite the old numbers: CV4.4 there is CV4.3 here, CV4.5 is CV4.4, CV5.2 is CV5.1, CV5.3 is CV5.2; CV2.2 is merged into CV2.1).  CV4.4 landed in WS-ZA ZA3 at `v0.36.75`, with no commit record.  **Open**: CV1.2, then the closure CV5.2.
-> **Folded into WS-SX**: CV1.2 and CV5.2 now belong to WS-SX SX42.1 and SX42.2 (`SEL4_ABI_FIDELITY_PLAN.md`); WS-CV closes alongside WS-SX at `v0.38.0`.
+> **Folded into WS-SX**: CV1.2 and CV5.2 now belong to WS-SX SX45.1 and SX45.2 (`SEL4_ABI_FIDELITY_PLAN.md`); WS-CV closes alongside WS-SX at `v0.38.0`.
 > Opens **before WS-CB** (maintainer's decision, 2026-10-05): a representation
 > change is cheapest with the fewest consumers, and WS-CB adds consumers of the
 > saved context (budget-expiry preemption saves and restores it).  Its one
