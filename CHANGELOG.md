@@ -1,3 +1,56 @@
+## v0.37.58 — ReplyRecv's legs check before they write (WS-SX SX29)
+
+SX29 is on SX28.  SX29.1 measured the state held across a writing call
+from the Lean IR (D51); by the owner's rulings of 2026-11-26 the sweep
+outside ReplyRecv became WS-CK, and the gate a row of its own.  The row ran
+past its estimate with the composite waiting on two owner questions, so it
+was wrapped at its validated legs (D52): the composite in seL4's order is
+the new SX30, and SX30–SX41 became SX31–SX42.
+
+- **Each leg checks first.**  Every leg of the reply-receive path that
+  refused, or read its entry state, after a write now checks on the entry
+  state and then writes without refusing, under an unconditional
+  `@[csimp]` equality to its specification (no invariant premise):
+  - the reply (`endpointReplyOnCoreChecked`, through
+    `removeCallerReplyFrameState` and `storeTcbIpcStateAndMessageState`);
+  - the splice (`cutReplyFrameOutOrSelfChecked`, through
+    `cutReplyFrameStoresState` and `severReplyFrameBelowStoresState`;
+    `Reply.prevNames` and `Reply.nextNamesFrame` moved to `Endpoint.lean`);
+  - the pop (`replyRecvPopDonationChecked`: the caller's home core is read
+    before the return writes);
+  - the receive's three steps (`cleanupPreReceiveDonationMigratedChecked`,
+    `applyReceiveRendezvousHandoffChecked`,
+    `endpointReceiveDualWithCapsOnCoreChecked`);
+  - the receive body (`endpointReceiveDualOnCoreChecked`, in
+    `EndpointReceiveInPlace.lean`): a plain sender, a call sender with a
+    reply link or without one (the two call-take equalities moved there
+    from `FaultReceiveInPlace.lean` and `LongReceiveInPlace.lean`), and a
+    blocking receiver (the stash check hoisted before any write,
+    `receiveBlock_stashRefused_eq`) are taken in place; where the check
+    fails, the specification runs.
+- **Census.**  The new state forms are registered with the reply-stack
+  write census, with their donation-chain and lender-label preservation.
+- **Measured.**  The IR holds fell from 1,548 to 1,498, and no hold has a
+  checked form as its caller.  With the in-place take un-routed locally,
+  the own-context reply-receive taking a queued `Call` through the general
+  path read 110 cells (1,061,184 bytes) on both lanes, against SX28's 141
+  (three 1 MB cells).  The one 1 MB cell left is the reply leg's first
+  store copying the object table, held by the composite: SX30's.
+- **Over-approximation.**  `findsInPlace` can miss on a well-formed table
+  at load 3/4 or more, so the receive body's fallback is reachable, and
+  the specification still holds its entry state there.
+- **C.**  `RefusalCarryingReplyRecv.c` is 12,944,474 bytes, 2,639 over
+  SX28's 12,941,835; its standalone compile took 488 s and 500 s on two
+  quiet runs and 542 s cold (SX28: 479 s and 476 s).  Its source is
+  unchanged, so the growth is inferred to be the legs' checked forms
+  inlined into it.  SX30 must bring it back to SX28's bound, measured
+  against a kept copy of this row's generated C.
+- **Docs.**  D51 and D52 in the plan, the WS-CK plan and registry row, the
+  rows renumbered twice (SX30–SX40 to SX31–SX41, then SX30–SX41 to
+  SX31–SX42) in the plan, the register, the workstream context, the spec,
+  the claim index, `CONTEXT_BY_VALUE_PLAN.md` and the conformance table's
+  owner strings.
+
 ## v0.37.57 — The own-context Call take in place, and the refusal-wrapper sweep planned (WS-SX SX28)
 
 SX28 is on SX27.  The row measured at 3.25–4.25 sessions against 2 and was

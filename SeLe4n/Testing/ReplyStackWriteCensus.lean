@@ -359,6 +359,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "links a dequeued caller through `linkCallerReply`; writes no chain field itself")
   , (`SeLe4n.Kernel.endpointReceiveDualOnCore,
       "the per-core spelling of the same receive; same reason")
+  , (`SeLe4n.Kernel.endpointReceiveDualOnCoreChecked,
+      "the per-core receive's checks-first form (`endpointReceiveDualOnCore_eq_checked`): its own writes are the in-place take of a sender that is no caller (the pop, the sender woken, the receiver handed the message) and the in-place block (the enqueue, the block, the Reply's `stasherCode`, the stash), no chain field; any other receive runs the specification")
     -- ---------------------------------------------------------------------
     -- Inventories of THEOREMS.  Their values embed theorem statements, and a
     -- statement about `storeObject` mentions `storeObject` — so they reach both
@@ -841,6 +843,13 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept]
         [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_lendingLabelsEqual])
+    -- The removal's state, the reply leg's checks-first form reads it after
+    -- its first write: the removal's results at the bridge
+    -- `removeCallerReplyFrame_eq_state`.
+  , (`SeLe4n.Kernel.removeCallerReplyFrameState,
+      .states [`SeLe4n.Kernel.removeCallerReplyFrameState_preserves_donationChainWellFormed,
+               `SeLe4n.Kernel.removeCallerReplyFrameState_head_preserves_donationChainWellFormedExcept]
+        [`SeLe4n.Kernel.removeCallerReplyFrameState_preserves_lendingLabelsEqual])
     -- WS-ZA ZA4.7: the in-place reply.  `replyConsumedObject` is the consume
     -- as an object rewrite; the leg that runs it (WS-ZA ZA6.34: factored out
     -- of `storeReplyRendezvous`, which adds only the reply-waiter unlink, so
@@ -966,6 +975,14 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.cutReplyFrameStoresInPlaceImpl,
       .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
+      .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
+    -- The two store steps read as states, which the fold's checks-first form
+    -- (`cutReplyFrameOutOrSelf_eq_checked`, `@[csimp]`) and the compiled cut's
+    -- fallbacks run: the same stores, proven equal to the specification's
+    -- (`cutReplyFrameStores_eq_state`, `severReplyFrameBelowStores_eq_state`).
+  , (`SeLe4n.Kernel.cutReplyFrameStoresState,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
+  , (`SeLe4n.Kernel.severReplyFrameBelowStoresState,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
       .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed]
@@ -1286,6 +1303,8 @@ def neutralLenderRecords : List (Name × LenderRecord) :=
       .results [`SeLe4n.Kernel.endpointReceiveDual_preserves_lendingLabelsEqual])
   , (`SeLe4n.Kernel.endpointReceiveDualOnCore,
       .results [`SeLe4n.Kernel.endpointReceiveDualOnCore_preserves_lendingLabelsEqual])
+  , (`SeLe4n.Kernel.endpointReceiveDualOnCoreChecked,
+      .results [`SeLe4n.Kernel.endpointReceiveDualOnCoreChecked_preserves_lendingLabelsEqual])
   , (`SeLe4n.Kernel.endpointCall,
       .results [`SeLe4n.Kernel.endpointCall_preserves_lendingLabelsEqual])
   , (`SeLe4n.Kernel.endpointCallOnCore,

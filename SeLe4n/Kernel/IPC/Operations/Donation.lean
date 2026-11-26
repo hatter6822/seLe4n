@@ -1215,6 +1215,31 @@ def applyReceiveRendezvousHandoff (st : SystemState)
              applyReceiverPipHandoff stDon receiver executingCore
            else stDon)
 
+/-- **The rendezvous handoff, its guard first.**  The specification reads
+whether the receive dequeued a `Call` off the state the donation ran on, after
+the donation wrote; this form branches on it before the donation, so no entry
+state is alive across the donation's writes.  The guard is still read once.
+It is the handoff, with no assumption
+(`applyReceiveRendezvousHandoff_eq_checked`), through which the compiler runs
+it. -/
+def applyReceiveRendezvousHandoffChecked (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId) :
+    Except KernelError SystemState :=
+  if rendezvousDequeuedCall st dequeued then
+    match applyReceiveRendezvousDonation st receiver dequeued with
+    | .error e => .error e
+    | .ok stDon => .ok (applyReceiverPipHandoff stDon receiver executingCore)
+  else applyReceiveRendezvousDonation st receiver dequeued
+
+/-- The handoff's guard-first form is the handoff, with no assumption; the
+compiler runs it in its place. -/
+@[csimp] theorem applyReceiveRendezvousHandoff_eq_checked :
+    @applyReceiveRendezvousHandoff = @applyReceiveRendezvousHandoffChecked := by
+  funext st receiver dequeued executingCore
+  unfold applyReceiveRendezvousHandoff applyReceiveRendezvousHandoffChecked
+  cases rendezvousDequeuedCall st dequeued <;>
+    cases applyReceiveRendezvousDonation st receiver dequeued <;> rfl
+
 /-- WS-OD OD3.14: a receive that dequeued no `Call` commits nothing at all —
 neither a donation nor a boost. -/
 @[simp] theorem applyReceiveRendezvousHandoff_of_no_call (st : SystemState)

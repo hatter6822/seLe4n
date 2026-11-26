@@ -1016,6 +1016,22 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
+/-- **The state the thread's write leaves.**  `storeTcbIpcStateAndMessage_fromTcb`
+is one store, `.ok` by definition (`storeObject_isOk`), so a step that writes
+the thread and goes on reads its state here
+(`storeTcbIpcStateAndMessage_fromTcb_eq_state`). -/
+def storeTcbIpcStateAndMessageState (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage) : SystemState :=
+  st.withObjectStored tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState))
+
+/-- The thread's write is `.ok` at its state, with no assumption. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_eq_state (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage) :
+    storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg =
+      .ok (storeTcbIpcStateAndMessageState st tid tcb ipcState msg) := by
+  unfold storeTcbIpcStateAndMessage_fromTcb storeTcbIpcStateAndMessageState
+  rw [SystemState.storeObject_eq_withObjectStored]
+
 /-- WS-ZA ZA4.4: a thread's two notification-queue links, written together. -/
 def storeTcbNtfnLinks (st : SystemState) (tid : SeLe4n.ThreadId)
     (prev next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
@@ -4971,6 +4987,32 @@ theorem cutReplyFrameStores_isOk (st : SystemState) (rid above : SeLe4n.ReplyId)
   | none => exact ⟨_, rfl⟩
   | some pair => obtain ⟨below, b⟩ := pair; exact ⟨_, rfl⟩
 
+/-- **The composed store step's state.**  Its stores never refuse
+(`storeObject_isOk`), so a step that runs it reads its state here, with no
+error arm to keep an entry state alive for (`cutReplyFrameStores_eq_state`).
+The same reads and the same stores, in the same order. -/
+def cutReplyFrameStoresState (st : SystemState) (rid above : SeLe4n.ReplyId)
+    (r a : Reply) : SystemState :=
+  match cutFrameBelow? st rid r above with
+  | none =>
+    (st.withObjectStored above.toObjId (.reply (a.unlinkedFrom rid))).withObjectStored
+      rid.toObjId (.reply { r with prev := none, next := none })
+  | some (below, b) =>
+    ((st.withObjectStored above.toObjId (.reply (a.unlinkedFrom rid))).withObjectStored
+      below.toObjId (.reply { b with next := none })).withObjectStored
+      rid.toObjId (.reply { r with prev := none, next := none })
+
+/-- The composed store step is `.ok` at its state, with no assumption. -/
+theorem cutReplyFrameStores_eq_state (st : SystemState) (rid above : SeLe4n.ReplyId)
+    (r a : Reply) :
+    cutReplyFrameStores st rid above r a = .ok (cutReplyFrameStoresState st rid above r a) := by
+  unfold cutReplyFrameStores cutReplyFrameStoresState
+  cases cutFrameBelow? st rid r above with
+  | none => simp only [SystemState.storeObject_eq_withObjectStored]
+  | some pair =>
+    obtain ⟨below, b⟩ := pair
+    simp only [SystemState.storeObject_eq_withObjectStored]
+
 -- ----------------------------------------------------------------------------
 -- WS-HP HP6.4: the composed store step's read/write algebra
 -- ----------------------------------------------------------------------------
@@ -5340,6 +5382,21 @@ theorem severReplyFrameBelowStores_isOk (st : SystemState) (rid below : SeLe4n.R
     (r b : Reply) : ∃ st', severReplyFrameBelowStores st rid below r b = .ok st' := by
   unfold severReplyFrameBelowStores storeObject
   exact ⟨_, rfl⟩
+
+/-- **The cut from the frame below, as a state**: its two stores never refuse,
+so a step that runs it reads its state here (`severReplyFrameBelowStores_eq_state`). -/
+def severReplyFrameBelowStoresState (st : SystemState) (rid below : SeLe4n.ReplyId)
+    (r b : Reply) : SystemState :=
+  (st.withObjectStored below.toObjId (.reply { b with next := none })).withObjectStored
+    rid.toObjId (.reply { r with prev := none })
+
+/-- The cut from the frame below is `.ok` at its state, with no assumption. -/
+theorem severReplyFrameBelowStores_eq_state (st : SystemState) (rid below : SeLe4n.ReplyId)
+    (r b : Reply) :
+    severReplyFrameBelowStores st rid below r b =
+      .ok (severReplyFrameBelowStoresState st rid below r b) := by
+  unfold severReplyFrameBelowStores severReplyFrameBelowStoresState
+  simp only [SystemState.storeObject_eq_withObjectStored]
 
 /-- The cut from the frame below, decomposed: its two stores, in order. -/
 theorem severReplyFrameBelowStores_cases {st st' : SystemState} {rid below : SeLe4n.ReplyId}
@@ -6370,6 +6427,99 @@ theorem cutReplyFrameOutOrSelf_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
   · rename_i st' h; exact Or.inr h
   · exact Or.inl rfl
 
+/-- A reply's `prev` names `rid`, read off the link itself, so no `some` cell is
+built to compare it with (`Reply.prevNames_eq`). -/
+@[inline] def Reply.prevNames (a : Reply) (rid : SeLe4n.ReplyId) : Bool :=
+  match a.prev with
+  | some x => x == rid
+  | none => false
+
+theorem Reply.prevNames_eq (a : Reply) (rid : SeLe4n.ReplyId) :
+    a.prevNames rid = !(a.prev != some rid) := by
+  unfold Reply.prevNames
+  cases a.prev with
+  | none => rfl
+  | some x => simp [bne]
+
+/-- A reply's `next` is the frame link to `rid`, read off the link itself, so no
+`some (.frame rid)` cells are built to compare it with
+(`Reply.nextNamesFrame_eq`). -/
+@[inline] def Reply.nextNamesFrame (b : Reply) (rid : SeLe4n.ReplyId) : Bool :=
+  match b.next with
+  | some (.frame x) => x == rid
+  | _ => false
+
+theorem Reply.nextNamesFrame_eq (b : Reply) (rid : SeLe4n.ReplyId) :
+    b.nextNamesFrame rid = !(b.next != some (.frame rid)) := by
+  unfold Reply.nextNamesFrame
+  rcases b.next with _ | ⟨x⟩ | ⟨_⟩
+  · rfl
+  · by_cases h : x = rid
+    · subst h; simp
+    · have h1 : (x == rid) = false := by simpa using h
+      have h2 : (some (ReplyStackLink.frame x) == some (.frame rid)) = false := by simpa using h
+      simp [bne, h1, h2]
+  · simp
+
+/-- **The splice folded, checks first.**  Every refusal of `cutReplyFrameOut`
+is made on its entry state, before its first store: the frame above does not
+resolve, or does not point back.  Its stores never refuse
+(`cutReplyFrameStores_eq_state`, `severReplyFrameBelowStores_eq_state`).  So
+the fold answers the refusals on the entry state and reads the stores as
+states, and keeps no entry state alive across a store for an error arm that
+cannot run.  It is the fold, with no assumption
+(`cutReplyFrameOutOrSelf_eq_checked`), through which the compiler runs it. -/
+def cutReplyFrameOutOrSelfChecked (st : SystemState) (rid : SeLe4n.ReplyId) : SystemState :=
+  match st.getReply? rid with
+  | none => st
+  | some r =>
+    match r.next with
+    | some (.frame above) =>
+      match st.getReply? above with
+      | none => st
+      | some a =>
+        if a.prevNames rid then cutReplyFrameStoresState st rid above r a
+        else st
+    | some (.head _) => st
+    | none =>
+      match r.prev with
+      | none => st
+      | some below =>
+        match st.getReply? below with
+        | none => st
+        | some b =>
+          if b.nextNamesFrame rid then severReplyFrameBelowStoresState st rid below r b
+          else st
+
+/-- The fold's checks-first form is the fold, with no assumption; the compiler
+runs it in the fold's place. -/
+@[csimp] theorem cutReplyFrameOutOrSelf_eq_checked :
+    @cutReplyFrameOutOrSelf = @cutReplyFrameOutOrSelfChecked := by
+  funext st rid
+  unfold cutReplyFrameOutOrSelf cutReplyFrameOutOrSelfChecked cutReplyFrameOut
+  simp only [Reply.prevNames_eq, Reply.nextNamesFrame_eq]
+  rcases st.getReply? rid with _ | r
+  · rfl
+  · dsimp only
+    rcases r.next with _ | ⟨above⟩ | ⟨_⟩
+    · rcases r.prev with _ | below
+      · rfl
+      · dsimp only
+        rcases st.getReply? below with _ | b
+        · rfl
+        · dsimp only
+          cases (b.next != some (.frame rid))
+          · simp only [Bool.not_false, Bool.false_eq_true, ↓reduceIte, severReplyFrameBelowStores_eq_state]
+          · rfl
+    · dsimp only
+      rcases st.getReply? above with _ | a
+      · rfl
+      · dsimp only
+        cases (a.prev != some rid)
+        · simp only [Bool.not_false, Bool.false_eq_true, ↓reduceIte, cutReplyFrameStores_eq_state]
+        · rfl
+    · rfl
+
 /-- WS-RM (`v0.35.6`): **take a thread's reply frame off its stack** — seL4's
 `reply_remove_tcb`, non-head arm, keyed on the thread's own forward link.
 
@@ -6615,6 +6765,21 @@ identity and this **is** `consumeCallerReply`, definitionally
 def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     Kernel Unit :=
   fun st => SystemState.consumeCallerReply caller rid (cutReplyFrameOutOrSelf st rid)
+
+/-- **The removal's state.**  `removeCallerReplyFrame` never refuses
+(`removeCallerReplyFrame_isOk`): the splice falls back to the state it was
+given, and the consume is the pure teardown `consumeCallerReplyLink`.  So a
+step that runs the removal after a write reads its state here and holds nothing
+for an error arm (`removeCallerReplyFrame_eq_state`). -/
+def removeCallerReplyFrameState (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (st : SystemState) : SystemState :=
+  (cutReplyFrameOutOrSelf st rid).consumeCallerReplyLink caller rid
+
+/-- The removal is `.ok` at its state, with no assumption. -/
+theorem removeCallerReplyFrame_eq_state (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (st : SystemState) :
+    removeCallerReplyFrame caller rid st = .ok ((), removeCallerReplyFrameState caller rid st) :=
+  SystemState.consumeCallerReply_eq_link _ _ _
 
 -- ----------------------------------------------------------------------------
 -- WS-RM (`v0.35.6`): the folded splice's read/write algebra

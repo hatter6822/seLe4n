@@ -1014,6 +1014,18 @@ theorem endpointReceiveDualOnCore_preserves_lendingLabelsEqual {ctx : LabelingCo
               · exact hFlow
   · split <;> exact hFlow
 
+/-- **The lenders across the receive body's checks-first form**: it is the
+specification (`endpointReceiveDualOnCore_eq_checked`), so the lenders it
+keeps are the specification's. -/
+theorem endpointReceiveDualOnCoreChecked_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st : SystemState} {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
+    {replyId : Option SeLe4n.ReplyId} {core : Concurrency.CoreId} (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx
+      (endpointReceiveDualOnCoreChecked endpointId receiver replyId core st).1 := by
+  rw [← endpointReceiveDualOnCore_eq_checked]
+  exact endpointReceiveDualOnCore_preserves_lendingLabelsEqual hInv hChain hFlow
+
 /-- **The lenders across the single-core receive** (`endpointReceiveDual`). -/
 theorem endpointReceiveDual_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {endpointId : SeLe4n.ObjId} {receiver t : SeLe4n.ThreadId}

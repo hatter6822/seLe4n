@@ -188,6 +188,55 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                     | .error e => (st, .error e)
       | _ => (st, .error .replyCapInvalid)
 
+/-- **The reply leg, checks first.**  Every refusal of `endpointReplyOnCore`
+is made on its entry state, before the first write: the message's length, the
+caller's lookup, and its `blockedOnReply` state.  What follows never refuses:
+the caller's store is `.ok` by definition
+(`storeTcbIpcStateAndMessage_fromTcb_eq_state`), and so is the reply frame's
+removal (`removeCallerReplyFrame_eq_state`).  This form reads
+those steps as states, so it keeps no entry state alive across a write for an
+error arm that cannot run, and the store meets a table nothing else holds.  It
+is equal to the specification with no assumption
+(`endpointReplyOnCore_eq_checked`), through which the compiler runs it. -/
+def endpointReplyOnCoreChecked (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
+  else
+  match lookupTcb st target with
+  | none => (st, .error .objectNotFound)
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ server? =>
+          let w := wakeThread (storeTcbIpcStateAndMessageState st target tcb .ready (some msg))
+            target executingCore
+          match tcb.replyObject with
+          | none => (w.1.unlinkReplyWaiterOpt target server?, .ok w.2)
+          | some rid =>
+              ((removeCallerReplyFrameState target rid w.1).unlinkReplyWaiterOpt target server?,
+               .ok w.2)
+      | _ => (st, .error .replyCapInvalid)
+
+/-- The reply leg's checks-first form is its specification, with no assumption;
+the compiler runs it in the specification's place. -/
+@[csimp] theorem endpointReplyOnCore_eq_checked :
+    @endpointReplyOnCore = @endpointReplyOnCoreChecked := by
+  funext replier target msg core st
+  unfold endpointReplyOnCore endpointReplyOnCoreChecked
+  split
+  · rfl
+  · cases lookupTcb st target with
+    | none => rfl
+    | some tcb =>
+      dsimp only
+      cases tcb.ipcState <;> try rfl
+      dsimp only
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq_state]
+      dsimp only
+      cases tcb.replyObject with
+      | none => rfl
+      | some rid => dsimp only; simp only [removeCallerReplyFrame_eq_state]
+
 -- ============================================================================
 -- §0b  `v0.35.161` (register row 57) — the pre-receive donation return, MIGRATED
 -- ============================================================================
@@ -399,6 +448,36 @@ def cleanupPreReceiveDonationMigrated (st : SystemState) (receiver : SeLe4n.Thre
   match cleanupPreReceiveDonationChecked st receiver with
   | .error e => .error e
   | .ok stClean => .ok (preReceiveReturnMigration st stClean receiver)
+
+/-- **The migrated cleanup, its reads first.**  The migration reads the loan and
+the receiver's home core off the state the cleanup ran on
+(`preReceiveReturnMigration st stClean`), after the cleanup wrote.  This form
+reads both before the cleanup, so no entry state is alive across its writes.
+It is the migrated cleanup, with no assumption
+(`cleanupPreReceiveDonationMigrated_eq_checked`), through which the compiler
+runs it. -/
+def cleanupPreReceiveDonationMigratedChecked (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Except KernelError SystemState :=
+  match preReceiveDonation? st receiver with
+  | some (scId, _) =>
+      let fromCore := determineTargetCore st receiver
+      match cleanupPreReceiveDonationChecked st receiver with
+      | .error e => .error e
+      | .ok stClean =>
+          .ok (migrateSchedContextReplenishment stClean scId fromCore
+            (replenishHomeOfSchedContext stClean scId fromCore))
+  | none => cleanupPreReceiveDonationChecked st receiver
+
+/-- The migrated cleanup's reads-first form is the migrated cleanup, with no
+assumption; the compiler runs it in its place. -/
+@[csimp] theorem cleanupPreReceiveDonationMigrated_eq_checked :
+    @cleanupPreReceiveDonationMigrated = @cleanupPreReceiveDonationMigratedChecked := by
+  funext st receiver
+  unfold cleanupPreReceiveDonationMigrated cleanupPreReceiveDonationMigratedChecked
+    preReceiveReturnMigration
+  cases preReceiveDonation? st receiver with
+  | none => cases cleanupPreReceiveDonationChecked st receiver <;> rfl
+  | some p => cases cleanupPreReceiveDonationChecked st receiver <;> rfl
 
 /-- A successful migrated cleanup is a successful checked cleanup, migrated. -/
 theorem cleanupPreReceiveDonationMigrated_ok_decompose {st st' : SystemState}

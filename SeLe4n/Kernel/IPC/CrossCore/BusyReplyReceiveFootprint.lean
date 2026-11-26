@@ -10,6 +10,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.ReplyHolderCancel
 import SeLe4n.Kernel.Scheduler.SchedFootprint
 import SeLe4n.Kernel.SchedContext.NotificationDonation
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 
 /-!
 # The scheduler-domain footprint of a receive that cancels its busy reply
