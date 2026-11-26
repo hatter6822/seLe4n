@@ -9,6 +9,7 @@
 
 import SeLe4n.Prelude
 import SeLe4n.Kernel.RobinHood.Set
+import SeLe4n.Kernel.RobinHood.Invariant.MapValueAt
 import SeLe4n.Kernel.Scheduler.LinkedQueue
 namespace SeLe4n.Kernel
 open SeLe4n
@@ -65,10 +66,15 @@ def bucketTableEmpty : BucketTable := Array.replicate numPriorities ({} : Bucket
 @[inline] def endsOf (buckets : BucketTable) (p : Priority) : BucketEnds :=
   buckets.getD p.val {}
 
-/-- Rewrite a thread's entry. -/
+/-- Rewrite a thread's entry.  A present entry is rewritten where it stands
+(`RHTable.mapValueAt`, with no resize check: a rewrite adds no key, so it never
+needs room); only a thread's first entry inserts a key.  Were a rewrite to
+resize, whether the table grew would depend on whether a rewrite ran before or
+after another thread's first insert, so the same queue operations in another
+order could leave a table of another capacity (WS-SX D56). -/
 @[inline] def setLink (links : RHTable ThreadId RunQueueLink) (t : ThreadId)
     (f : RunQueueLink → RunQueueLink) : RHTable ThreadId RunQueueLink :=
-  links.insert t (f (linkOf links t))
+  if links.contains t then links.mapValueAt t f else links.insert t (f RunQueueLink.none)
 
 /-- Rewrite a priority's bucket ends: the entry rewritten where it stands
 (`Array.modify`, which hands `f` the entry exclusively, so `f`'s record update
@@ -82,11 +88,22 @@ theorem linkOf_setLink {links : RHTable ThreadId RunQueueLink} (h : links.invExt
     (t : ThreadId) (f : RunQueueLink → RunQueueLink) (x : ThreadId) :
     linkOf (setLink links t f) x = if x = t then f (linkOf links t) else linkOf links x := by
   unfold linkOf setLink
-  rw [RHTable_getElem?_insert _ _ _ h]
-  by_cases hx : x = t
-  · subst hx; simp; rfl
-  · have : (t == x) = false := by simp; exact Ne.symm hx
-    simp [this, hx]
+  by_cases hc : links.contains t = true
+  · rw [if_pos hc]
+    obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hc
+    rw [RHTable.get?_mapValueAt]
+    by_cases hx : x = t
+    · subst hx; simp [hv]
+    · have : (t == x) = false := by simp; exact Ne.symm hx
+      simp [this, hx]
+  · rw [if_neg hc]
+    have hn : links.get? t = none := by
+      unfold RHTable.contains at hc; simpa using hc
+    rw [RHTable_getElem?_insert _ _ _ h]
+    by_cases hx : x = t
+    · subst hx; simp [hn]
+    · have : (t == x) = false := by simp; exact Ne.symm hx
+      simp [this, hx]
 
 theorem endsOf_setEnds (buckets : BucketTable)
     (p : Priority) (f : BucketEnds → BucketEnds) (q : Priority) :
@@ -112,22 +129,11 @@ theorem endsOf_setEnds (buckets : BucketTable)
         split <;> rfl
 
 theorem setLink_invExtK {links : RHTable ThreadId RunQueueLink} (h : links.invExtK)
-    (t : ThreadId) (f : RunQueueLink → RunQueueLink) : (setLink links t f).invExtK :=
-  RHTable_insert_preserves_invExtK _ _ _ h
-
-/-- WS-ZA ZA4.5: the compiled `setLink`.  A present entry is rewritten where it
-stands (`RHTable.modify`, which hands `f` the entry exclusively, so `f`'s
-record update reuses it); only a thread's first entry inserts a key. -/
-@[inline] def setLinkImpl (links : RHTable ThreadId RunQueueLink) (t : ThreadId)
-    (f : RunQueueLink → RunQueueLink) : RHTable ThreadId RunQueueLink :=
-  if links.contains t then links.modify t f else links.insert t (f RunQueueLink.none)
-
-@[csimp] theorem setLink_eq_impl : @setLink = @setLinkImpl := by
-  funext links t f
-  unfold setLink setLinkImpl linkOf
-  cases h : links.get? t with
-  | none => simp [RHTable.contains, h]
-  | some v => simp [RHTable.contains, h, RHTable.modify_of_get? h]
+    (t : ThreadId) (f : RunQueueLink → RunQueueLink) : (setLink links t f).invExtK := by
+  unfold setLink
+  split
+  · exact ⟨RHTable.mapValueAt_invExt _ _ _ h.1, h.2.1, h.2.2⟩
+  · exact RHTable_insert_preserves_invExtK _ _ _ h
 
 /-- The forward links of a links table. -/
 @[inline] def nextOf (links : RHTable ThreadId RunQueueLink) (t : ThreadId) : Nat :=
@@ -693,16 +699,22 @@ theorem le_maxPrioCode {lk : ThreadId → RunQueueLink} {l : List ThreadId} {z :
 
 /-- The links after the queued thread `t` leaves, its four links being `pv`,
 `nx` (the queue) and `bpv`, `bnx` (its bucket): each neighbour takes over the
-link `t` held towards the other, and `t`'s entry is marked not queued.  The
-links are passed as words, not as `t`'s entry, so no reference to the entry is
-held while it is rewritten. -/
+link `t` held towards the other, and `t`'s entry is marked not queued with its
+four links cleared, as `TCB.detachRun` clears the thread's own links and as
+seL4's `tcb_queue_remove` (`src/object/tcb.c`, seL4 `f6978b12`) sets the
+dequeued thread's `tcbSchedPrev` and `tcbSchedNext` to `NULL`.  An entry that
+kept its old links would hold whatever a later append wrote into them while it
+was the tail, so the queue's state would depend on the order of a removal and
+an append of another thread (WS-SX D56).  The links are passed as words, not as
+`t`'s entry, so no reference to the entry is held while it is rewritten. -/
 def unlinkLinks (links : RHTable ThreadId RunQueueLink) (t : ThreadId)
     (pv nx bpv bnx : Nat) : RHTable ThreadId RunQueueLink :=
   let l1 := setLinkAt links pv (fun y => { y with next := nx })
   let l2 := setLinkAt l1 nx (fun y => { y with prev := pv })
   let l3 := setLinkAt l2 bpv (fun y => { y with bucketNext := bnx })
   let l4 := setLinkAt l3 bnx (fun y => { y with bucketPrev := bpv })
-  setLink l4 t (fun y => { y with queued := false })
+  setLink l4 t (fun y =>
+    { y with queued := false, prev := 0, next := 0, bucketPrev := 0, bucketNext := 0 })
 
 theorem unlinkLinks_invExtK {links : RHTable ThreadId RunQueueLink} (h : links.invExtK)
     (t : ThreadId) (pv nx bpv bnx : Nat) : (unlinkLinks links t pv nx bpv bnx).invExtK := by
@@ -714,7 +726,8 @@ theorem linkOf_unlinkLinks {links : RHTable ThreadId RunQueueLink} (h : links.in
     (t : ThreadId) (pv nx bpv bnx : Nat)
     (h1 : code t ≠ pv) (h2 : code t ≠ nx) (h3 : code t ≠ bpv) (h4 : code t ≠ bnx) (y : ThreadId) :
     linkOf (unlinkLinks links t pv nx bpv bnx) y =
-      if y = t then { linkOf links t with queued := false }
+      if y = t then
+        { linkOf links t with queued := false, prev := 0, next := 0, bucketPrev := 0, bucketNext := 0 }
       else { linkOf links y with
         next := if code y = pv then nx else (linkOf links y).next
         prev := if code y = nx then pv else (linkOf links y).prev

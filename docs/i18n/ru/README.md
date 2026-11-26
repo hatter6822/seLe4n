@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.59-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.37.60-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -161,11 +161,11 @@ seLe4n — микроядро, построенное с нуля на Lean 4. �
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.37.59` |
+| **Версия** | `0.37.60` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 688 407 строк в 702 файлах |
+| **Продуктовый код (Lean LoC)** | 691 994 строки в 705 файлах |
 | **Тестовый код (Lean LoC)** | 91 877 строк в 71 тест-сьюте |
-| **Доказанные декларации** | 26 614 деклараций theorem/lemma (ноль sorry/axiom) |
+| **Доказанные декларации** | 26 796 деклараций theorem/lemma (ноль sorry/axiom) |
 | **Крейты Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (обёртки пространства пользователя), `sele4n-hal` (аппаратный слой ядра) и хостовый тест `sele4n-lean-boundary` |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Линии загрузки** | Каждая линия QEMU сначала загружает образ Raspberry Pi 5 на машине `raspi5b` из [rpi5_machine](https://github.com/hatter6822/rpi5_machine), затем образ `virt` на машине `virt` QEMU |

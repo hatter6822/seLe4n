@@ -840,6 +840,57 @@ A different answer changes only the rows that cite it.
   - The rows after SX30 are renumbered (SX31–SX44 became SX32–SX45): the
     switch is SX32, the refusals SX33, the gate SX34, the QEMU scenarios
     SX35, the lock-set ceiling SX44 and the closure SX45.
+- **D56. A dequeued run-queue entry clears its links.** *Found in SX31;
+  the coordinator's ruling (2026-11-26), taken inside SX31 under the rule
+  that errors found along the way are fixed in the PR that finds them.*
+  - *The finding.* `RunQueue.remove` marked the entry not queued but kept
+    its four links (`prev`, `next`, `bucketPrev`, `bucketNext`), while
+    `TCB.detachRun` already cleared the thread's own. An append writes the
+    old tail's `next` (and the bucket tail's `bucketNext`), so a thread that
+    was the tail when another thread joined and was dequeued afterwards kept
+    a link to the joiner, and one dequeued first did not. The queue itself
+    was the same either way: these are dead links in an unqueued entry,
+    read only while the entry is queued and rewritten by any re-append. It
+    is not a vulnerability. But the state depended on the order of a
+    removal and another thread's append, so the fault abandon's equality
+    across the receive leg (the reply leg wakes the caller as the tail, the
+    receive leg wakes a plain sender onto the same core) was false as a
+    state equality.
+  - *The change.* `RunQueue.remove` (`unlinkLinks`) now clears the four
+    links with the flag. This is seL4's own state: `tcb_queue_remove`
+    (`src/object/tcb.c`, seL4 `f6978b12`), called from `tcbSchedDequeue`,
+    sets whichever of the dequeued thread's `tcbSchedPrev` and
+    `tcbSchedNext` is not already `NULL` to `NULL`.
+    The clearing is in place, so nothing allocates, and no `@[csimp]`
+    equality gains a premise.
+  - *The second change* (the coordinator's ruling, 2026-11-26). With the
+    links cleared, the resize check still depended on the order:
+    `RunQueue.setLink` was `RHTable.insert`, which checks the load threshold
+    on every call, a rewrite of a present entry included. A removal's
+    rewrites made after another thread's first insert could grow the table
+    where the same rewrites made before it did not (SX31's `RQ2`
+    counterexample: a core whose link table holds 11 keys of 16 with only the
+    caller queued ends at capacity 32 in one order and 16 in the other). So
+    `setLink` now rewrites a present entry in place (`RHTable.mapValueAt`,
+    no resize check: a rewrite adds no key) and inserts only a thread's first
+    entry, the shape its compiled form already had; that compiled form and
+    its `@[csimp]` are retired, the specification being the compiled shape.
+  - SX31 is therefore not proof-only: these are its two compiled changes.
+- **D57. The fault abandon leaves the answer-first equality.** *The
+  coordinator's ruling (2026-11-26), reversing D55's "one theorem over every
+  answer kind, not split by answer kind".* SX31's equality covers the
+  ordinary answer and the fault restart, one theorem over those two. The
+  abandon (a declined fault reply) deschedules the caller, and the RQ2
+  counterexample (D56) showed the run queue's state depending on whether
+  that removal ran before or after the receive's run-queue writes. D56
+  removes the difference, but carrying the abandon through an equality
+  still needs a commutation family for the run queue (the removal against
+  the wake, the receiver's removal, the holder's deschedule and the
+  priority requeue, at the queue record, the TCB links and the scheduler)
+  and a thread-state generalisation of the answer slots, measured at 2–3.5
+  sessions. SX32 switches the definition anyway, so it restates the
+  abandon's downstream proofs directly on the switched composite; the
+  commutation buys nothing SX32 does not already do.
 
 ## 4. Rows
 
@@ -1507,14 +1558,16 @@ is 21,021,237 bytes and compiles in 769 s.
 - `RefusalCarryingReplyRecv.c` unchanged against SX29's kept copy, or its difference reported;
 - every heap reading 0.
 
-### SX31 — The rest of the toolkit and the answer-first equality (D55)
+### SX31 — The rest of the toolkit and the answer-first equality (D55, D56, D57)
+
+**LANDED at `v0.37.60`** (not proof-only: the run queue's two compiled changes, D56; the equality covers the ordinary answer and the fault restart, and the abandon is SX32's, D57). The frame family `answerReadsKept` (the caller's IPC state and message kept across the tail), the post-receive donation's and the priority hand-off's commutation, the tail's reordering (`replyRecvReceiveTail_answerFirst`), and `endpointReplyRecvAnsweringOnCore_answerFirst` over `answer ≠ some .abandon`. Premises, on every state the reply step can leave: the caller is not the receiver and not the send queue's head at the receive's entry, no resize of the object table is due, and on an ordinary answer a held message of at most four words.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX31.1 | The toolkit's rest, per step of the receive chain, each commuting with the answer at a caller that is neither the receiver nor the send queue's head and keeping the table free of a due resize and the log: the receiver's state and message stores, the reply stasher's record, the caller's reply link, the wake, the queue append, the pre-receive donation's cleanup, the context return, the capability transfer and the post-receive donation; the reads the receive makes, equal through the answer. A theorem, in one statement over every answer kind, that the answer-first composite equals today's composite. Its premises: the caller is not the receiver and not the send queue's head at the receive's entry; the table has no resize due; for a fault abandon, the run queue's links are consistent (`runQueueRefined ∧ objects.invExt`, D55); and the log premise (D55). The definition is not switched. | the toolkit's rest and the equality | Tier 3 anchors, each break-tested; `RefusalCarryingReplyRecv.c` unchanged against SX29's kept copy (12,944,474 bytes) |
 
 **Acceptance:**
-- the equality builds over every answer kind, its premises the ones listed;
+- the equality builds over the ordinary answer and the fault restart (D57), its premises the ones listed (**met**);
 - `RefusalCarryingReplyRecv.c` unchanged against SX29's kept copy, or its difference reported;
 - every heap reading 0.
 
@@ -1522,7 +1575,7 @@ is 21,021,237 bytes and compiles in 769 s.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX32.1 | The reply step answers the caller before the receive, on every path, as seL4's `doReplyTransfer` does: the reply leg, the pop and the reply's capability transfer, then the caller's frame written or its fault answered (`replyRecvAnswerCaller`), all before the receive leg. No refusal changes. The priority-inheritance reversion and the holder's deschedule stay after the receive (D53). | The composed in-place theorems, the invariant families and the write sets restated through SX31's equality, unconditionally where it holds; the lemma SX33 reports from: the state after the reply step satisfies the invariant families. | Tier 3 anchors, censuses and conformance rows; `RefusalCarryingReplyRecv.c` no larger than SX29's (12,944,474 bytes) and its compile about 500 s or less |
+| SX32.1 | The reply step answers the caller before the receive, on every path, as seL4's `doReplyTransfer` does: the reply leg, the pop and the reply's capability transfer, then the caller's frame written or its fault answered (`replyRecvAnswerCaller`), all before the receive leg. No refusal changes. The priority-inheritance reversion and the holder's deschedule stay after the receive (D53). | The composed in-place theorems, the invariant families and the write sets restated through SX31's equality, unconditionally where it holds, and directly on the switched composite for a fault abandon, which SX31's equality does not cover (D57); the lemma SX33 reports from: the state after the reply step satisfies the invariant families. | Tier 3 anchors, censuses and conformance rows; `RefusalCarryingReplyRecv.c` no larger than SX29's (12,944,474 bytes) and its compile about 500 s or less |
 
 **Acceptance:**
 - the caller answered in the reply step on every path, each in-place equality restated without an invariant premise;

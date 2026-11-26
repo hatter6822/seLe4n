@@ -27,6 +27,15 @@ import SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch
 -- toolkit the `.replyRecv` composite's answer-first equality is proved with.
 -- No kernel module consumes it yet, so the root is what keeps it built.
 import SeLe4n.Kernel.IPC.CrossCore.AnswerCommute
+-- WS-SX SX31: the rest of the toolkit, the answer slots commuting with the
+-- whole receive leg (its body, the cap transfer and the context return).
+import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerCommute
+-- WS-SX SX31: the tail's frame (what the stage reads off the caller) and the
+-- post-receive donation's commutation with the answer.
+import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerFrame
+-- WS-SX SX31: the composite with the answer in the reply step equals the
+-- composite as defined (consumed by the definition switch).
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvAnswerFirst
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode
