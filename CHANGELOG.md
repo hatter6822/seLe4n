@@ -1,3 +1,56 @@
+## v0.37.60 — The answer-first equality, and the run queue's order-independent dequeue (WS-SX SX31)
+
+SX31 is on SX30.  It is not proof-only: it makes two compiled changes
+to the run queue (D56).  Its equality's consumer is SX32, which switches
+the composite to seL4's order.  The fault abandon is SX32's (D57).
+
+- **The tail keeps the caller's answer reads.**  `ReceiveAnswerFrame.lean`:
+  the receive leg, its capability transfer, the context return, the
+  post-receive donation and the priority hand-off leave the replied-to
+  caller's IPC state and pending message as they were
+  (`answerReadsKept`), on a table with no resize due.  The post-receive
+  donation and the priority hand-off commute with the answer-slot write.
+- **The answer moves ahead of the tail.**  `ReplyRecvAnswerFirst.lean`:
+  an answer that is the caller's slot write (or no write) on every state
+  the tail can reach can run before the tail instead of after it.  The
+  ordinary answer (a message of at most four words) and the fault
+  restart are such answers.
+- **The equality.**  `endpointReplyRecvAnsweringOnCore_answerFirst`: for
+  every answer but a declined fault reply, the composite written with the
+  answer in the reply step (seL4's `doReplyTransfer` before `handleRecv`)
+  equals `endpointReplyRecvAnsweringOnCore`.  Its premises, on every
+  state the reply step can leave: the caller is not the receiver and not
+  the send queue's head at the receive's entry, no resize of the object
+  table is due, and on an ordinary answer a message the caller holds fits
+  in its registers.  The definition is not switched.
+- **The run queue's dequeue clears the entry's links (D56).**
+  `RunQueue.remove` kept a dequeued entry's four links, so an entry that
+  was the tail when another thread joined kept a link to it: the state
+  depended on the order of a removal and another thread's append.  It now
+  clears them with the flag, as `TCB.detachRun` does and as seL4's
+  `tcb_queue_remove` leaves `tcbSchedPrev`/`tcbSchedNext` NULL.  The
+  links were dead (read only while queued), so this was not a
+  vulnerability.
+- **A rewrite of a present entry never resizes the link table (D56).**
+  `RunQueue.setLink` was `RHTable.insert`, which checks the load
+  threshold even when rewriting a present key, so whether the table grew
+  also depended on the order.  It now rewrites a present entry in place
+  (`RHTable.mapValueAt`) and inserts only a thread's first entry; the
+  separate compiled form and its `@[csimp]` are retired.
+- **The abandon leaves the equality (D57).**  Carrying a declined fault
+  reply through the equality needs a run-queue commutation family and a
+  thread-state generalisation of the answer slots; SX32 restates its
+  downstream proofs on the switched composite instead.  This reverses
+  D55's one theorem over every answer kind.
+- **Anchors.**  15 Tier 3 anchors, each break-tested by breaking
+  the relation it pins: the receive leg's commutation (6), the tail's frame,
+  the post-receive donation and the reordering (6), the two run-queue
+  changes (2) and the equality's statement (1).
+- **Measurements.**  `RefusalCarryingReplyRecv.c` is byte-identical to
+  SX29's kept copy (12,944,474 bytes): it calls the run queue out of line.
+  The IR measurement reads 1,498, the same lines.  The compiled run queue
+  adds no allocation on its exclusive path.
+
 ## v0.37.59 — The answer's commutation toolkit (WS-SX SX30)
 
 SX30 is on SX29.  It is proof-only: no definition changes, and nothing
