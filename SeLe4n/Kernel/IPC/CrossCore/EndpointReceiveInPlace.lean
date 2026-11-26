@@ -427,6 +427,50 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
   rw [hTake]
   simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
   rfl
+/-- **A blocking receive refusing its reply object, decided first**: where the
+receiver may block and its enqueue stays in its slots (`enqueuesInPlace`), the
+specification's block path reaches its stash check with every earlier step
+succeeding, and a reply object the receive may not stash (`replyStashValid`)
+refuses it with the entry state, as if nothing had run. -/
+theorem receiveBlock_stashRefused_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rt : TCB) (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId)
+    (hE : st.objects[endpointId]? = some (.endpoint ep))
+    (hS : ep.sendQ.head = none)
+    (hR : st.objects[receiver.toObjId]? = some (.tcb rt))
+    (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st endpointId receiver ep.receiveQ.tail = true)
+    (hV : st.replyStashValid replyId = false) :
+    endpointReceiveDualOnCore endpointId receiver replyId executingCore st =
+      (st, .error .replyCapInvalid) := by
+  have hA' := hA
+  simp only [receiveBlockAdmits, Bool.and_eq_true] at hA'
+  obtain ⟨hEnqOk, hT, hF, hL⟩ := endpointEnqueue_inPlace_eq st endpointId ep true receiver rt
+    ep.receiveQ.tail hE rfl hR hA'.1 hEnq
+  have hRes : receiver.isReserved = false := by
+    simp only [enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hEnq
+    exact hEnq.1.1.1.1.1
+  have hNoDon : preReceiveDonation? st receiver = none := by
+    have hLook : lookupTcb st receiver = some rt := by
+      simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
+      exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hR
+    unfold preReceiveDonation?
+    rw [hLook]
+    obtain ⟨_, hB⟩ := hA'
+    revert hB
+    cases h : rt.schedContextBinding <;> simp [h]
+  unfold endpointReceiveDualOnCore
+  simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hS,
+    cleanupPreReceiveDonationMigrated_of_no_donation st receiver hNoDon, hEnqOk]
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL ⊢
+  let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
+  have h1 : storeTcbIpcStateAndMessage S receiver (.blockedOnReceive endpointId) none =
+      .ok (S.updateTcb receiver g2) := modifyTcb_eq_updateTcb _ hRes hT hL
+  rw [h1]
+  simp only []
+  rw [updateTcb_getTcb?_self_of_findsInPlace g2 hT hF]
+  simp only [hV, Bool.false_eq_true, ↓reduceIte]
+
 /-- **The receive body, its checks first.**  The specification's rendezvous
 pops the sender, then looks up the TCBs it writes, refusing with its entry
 state where a lookup fails, so that state is alive across the pop.  Where
@@ -434,8 +478,13 @@ every write stays in its slot (`receiveTakesInPlace`) those lookups succeed,
 so this form decides them on the entry state before the first write and runs
 the take as its writes: the in-place pop, the sender made ready and woken on
 its home core, and the receiver handed the message, read off the state the
-pop left before anything writes the sender (`receiveTake_inPlace`).  Any other
-receive runs the specification.  It is the specification, with no assumption
+pop left before anything writes the sender (`receiveTake_inPlace`).  The
+block path's lookups and its stash check come after the cleanup, the enqueue
+and the block; where the receiver may block and its enqueue stays in its slots
+they are decided first too: a reply object the receive may not stash refuses
+with the untouched entry state (`receiveBlock_stashRefused_eq`), and one whose
+stasher record stays in its slot blocks the receiver in place
+(`receiveBlock_inPlace_eq`).  Any other receive runs the specification.  It is the specification, with no assumption
 (`endpointReceiveDualOnCore_eq_checked`), through which the compiler runs
 it. -/
 def endpointReceiveDualOnCoreChecked (endpointId : SeLe4n.ObjId)
@@ -455,7 +504,19 @@ def endpointReceiveDualOnCoreChecked (endpointId : SeLe4n.ObjId)
           (woken.1.updateTcb receiver (callReceiverTcb msg), .ok (s, woken.2))
         else endpointReceiveDualOnCore endpointId receiver replyId executingCore st
       | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
-    | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+    | none =>
+      match st.getTcb? receiver with
+      | some rt =>
+        if receiveBlockAdmits rt &&
+            enqueuesInPlaceCode st endpointId receiver ep.recvTailCode then
+          if replyStashValidCode st (SeLe4n.ReplyId.optCode replyId) then
+            if replyRecordsInPlace st (SeLe4n.ReplyId.optCode replyId) then
+              (removeRunnableOnCore (storeReceiveBlock st endpointId receiver ep.recvTailCode
+                (SeLe4n.ReplyId.optCode replyId)) receiver executingCore, .ok (receiver, none))
+            else endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+          else (st, .error .replyCapInvalid)
+        else endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
   | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
 
 /-- The receive body's checks-first form is the specification, with no
@@ -478,7 +539,28 @@ assumption; the compiler runs it in the specification's place. -/
             storePopHeadCode_eq, TCB.ofOptCode_queueNextCode]
         · rfl
       · rfl
-    · rfl
+    · rename_i hH
+      have hE' := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE
+      split
+      · rename_i rt hRt
+        have hR := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRt
+        split
+        · rename_i hAE
+          rw [Bool.and_eq_true, enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hAE
+          rw [replyStashValidCode_eq, SeLe4n.ReplyId.ofOptCode_optCode]
+          split
+          · rename_i hV
+            split
+            · rename_i hRec
+              exact receiveBlock_inPlace_eq st endpointId ep receiver rt replyId executingCore
+                hE' hH hR hAE.1 (by
+                  simp only [receiveBlocksInPlace, hAE.2, hV, hRec, Bool.and_self])
+            · rfl
+          · rename_i hV
+            exact receiveBlock_stashRefused_eq st endpointId ep receiver rt replyId executingCore
+              hE' hH hR hAE.1 hAE.2 (by simpa using hV)
+        · rfl
+      · rfl
   · rfl
 
 

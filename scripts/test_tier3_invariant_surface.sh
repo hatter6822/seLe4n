@@ -899,6 +899,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualWithCapsOnCore
 # slot is decided on the entry state, before the pop.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReceiveDualOnCore_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if receiveTakesInPlace st endpointId receiver s sTcb then\n[ \t]*let popped := storePopHeadCode st endpointId false s sTcb\.queueNextCode\n[ \t]*let msg := blockedSenderMessage popped s sTcb\n[ \t]*let woken := wakeThread \(popped\.updateTcb s receiverReady\) s executingCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
+# Its block path decides the enqueue, the stash check and the stasher record
+# on the entry state, so a reply object it may not stash refuses before the
+# enqueue writes anything.
+run_check "INVARIANT" rg -n '^theorem receiveBlock_stashRefused_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if receiveBlockAdmits rt &&\n[ \t]*enqueuesInPlaceCode st endpointId receiver ep\.recvTailCode then\n[ \t]*if replyStashValidCode st \(SeLe4n\.ReplyId\.optCode replyId\) then\n[ \t]*if replyRecordsInPlace st \(SeLe4n\.ReplyId\.optCode replyId\) then\n[ \t]*\(removeRunnableOnCore \(storeReceiveBlock st endpointId receiver ep\.recvTailCode\n[^\n]*\n[ \t]*else endpointReceiveDualOnCore endpointId receiver replyId executingCore st\n[ \t]*else \(st, \.error \.replyCapInvalid\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem applyReceiveRendezvousHandoff_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReceiveRendezvousHandoffChecked[^\n]*(\n([ \t][^\n]*)?)*if rendezvousDequeuedCall st dequeued then\n[ \t]*match applyReceiveRendezvousDonation st receiver dequeued with" SeLe4n/Kernel/IPC/Operations/Donation.lean'
 run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
