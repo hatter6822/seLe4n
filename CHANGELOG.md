@@ -26,10 +26,17 @@ context-holding server's measurement.
   and `ReplyRecvUnlinkedCallTakeInPlace`, with their performers and
   equalities.  What surviving modules read moved first, measured by a Lean
   environment closure, into `ReplyRecvCallTakeFrame.lean`.
-- **QEMU.**  The donated and unlinked arms' Call takes at 120 words,
-  granting a capability, and both get a measured step, each 0.  Their four
-  fault-answer Call takes need a fault lane whose server holds no context,
-  and moved to SX28.1 with the other new scenarios.
+- **QEMU.**  The rendezvous and unlinked arms' Call takes at 120 words,
+  granting a capability, and both get a measured step, each 0.  The
+  `queued-caller-*` scenarios' reply-receive answers a partner whose `Call`
+  lent nothing (the partner holds no context), so its reply leg runs the
+  rendezvous arm, and its receive leg takes the queued caller, lending the
+  caller's context.  A debug-only build whose selector refuses the
+  rendezvous arm confirmed it: exactly the four `queued-caller-*reply-recv*`
+  steps then allocate, on both lanes.  The donated arm's six Call-take
+  shapes have no scenario to build on, and the rendezvous and unlinked
+  arms' fault-answer Call takes need a fault lane whose server holds no
+  context: all moved to SX28.1 with the other new scenarios.
 - **Gates.**  Tier 3 anchors pin the selector, its specification, every
   routed answer, the out-of-line admission tests and answers and each arm's
   route through them, and refuse the retired names and
@@ -42,21 +49,27 @@ context-holding server's measurement.
   `replyRecvCallTakeArmCode`) and an answer per answer and length that
   returns the state (`replyRecvCallTakeAnswer`, `replyRecvLongCallTakeAnswer`,
   `replyRecvCallFaultTakeAnswer`, `replyRecvLongCallFaultTakeAnswer`), each
-  arm's `_eq` restated over them.  The answers take the replier's register
-  file owned (their unreachable fallback stores it,
-  `replyRecvLoadReplierRegisters`) and release it once the legs have read
-  it, so the server's frame write does not copy it; the reply leg's
-  no-transfer test is one out-of-line copy (`replyRecvCallTakeReplyInert`).
-  `RefusalCarryingReplyRecv.c` is 13,080,019 bytes against 13,204,415 at
-  `v0.37.55` (SX25's baseline: 21,021,237 bytes, 769 s), and compiles
-  standalone (`leanc -c -O3 -DNDEBUG`) in 486 s and 484 s on two runs on a
-  quiet machine against `v0.37.55`'s 535 s: SX27's acceptance is met.
+  arm's `_eq` restated over them.  The answers take no register file: the
+  arm reads the reply's four inline words once on the pre-state
+  (`Architecture.regLayoutWord`) and hands them to the answer as words with
+  the length, each word form proven equal to the register-file form
+  (`ReplyRecvArm.callTakeLegsW_eq` and its long and fault forms), so the
+  entry releases the server's register file before it calls the answer
+  and the server's frame write does not copy it; a shape an answer refuses returns
+  the state unchanged.  The reply leg's no-transfer test is one out-of-line
+  copy (`replyRecvCallTakeReplyInert`).  `RefusalCarryingReplyRecv.c` is
+  13,074,785 bytes against 13,204,415 at `v0.37.55` (SX25's baseline:
+  21,021,237 bytes, 769 s), and compiles standalone (`leanc -c -O3
+  -DNDEBUG`) in 480 s and 477 s on two quiet runs against `v0.37.55`'s 535 s: SX27's acceptance is
+  met.
   Inline, the arms' result is consumed by the caller and never built, so
   every heap reading stays 0.  (With the arms themselves out of line the
   file was 11,824,216 bytes, but each reply-receive through them
   allocated its result; with the answers taking the register file
-  borrowed, each Call take copied it, 288 bytes; with the arms and their
-  bodies inline, 14,178,424 bytes and 706 s.)
+  borrowed, each Call take copied it, 288 bytes; with the register file
+  owned through a fallback that stored it, 13,080,019 bytes, 486 s and
+  484 s; with the arms and their bodies inline, 14,178,424 bytes and
+  706 s.)
 - **Plan.**  D49 recorded; SX28 added; SX28–SX37 renumbered SX29–SX38 in
   the plan, REGISTERED_DEBT, WORKSTREAM_CONTEXT, the spec,
   CONTEXT_BY_VALUE_PLAN and the conformance table's row strings.

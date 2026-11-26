@@ -568,16 +568,22 @@ A different answer changes only the rows that cite it.
   `RefusalCarryingReplyRecv.lean` restated over one out-of-line selector, the
   three Call-take modules retired, the store-reader hygiene rows regenerated,
   the final C size and compile-time acceptance, and the QEMU steps of the
-  donated and unlinked arms' ten Call-take shapes. The remainder becomes one
-  new row, SX28: QEMU scenarios for the rendezvous, held and unheld arms'
-  Call takes (17 shapes) and the eight Send-take shapes carried from SX26.1,
-  and a measurement of a server holding its own scheduling context taking a
-  Call on any arm (brought in place if it is reachable and allocates). The
-  rows after SX27 are renumbered (SX28–SX37 became SX29–SX38). During the
-  row, the donated and unlinked arms' four fault-answer Call takes were found
-  to have no lane to build on: the fault lane's root task holds its own
-  context, so a Call queued there is not lent, and a lane whose server holds
-  none is new work. Their steps moved to SX28.1 with the other new scenarios.
+  Call-take shapes with a scenario to build on. The remainder becomes one
+  new row, SX28: QEMU scenarios for the remaining Call takes and the eight
+  Send-take shapes carried from SX26.1, and a measurement of a server
+  holding its own scheduling context taking a Call on any arm (brought in
+  place if it is reachable and allocates). The rows after SX27 are
+  renumbered (SX28–SX37 became SX29–SX38). During the row, the fault-answer
+  Call takes were found to have no lane to build on: the fault lane's root
+  task holds its own context, so a Call queued there is not lent, and a lane
+  whose server holds none is new work. Their steps moved to SX28.1 with the
+  other new scenarios. Before SX27 merged, the `queued-caller-*` scenarios
+  its steps were built on were found to run the rendezvous arm, not the
+  donated arm (the partner they answer holds no context, so its `Call` lent
+  nothing; a debug-only build whose selector refuses the rendezvous arm
+  confirmed it): SX27's QEMU steps are the rendezvous and unlinked arms'
+  Call takes at 120 words, granting a capability and both (six shapes), and
+  the donated arm's six Call-take shapes moved to SX28.1.
 
 ## 4. Rows
 
@@ -1196,20 +1202,20 @@ is 21,021,237 bytes and compiles in 769 s.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX27.1 | **LANDED at `v0.37.56`** (`ReplyRecvCallTakeComposed.lean`: `replyRecvAnsweringOnCore_arm_callTake`, one performer per answer and length `performReplyRecvArmCall{Take,TakeCaps,FaultTake}Delivered{,Long}`; the Call-take arms of `RefusalCarryingReplyRecv.lean` routed by one out-of-line selector `replyRecvCallTakeArmCode`). **The Call take with its donation for every arm and answer**: a reply-receive whose receive leg meets a caller queued by a capability-free `Call` takes it in place over SX25's reply leg, for the five reply arms, the three answers and both lengths, under one `_eq`; the caller's context is lent to a server holding none (`callLend`), and the held arm, whose server keeps its own context, takes the Call without a lend. | The Call take's equality over the arm; the Call-take arms of `RefusalCarryingReplyRecv.lean` restated over it. | QEMU: the donated and unlinked arms' Call take at 120 words, granting a capability, and both (six shapes, each 0); the four fault-answer shapes of those arms and the rest of the QEMU work moved to SX28 (D49) |
+| SX27.1 | **LANDED at `v0.37.56`** (`ReplyRecvCallTakeComposed.lean`: `replyRecvAnsweringOnCore_arm_callTake`, one performer per answer and length `performReplyRecvArmCall{Take,TakeCaps,FaultTake}Delivered{,Long}`; the Call-take arms of `RefusalCarryingReplyRecv.lean` routed by one out-of-line selector `replyRecvCallTakeArmCode`). **The Call take with its donation for every arm and answer**: a reply-receive whose receive leg meets a caller queued by a capability-free `Call` takes it in place over SX25's reply leg, for the five reply arms, the three answers and both lengths, under one `_eq`; the caller's context is lent to a server holding none (`callLend`), and the held arm, whose server keeps its own context, takes the Call without a lend. | The Call take's equality over the arm; the Call-take arms of `RefusalCarryingReplyRecv.lean` restated over it. | QEMU: the rendezvous and unlinked arms' Call take at 120 words, granting a capability, and both (six shapes, each 0; the `queued-caller-*` scenarios answer a partner whose `Call` lent nothing, so they run the rendezvous arm); the donated arm's six shapes, the rendezvous and unlinked arms' fault-answer shapes and the rest of the QEMU work moved to SX28 (D49) |
 | SX27.2 | **LANDED at `v0.37.56`** (what the surviving modules read moved first, measured by a Lean environment closure, into `ReplyRecvCallTakeFrame.lean`). **The Call-take modules retired**: `ReplyRecv{Call,DonatedCall,UnlinkedCall}TakeInPlace`; the store-reader hygiene rows regenerated. The composed path's final acceptance: every ReplyRecv shape (90) in place under one proof; `RefusalCarryingReplyRecv.c` size and compile time against SX25's baseline and SX26's. | none beyond SX27.1 | Tier 3 anchors refusing the retired names and imports, break-tested |
 
 **Acceptance:**
 - every ReplyRecv shape (5 reply arms × 3 receive legs × 3 answers × 2 lengths, 90) answered in place under one proof per receive leg;
 - the per-arm Call-take modules deleted;
-- `RefusalCarryingReplyRecv.c` and its compile time no larger than SX26's (**met at `v0.37.56`**: 13,080,019 bytes against 13,204,415; 486 s and 484 s on two quiet runs against 535 s; the four Call-take and Call-fault arms inline over out-of-line admission tests (a `Bool`, or the selector's code on the fault arms) and out-of-line answers returning the state and taking the replier's register file owned, so nothing is allocated);
+- `RefusalCarryingReplyRecv.c` and its compile time no larger than SX26's (**met at `v0.37.56`**: 13,074,785 bytes against 13,204,415; 480 s and 477 s on two quiet runs against 535 s; the four Call-take and Call-fault arms inline over out-of-line admission tests (a `Bool`, or the selector's code on the fault arms) and out-of-line answers returning the state and taking the reply's inline words, read once by the arm on the pre-state, in place of the replier's register file, so nothing is allocated and the server's frame write copies nothing);
 - every heap reading 0.
 
 ### SX28 — The composed path's remaining QEMU scenarios (D49)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX28.1 | QEMU scenarios for the Call takes with no scenario to build on at `v0.37.56`: the rendezvous, held and unheld arms' Call takes (17 shapes) and the donated and unlinked arms' Call takes answering a fault at one and 120 words (4 shapes, a fault lane whose server holds no context); and, carried from SX26.1, the Send take's eight shapes (the donated arm at one and 120 words, inert, installing and answering a fault; the unheld arm answering a fault at one and 120 words). | none | QEMU: one step per shape, each 0 |
+| SX28.1 | QEMU scenarios for the Call takes with no scenario to build on at `v0.37.56`: the held and unheld arms' Call takes (12 shapes), the donated arm's Call takes (6 shapes, carried from SX27.1: no scenario runs the donated arm's Call take), and the rendezvous and unlinked arms' Call takes answering a fault at one and 120 words (4 shapes); every fault-answer shape needs a fault lane whose server holds no context; and, carried from SX26.1, the Send take's eight shapes (the donated arm at one and 120 words, inert, installing and answering a fault; the unheld arm answering a fault at one and 120 words). | none | QEMU: one step per shape, each 0 |
 | SX28.2 | A server holding its own scheduling context taking a Call on any arm (seL4-MCS's `reply_push` with `canDonate` and a server that has one: no lend): measured; if it is reachable and allocates, brought in place over SX27's Call take. | If brought in place, its equality over the arm. | QEMU: one step per shape it brings in place, each 0 |
 
 ### SX29 — Page-table teardown and per-frame W^X

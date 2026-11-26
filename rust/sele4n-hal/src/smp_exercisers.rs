@@ -15472,12 +15472,13 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        // WS-SX SX27: the donated arm's Call take above again, the reply at 120
-        // words, its words past the fourth read from the root task's buffer: the
-        // root task's reply-receive answers the partner over the donated arm and
-        // its receive leg takes the queued Call in place, the caller's context
-        // lent to it (`performReplyRecvArmCallTakeDeliveredLong`).  The rest of
-        // the scenario runs as before.
+        // WS-SX SX27: the rendezvous arm's Call take above again, the reply at
+        // 120 words, its words past the fourth read from the root task's buffer:
+        // the root task's reply-receive answers the partner, whose call lent
+        // nothing, over the rendezvous arm and its receive leg takes the queued
+        // Call in place, the caller's context lent to it
+        // (`performReplyRecvArmCallTakeDeliveredLong`).  The rest of the
+        // scenario runs as before.
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         retype(
             "untyped-retype-queued-caller-long",
@@ -15733,11 +15734,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        // WS-SX SX27: the donated arm's Call take above again, the reply
+        // WS-SX SX27: the rendezvous arm's Call take above again, the reply
         // granting a capability the partner installs (signalled, waited on and
-        // deleted after): the root task's reply-receive answers the partner over
-        // the donated arm and its receive leg takes the queued Call in place,
-        // the caller's context lent to it
+        // deleted after): the root task's reply-receive answers the partner,
+        // whose call lent nothing, over the rendezvous arm and its receive leg
+        // takes the queued Call in place, the caller's context lent to it
         // (`performReplyRecvArmCallTakeCapsDelivered`).  The rest of the
         // scenario runs as before.
         kernel_step("mask-ticks", MASK_TICKS_STEP),
@@ -16035,10 +16036,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
-        // WS-SX SX27: the donated arm's Call take above again, the reply at 120
-        // words granting a capability the partner installs: the root task's
-        // reply-receive answers the partner over the donated arm and its receive
-        // leg takes the queued Call in place, the caller's context lent to it
+        // WS-SX SX27: the rendezvous arm's Call take above again, the reply at
+        // 120 words granting a capability the partner installs: the root task's
+        // reply-receive answers the partner, whose call lent nothing, over the
+        // rendezvous arm and its receive leg takes the queued Call in place, the
+        // caller's context lent to it
         // (`performReplyRecvArmCallTakeCapsDeliveredLong`).  The rest of the
         // scenario runs as before.
         kernel_step("mask-ticks", MASK_TICKS_STEP),

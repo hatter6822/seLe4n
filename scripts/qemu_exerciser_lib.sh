@@ -1407,7 +1407,7 @@ for driver in drivers:
             "unlinked-fault-take-root-reply-recv", "unlinked-fault-take-root-reply-recv-long",
             "unlinked-cap-fault-delivered-to-take-reply-recv",
             "unlinked-cap-fault-delivered-to-take-reply-recv-long",
-            # WS-SX SX27: the donated and unlinked arms' Call take at 120 words, granting a
+            # WS-SX SX27: the rendezvous and unlinked arms' Call take at 120 words, granting a
             # capability, and both.
             "untyped-retype-unlinked-call-take-long-server",
             "unlinked-call-take-long-server-set-space",

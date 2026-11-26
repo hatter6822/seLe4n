@@ -168,9 +168,9 @@ points ci-dessous y renvoient.
 |----------|--------|
 | **Version** | `0.37.56` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 685 935 réparties sur 701 fichiers |
+| **LoC Lean de production** | 686 360 réparties sur 701 fichiers |
 | **LoC Lean de test** | 91 877 réparties sur 71 suites de tests |
-| **Déclarations prouvées** | 26 488 déclarations theorem/lemma (zéro sorry/axiom) |
+| **Déclarations prouvées** | 26 502 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (enveloppes en espace utilisateur), `sele4n-hal` (la couche matérielle du noyau), et le test hôte `sele4n-lean-boundary` |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Voies de démarrage** | Chaque voie QEMU démarre d'abord l'image Raspberry Pi 5 sur la machine `raspi5b` de [rpi5_machine](https://github.com/hatter6822/rpi5_machine), puis l'image `virt` sur la machine `virt` de QEMU |
