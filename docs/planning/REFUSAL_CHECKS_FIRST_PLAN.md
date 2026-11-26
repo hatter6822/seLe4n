@@ -30,9 +30,10 @@ state, and the write that follows does not refuse.
 
 ## 2. Scope
 
-SX29 takes ReplyRecv (class b) and its legs' own holds; SX30 lands the gate,
-with a pinned list of the holds this workstream removes, which may only
-shrink. WS-CK takes the rest, by class (D51):
+SX29 takes the holds of ReplyRecv's legs and SX30 ReplyRecv's own (class
+b, D52); SX31 lands the gate, with a pinned list of the holds this
+workstream removes, which may only shrink. WS-CK takes the rest, by class
+(D51):
 
 | Class | What holds the state | Functions |
 |---|---|---|
@@ -44,8 +45,8 @@ shrink. WS-CK takes the rest, by class (D51):
 
 Class (g), the boot (4 functions), runs once and is **out of scope**.
 
-The counts include the functions on the reply-receive path that SX29 takes;
-SX30's pinned list is the exact remainder when this workstream opens.
+The counts include the functions on the reply-receive path that SX29 and SX30 take;
+SX31's pinned list is the exact remainder when this workstream opens.
 
 ## 3. Rules
 
@@ -59,17 +60,17 @@ SX30's pinned list is the exact remainder when this workstream opens.
   proofs are restated, not dropped. The lock sets stay; nothing allocates.
 - **No steering.** No dead stores, no `@[export]` used to shape the IR, and no
   compiled branch that can never run. A read moved before a write may be
-  floated back by the compiler; that is measured by SX30's gate, not assumed.
+  floated back by the compiler; that is measured by SX31's gate, not assumed.
 
 ## 4. Rows
 
 | Row | Change | Proofs | Gates and fixtures | Estimate |
 |---|---|---|---|---|
-| CK1 | Classes (d) and (a): each specification body's refusals after a write moved before its first write; each wrapper over it then carries its callee's state. | Each body's and wrapper's unconditional equality to its specification; the invariant and non-interference proofs restated where a refusal now reports a different state. | SX30's pinned list shrinks by every (d) and (a) entry; Tier 3 anchors; every heap reading 0 | 5–7 |
-| CK2 | Class (c): the invocation dispatch decodes and checks before it performs, as seL4's `decodeInvocation` does (`dispatchInvocationByR` and the configure, service, overflow, priority, resume, copy and finalise sites). | Each decode/perform split's equality to its specification. | SX30's pinned list shrinks by every (c) entry; Tier 3 anchors | 3–5 |
-| CK3 | Classes (e) and (f): each read of the pre-state, or of a field of it, moved before the write it follows. | Each moved read's equality. | SX30's pinned list empty; the gate then refuses any hold | 3–4 |
+| CK1 | Classes (d) and (a): each specification body's refusals after a write moved before its first write; each wrapper over it then carries its callee's state. | Each body's and wrapper's unconditional equality to its specification; the invariant and non-interference proofs restated where a refusal now reports a different state. | SX31's pinned list shrinks by every (d) and (a) entry; Tier 3 anchors; every heap reading 0 | 5–7 |
+| CK2 | Class (c): the invocation dispatch decodes and checks before it performs, as seL4's `decodeInvocation` does (`dispatchInvocationByR` and the configure, service, overflow, priority, resume, copy and finalise sites). | Each decode/perform split's equality to its specification. | SX31's pinned list shrinks by every (c) entry; Tier 3 anchors | 3–5 |
+| CK3 | Classes (e) and (f): each read of the pre-state, or of a field of it, moved before the write it follows. | Each moved read's equality. | SX31's pinned list empty; the gate then refuses any hold | 3–4 |
 
-About 11–16 sessions. **Closure**: CK3, when SX30's pinned list is empty.
+About 11–16 sessions. **Closure**: CK3, when SX31's pinned list is empty.
 
 ## 5. Risks
 
