@@ -1357,7 +1357,7 @@ is 21,021,237 bytes and compiles in 769 s.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX30.1 | A gate over the IR of the committing exports' closure that finds each call passing the state at a destructive position while the caller keeps it live, against a pinned list of the holds WS-CK has still to remove. The list may only shrink: a hold not on it fails, and an entry with no hold behind it fails. A closure call whose callee the gate cannot resolve fails closed. | none | the gate, break-tested by restoring one ReplyRecv wrapper's pre-state hold |
+| SX30.1 | A gate over the IR of the committing exports' closure that finds each call passing the state at a destructive position while the caller keeps it live, against a pinned list of the holds WS-CK has still to remove. The list may only shrink: a hold not on it fails, and an entry with no hold behind it fails. A closure call whose callee the gate cannot resolve fails closed. The closure does not reach a `@[csimp]` source through its replacement: a specification the compiler replaces keeps its own IR, and it is counted only where compiled code still calls it (a checked form's fallback does), since counting it otherwise would pin holds no list could shrink. | none | the gate, break-tested by restoring one ReplyRecv wrapper's pre-state hold |
 
 **Acceptance:**
 - the gate runs in Tier 2 and passes on the tree, with SX29's holds absent from the pinned list;
