@@ -1,3 +1,48 @@
+## v0.37.57 — The own-context Call take in place, and the refusal-wrapper sweep planned (WS-SX SX28)
+
+SX28 is on SX27.  The row measured at 3.25–4.25 sessions against 2 and was
+kept whole (D50).  During it the general path's 1 MB table copies were
+traced to the refusal wrappers, and by the owner's ruling of 2026-11-26
+their sweep became a new SX29.
+
+- **The own-context Call take.**  seL4-MCS's `reply_push` lends the
+  caller's context only to a server holding none.  A server bound to its
+  own scheduling context, and to no notification, now takes a queued
+  capability-free `Call` in place on the rendezvous, unheld and unlinked
+  arms, lending nothing, for every answer and both lengths.  The Call take
+  carries its lend as a flag beside the arm (`ReplyRecvArm.CallReady`,
+  `ReplyRecvArm.callLend` and every Call-take performer take `lends`), and
+  the guard at that lend (`ReplyRecvArm.CallAdmitsAt`) is the arm's own
+  guard or the own-context guard (`ReplyRecvArm.CallAdmitsOwn`, carried by
+  `ReplyRecvArm.callTakeGuardOwn`).  The one equality to
+  `endpointReplyRecvAnsweringOnCore` covers both
+  (`replyRecvAnsweringOnCore_arm_callTake`).
+- **The donated arm.**  It has no own-context branch.  Its pop's guard
+  needs the context the reply heads bound to the server, so the pop
+  unbinds it and the take lends (`ReplyRecvArm.donated_serverBound_head`).
+  A Tier 3 negative anchor refuses an own-context code or guard on the
+  donated or held arm (break-tested).
+- **One selector.**  `replyRecvCallTakeArmCode` reads each arm once through
+  `replyRecvArmCallCode` (out of line, over the arm): the arm's code where
+  its lending guard passes, its own-context code (6 to 8) where the
+  own-context guard passes (`ReplyRecvArm.callOwnGuard`, out of line).
+  `replyRecvCallLendsOfCode` hands each answer its lend.
+  `ReplyRecvArm.legGuard` is out of line, so each selector calls one copy.
+- **Weakening.**  A server bound to its own context and to a notification
+  stays on the specification's path, as the held arm's does; it is not
+  refused.
+- **QEMU.**  `own-context-reply-recv-takes-call` (the root task bound to a
+  carved context answering the partner and taking the chain thread's
+  queued `Call` on the rendezvous arm) reads 0 on both lanes, at the first
+  call and at steady state; it read 141 cells (3,168,520 bytes) on the
+  general path.  The other 17 own-context shapes are left to SX30.
+- **Measured.**  `RefusalCarryingReplyRecv.c` is 12,941,835 bytes (SX27:
+  13,074,785); its standalone compile took 479 s and 476 s on two quiet runs (SX27: 480 s and 477 s).
+- **Planned.**  SX29 sweeps every refusal wrapper that keeps its pre-state
+  across a writing operation: the set derived from the IR or C, ReplyRecv
+  moved to seL4's order with the flow gate and the non-interference proofs
+  kept, and a fail-closed gate.  SX29–SX39 became SX30–SX40.
+
 ## v0.37.56 — The Call take composed over every reply arm, and the composed reply-receive's acceptance (WS-SX SX27)
 
 SX27 is on SX26.  Measured before the bulk: 27 Call-take shapes still to
