@@ -412,6 +412,34 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
               (descheduleAtPlacement st holder) recordedServer serverCore).1)
 
+/-- **The reply step's outcome where nothing was received** (D53): the
+recorded server's priority-inheritance reversion, after the holder's deschedule
+where the pop handed a context back.  It is `replyRecvPostReceiveDonation`'s
+outcome on a receive that dequeued no `Call` (`replyRecvPostReceiveDonation_of_not_call`),
+and the state a refused receive reports (WS-SX SX33), on the state the receive
+returned. -/
+def replyRecvNothingReceived (recordedServer : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
+    SystemState :=
+  match returned? with
+  | none => (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1
+  | some (_, holder) =>
+      (PriorityInheritance.propagatePipChainCrossCore (descheduleAtPlacement st holder)
+        recordedServer serverCore).1
+
+/-- A post-receive donation after a receive that dequeued no `Call` is the
+nothing-received outcome. -/
+theorem replyRecvPostReceiveDonation_of_not_call (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState)
+    (h : rendezvousDequeuedCall st nextThread = false) :
+    replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st =
+      .ok ((), replyRecvNothingReceived recordedServer serverCore returned? st) := by
+  unfold replyRecvPostReceiveDonation replyRecvNothingReceived
+  cases returned? with
+  | none => simp only [h, Bool.false_eq_true, ↓reduceIte]
+  | some p => obtain ⟨_, _⟩ := p; simp only [h, Bool.false_eq_true, ↓reduceIte]
+
 /-- On a pop that handed nothing back, a post-receive donation the resolver
 declines (`callDonationSchedContext?` answering `none`: the receiver already holds
 a context, the dequeued caller holds none, or the two are one thread) is the chain
