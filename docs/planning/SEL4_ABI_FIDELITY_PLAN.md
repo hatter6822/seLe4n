@@ -968,8 +968,7 @@ A different answer changes only the rows that cite it.
   ahead. It is off the invariant (`replyCallerLinkageReciprocal`). The new
   refusal's code is `.invalidArgument 0`, the pop's own sentinel code; before,
   a pop refusal reported the pop's own error. *The refusal arms the general
-  path keeps (the coordinator's ruling, 2026-11-26, pending the owner's card
-  on making `objects.invExt` part of the object table's type).* The admission
+  path keeps (the coordinator's ruling, 2026-11-26).* The admission
   implies the pop on the leg's state only under `objects.invExt`, because
   every read across a store at another key needs it
   (`RHTable.getElem?_insert_ne`), and `invExt` is a proposition the code
@@ -977,7 +976,14 @@ A different answer changes only the rows that cite it.
   leg `.error` arm, and they run only on a state whose object table fails
   `invExt`: defensive checks, as SX29's fallbacks are. The fast forms' in-place
   guards make the same reads without `invExt`, so their equalities stay
-  unconditional. *A refused receive (the ruling's option (b)).* A receive the
+  unconditional. *The owner's ruling (2026-11-26):* `objects.invExt` goes
+  into the object table's type, as WS-CK's first row, CK1
+  ([`REFUSAL_CHECKS_FIRST_PLAN.md`](REFUSAL_CHECKS_FIRST_PLAN.md)), on which
+  the checks-first rows build. There every checks-first form gets its
+  unconditional equality without an in-place guard, and the two arms above
+  (the composite's post-leg pop `.error` arm and its reply-leg `.error` arm),
+  which run only off `invExt`, are retired as unreachable by type. Nothing
+  else in SX33 changes. *A refused receive (the ruling's option (b)).* A receive the
   kernel refuses after the reply step reports the nothing-received outcome
   (the priority-inheritance reversion, and the holder's deschedule where the
   pop returned a context, D53) on the state the receive returned. That state
@@ -985,9 +991,9 @@ A different answer changes only the rows that cite it.
   which seLe4n runs before the receive's checks and seL4 runs after
   `handleRecv`'s lookup; that is the only difference from seL4, and every
   receive refusal is off the invariant. Deciding the receive's refusals
-  first, before the context return, needs frames across that return, each
-  under `invExt`; it becomes cheap once `invExt` is in the table's type and
-  belongs to that row. The post-receive donation refuses only at its sentinel
+  first, before the context return (option (c)), needs frames across that
+  return, each under `invExt`; it becomes cheap once `invExt` is in the
+  table's type, and belongs to WS-CK's CK1 under the owner's ruling above. The post-receive donation refuses only at its sentinel
   (`applyRendezvousCallDonation`, `.invalidArgument 0`), which is read up
   front. The receive's capability transfer never refuses
   (`receiveTransferCaps_ok`: an install that fails transfers fewer
@@ -997,7 +1003,11 @@ A different answer changes only the rows that cite it.
   (`replyTransferOnCoreChecked`, `endpointReplyCrossCoreDispatch`), whose pop
   (`applyReplyDonationOnCore`) and recorded-server sentinel refuse after the
   reply leg's writes and report the entry state. The admission above does not
-  cover that arm.
+  cover that arm. Those exits are off the invariant only; under the
+  coordinator's ruling (2026-11-26) they are not SX33's work and are listed,
+  with the admission design (the two sentinels read on the entry state, the
+  pop's commit test read before `endpointReplyOnCore`), in WS-CK's CK2 row
+  (class (d)) in [`REFUSAL_CHECKS_FIRST_PLAN.md`](REFUSAL_CHECKS_FIRST_PLAN.md).
 
 ## 4. Rows
 

@@ -440,10 +440,11 @@ A caller that keeps the `SystemState` live across a call that would write it
 in place makes the callee copy it, the object store's 1 MB table included.
 WS-SX SX29.1 derived the holds from the Lean IR (1,548 holds over 147
 functions); SX29 to SX33 remove ReplyRecv's, SX34 gates the rest against a pinned
-list that may only shrink, and WS-CK removes that list by class: refusals
-after a write in specification bodies and their wrappers (CK1), invocations
-decoded before they perform (CK2), and pre-state reads and fields held
-across a write (CK3). The boot's holds are out of scope. Plan:
+list that may only shrink, and WS-CK removes that list: first the object
+table carries `objects.invExt` in its type (CK1), then by class refusals
+after a write in specification bodies and their wrappers (CK2), invocations
+decoded before they perform (CK3), and pre-state reads and fields held
+across a write (CK4). The boot's holds are out of scope. Plan:
 [`REFUSAL_CHECKS_FIRST_PLAN.md`](../planning/REFUSAL_CHECKS_FIRST_PLAN.md).
 **Standing constraints for new code until it lands:** a new refusal on a
 committing entry is checked before the first write, and a new read of the

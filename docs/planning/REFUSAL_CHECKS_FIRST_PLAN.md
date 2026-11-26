@@ -10,7 +10,7 @@
 > **Prefix**: `CK`. `ck<digit>` matches no identifier in the tree (measured at
 > `v0.37.58` over `SeLe4n/`, `tests/`, `rust/` and `scripts/`, `Cargo.lock`
 > excluded), so the identifier-naming gate can enforce the family.
-> **Rows**: CK1–CK3, numbered in the order they are implemented, one PR each.
+> **Rows**: CK1–CK4, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. No two rows run in parallel.
 
 ## 1. The problem
@@ -33,7 +33,7 @@ state, and the write that follows does not refuse.
 SX29 takes the holds of ReplyRecv's legs and SX32 and SX33 ReplyRecv's own (class
 b, D52, D53); SX34 lands the gate, with a pinned list of the holds this
 workstream removes, which may only shrink. WS-CK takes the rest, by class
-(D51):
+(D51), after CK1 puts `objects.invExt` in the object table's type:
 
 | Class | What holds the state | Functions |
 |---|---|---|
@@ -66,11 +66,12 @@ SX34's pinned list is the exact remainder when this workstream opens.
 
 | Row | Change | Proofs | Gates and fixtures | Estimate |
 |---|---|---|---|---|
-| CK1 | Classes (d) and (a): each specification body's refusals after a write moved before its first write; each wrapper over it then carries its callee's state. | Each body's and wrapper's unconditional equality to its specification; the invariant and non-interference proofs restated where a refusal now reports a different state. | SX34's pinned list shrinks by every (d) and (a) entry; Tier 3 anchors; every heap reading 0 | 5–7 |
-| CK2 | Class (c): the invocation dispatch decodes and checks before it performs, as seL4's `decodeInvocation` does (`dispatchInvocationByR` and the configure, service, overflow, priority, resume, copy and finalise sites). | Each decode/perform split's equality to its specification. | SX34's pinned list shrinks by every (c) entry; Tier 3 anchors | 3–5 |
-| CK3 | Classes (e) and (f): each read of the pre-state, or of a field of it, moved before the write it follows. | Each moved read's equality. | SX34's pinned list empty; the gate then refuses any hold | 3–4 |
+| CK1 | The object table carries `objects.invExt` by construction (the owner's ruling, 2026-11-26): the table's type holds the proof, every insert and erase returns it, and the store reads it from the type instead of taking `hObjInv`. Each checks-first form then gets its unconditional equality to its specification with no in-place guard, since a read across a store at another key no longer needs a hypothesis the code cannot test. The general path's defensive arms that run only off `invExt` are retired, as unreachable by type (WS-SX D60 lists them: the reply-receive composite's post-leg pop `.error` arm and its reply-leg `.error` arm). A refused reply-receive's receive is then decided before the context return (WS-SX D60's option (c)), its frames across `receiveReturnSchedContext` no longer under a hypothesis. | The table's operations' and every store's lemmas restated over the carried proof; each checks-first form's unconditional equality without its in-place guard; the reply-receive composite's equality with the two arms gone and the receive's admission read first. | Every `@[csimp]` unconditional with no in-place guard on a checks-first form; Tier 3 anchors; every heap reading 0 | 4–6 (not measured; measured at the row's start) |
+| CK2 | Classes (d) and (a): each specification body's refusals after a write moved before its first write; each wrapper over it then carries its callee's state. This includes the reply transfer shared by the `.reply` arm and the reply-receive signal arm (`endpointReplyCrossCoreDispatch`, through `replyTransferOnCoreChecked`): its recorded-server and target sentinels (`.invalidArgument 0`) and its pop's refusals (`applyReplyDonationOnCore`: the holder's sentinel, `returnDonatedSchedContextResolved`, `keepDonatedSchedContextResolved`, `popUnheldReplyHead`) run after the reply leg's writes and report the entry state, off the invariant only (WS-SX D60). The admission design is the reply-receive one (`replyRecvPopAdmits`, WS-SX SX33): the two sentinels read on the entry state, and the pop's commit test (`replyRecvPopAdmitsCore` at the answered reply object) read before `endpointReplyOnCore`, with a commit lemma of its own for `applyReplyDonationOnCore`, which is keyed by the holder and deschedules. | Each body's and wrapper's unconditional equality to its specification; the invariant and non-interference proofs restated where a refusal now reports a different state. | SX34's pinned list shrinks by every (d) and (a) entry; Tier 3 anchors; every heap reading 0 | 5–7 |
+| CK3 | Class (c): the invocation dispatch decodes and checks before it performs, as seL4's `decodeInvocation` does (`dispatchInvocationByR` and the configure, service, overflow, priority, resume, copy and finalise sites). | Each decode/perform split's equality to its specification. | SX34's pinned list shrinks by every (c) entry; Tier 3 anchors | 3–5 |
+| CK4 | Classes (e) and (f): each read of the pre-state, or of a field of it, moved before the write it follows. | Each moved read's equality. | SX34's pinned list empty; the gate then refuses any hold | 3–4 |
 
-About 11–16 sessions. **Closure**: CK3, when SX34's pinned list is empty.
+About 15–22 sessions. **Closure**: CK4, when SX34's pinned list is empty.
 
 ## 5. Risks
 
