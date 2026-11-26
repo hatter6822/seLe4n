@@ -410,3 +410,59 @@ theorem endpointReplyRecvAnsweringOnCore_answerFirst_of_tail
           obtain ⟨replySummary, st1p⟩ := w
           exact hTail st1 sgi returnedSc? st1q replySummary st1p h1 h2 h3
 
+
+/-- **The caller answered in the reply step** (seL4's `doReplyTransfer` before
+`handleRecv`): for an ordinary answer and a fault restart, the composite written
+with the answer before the receive leg is `endpointReplyRecvAnsweringOnCore`.
+On every state the reply step can leave, the caller is not the receiver and not
+the send queue's head at the receive's entry, no resize of the object table is
+due, and, on an ordinary answer, a message the caller holds fits in its
+registers (no overflow word, so the physical-write log is untouched).  A
+declined fault reply (`abandon`) is not covered: its downstream proofs are
+restated with the definition switch (WS-SX D57). -/
+theorem endpointReplyRecvAnsweringOnCore_answerFirst
+    (answer : Option Architecture.FaultReplyOutcome) (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
+    (ec : CoreId) (st : SystemState)
+    (hAns : answer ≠ some .abandon) (hc : prevCaller ≠ tid)
+    (hStep : ∀ st1 sgi returnedSc? st1q replySummary st1p,
+      endpointReplyOnCore tid prevCaller msg ec st = (st1, .ok sgi) →
+      replyRecvPopDonation rid prevCaller st1 = .ok (returnedSc?, st1q) →
+      replyRecvReplyTransfer answer st tid prevCaller grant st1q = .ok (replySummary, st1p) →
+      st1p.objects.noResizeDue ∧
+      receiveRendezvousSender? (receiveReturnSchedContext true st1p tid) epId ≠ some prevCaller ∧
+      (answer = none → ∀ t m, st1p.getTcb? prevCaller = some t → t.pendingMessage = some m →
+        m.registers.size ≤ 4)) :
+    (let recordedServer := (recordedReplyServer? st prevCaller).getD tid
+     match endpointReplyOnCore tid prevCaller msg ec st with
+     | (_, .error e) => (Except.error e : Except KernelError (CapTransferSummary × SystemState))
+     | (st1, .ok _) =>
+         match replyRecvPopDonation rid prevCaller st1 with
+         | .error e => .error e
+         | .ok (returnedSc?, st1q) =>
+         match replyRecvReplyTransfer answer st tid prevCaller grant st1q with
+         | .error e => .error e
+         | .ok (replySummary, st1p) =>
+         match endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+             (receiveReturnSchedContext true
+               (replyRecvAnswerCaller answer st1p prevCaller replySummary.capInfo) tid) with
+         | (_, .error e) => .error e
+         | (st2, .ok (nextThread, summary, _)) =>
+             match replyRecvPostReceiveDonation tid recordedServer nextThread ec returnedSc? st2 with
+             | .error e => .error e
+             | .ok ((), st3) =>
+                 .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer ec)) =
+      endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st := by
+  apply endpointReplyRecvAnsweringOnCore_answerFirst_of_tail
+  intro st1 sgi returnedSc? st1q replySummary st1p h1 h2 h3
+  obtain ⟨hNo, hHead, hLog⟩ := hStep st1 sgi returnedSc? st1q replySummary st1p h1 h2 h3
+  cases answer with
+  | none =>
+    exact replyRecvReceiveTail_stageFirst prevCaller replySummary.capInfo epId tid rid _ ec
+      returnedSc? st1p hNo hc hHead (hLog rfl)
+  | some o =>
+    cases o with
+    | restart f =>
+      exact replyRecvReceiveTail_restartFirst prevCaller f epId tid rid _ ec returnedSc? st1p
+        hNo hc hHead
+    | abandon => exact absurd rfl hAns
