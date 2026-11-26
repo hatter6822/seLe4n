@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.60-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.61-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -136,7 +136,7 @@ seLe4n 是一个用 Lean 4 从零构建的微内核。每个内核转换都是�
 
 | 属性 | 值 |
 |------|-----|
-| **版本** | `0.37.60` |
+| **版本** | `0.37.61` |
 | **Lean 工具链** | `v4.28.0` |
 | **生产代码行数** | 691,994 行，分布于 705 个文件 |
 | **测试代码行数** | 91,877 行，分布于 71 个测试套件 |

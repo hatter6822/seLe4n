@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.60-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.37.61-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -160,7 +160,7 @@ seLe4n — мікроядро, побудоване з нуля на Lean 4. К�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.37.60` |
+| **Версія** | `0.37.61` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовий код (Lean LoC)** | 691 994 рядки у 705 файлах |
 | **Тестовий код (Lean LoC)** | 91 877 рядків у 71 тест-сьюті |

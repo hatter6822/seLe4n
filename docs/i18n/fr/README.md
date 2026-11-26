@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.60-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.61-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -166,7 +166,7 @@ points ci-dessous y renvoient.
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.37.60` |
+| **Version** | `0.37.61` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
 | **LoC Lean de production** | 691 994 réparties sur 705 fichiers |
 | **LoC Lean de test** | 91 877 réparties sur 71 suites de tests |

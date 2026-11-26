@@ -1,3 +1,50 @@
+## v0.37.61 — The reply-receive answers its caller in the reply step (WS-SX SX32)
+
+SX32 is on SX31.  It is not proof-only: the fault fast forms change
+order (D59).  `RefusalCarryingReplyRecv.c` is byte-identical to SX29's,
+since the performers keep their signatures.  No refusal changes; that is
+SX33's.
+
+- **The switch.**  `endpointReplyRecvAnsweringOnCore` writes the
+  replied-to caller's frame, or answers its fault, after the reply leg,
+  the pop and the reply's capability transfer and before the receive
+  leg, as seL4's `doReplyTransfer` does before `handleRecv`.  The
+  priority-inheritance reversion and the holder's deschedule stay after
+  the receive (D53).
+- **Both fault kinds answer first in the compiled forms (D59).**  The
+  block, take and Call-take fault performers run the answer on the
+  popped reply leg and the tail on the answered state.  Every
+  `@[csimp]` stays unconditional: the receive, take and Call-take guards
+  are carried across the answer (`answerGuardFrame`) with no invariant
+  premise.  The duplicate fault forms that answered last are retired
+  (`callFaultTakeLegsW`, `callFaultTakeLegsLong`, `callFaultTakeLegsLongW`
+  and their equalities, `faultTakeLegsLong`, `faultTakeFrame_stagedLong`,
+  `callAnswerFrame_staged`), with five lemmas nothing reads any more.
+- **The theorems.**  The composed in-place theorems go through SX31's
+  equality for the ordinary answer and the restart, at a known reply step
+  (`_answerFirst_at`), and directly on the composite for the abandon.
+  The families (records, run queues, readiness, saved registers,
+  lenders, queue labels, the IPC bundle) and the write and lock sets
+  follow the new order; the records close the caller's fault record
+  before the receive.  The quiet branch reads its buffer frame per
+  consumer (D58).
+- **The reply step's state.**  `replyRecvReplyStepState`, total, with
+  each family holding at it from the reply leg's and the pop's success:
+  the state SX33's refused receive reports.
+- **Weakenings.**  The CapsDelivered `_transfer` theorems and
+  `held_transfer` take `tid ≠ c`, and `take_of_pop` and `callTake_of_pop`
+  take the head and the caller apart and no resize due; every caller
+  discharges them from the arm's facts.
+- **Anchors.**  13 Tier 3 relation anchors restated or added, each
+  break-tested by breaking the relation it pins (the six fault fast forms,
+  the composite's receive entry and its absent trailing answer, the write
+  set, the replenish cores, the reply step's state, and both equalities'
+  conclusions), 21 presence anchors, the reachability pin and the
+  store-reader baseline.
+- **Measurements.**  `RefusalCarryingReplyRecv.c` byte-identical to SX29's
+  kept copy (12,944,474 bytes).  The IR measurement reads 1,498, the same
+  lines.
+
 ## v0.37.60 — The answer-first equality, and the run queue's order-independent dequeue (WS-SX SX31)
 
 SX31 is on SX30.  It is not proof-only: it makes two compiled changes
