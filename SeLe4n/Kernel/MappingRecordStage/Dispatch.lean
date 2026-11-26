@@ -785,13 +785,16 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
   rename_i xs st1p hX
   rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
   have hXs := receiveTransferCaps_mappingStage hX
-  have hRet := receiveReturnSchedContext_mappingStage true st1p tid
+  -- the caller's answer, in the reply step (WS-SX SX32)
+  have hA := replyRecvAnswerCaller_mappingStage answer st1p prevCaller xs.capInfo
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at h hA
+  have hRet := receiveReturnSchedContext_mappingStage true st1a tid
   have hV := endpointReceiveDualWithCapsOnCore_mappingStage (endpointId := epId)
     (receiver := tid) (replyId := some rid)
-    (executingCore := executingCore) (st := receiveReturnSchedContext true st1p tid)
+    (executingCore := executingCore) (st := receiveReturnSchedContext true st1a tid)
   revert h hV
   generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
-    (receiveReturnSchedContext true st1p tid) = r2
+    (receiveReturnSchedContext true st1a tid) = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h
@@ -803,10 +806,9 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
   · cases h
   rename_i st3 hPost
   cases h
-  exact ((((((hR.trans hP).trans hXs).trans hRet).trans hV).trans
+  exact ((((((hR.trans hP).trans hXs).trans hA).trans hRet).trans hV).trans
     (replyRecvPostReceiveDonation_mappingStage hPost)).trans
-    (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
-    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)
+    (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)
 
 /-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
 the donation's. -/

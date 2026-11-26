@@ -28,8 +28,9 @@ guard across every reply arm's leg, pop and transfer
 `popUnheldSettled_takeGuard`, `takeGuard_of_transferFrame`,
 `receiveReturnSchedContext_takeGuard`).  It also holds the writes the takes
 share: the taker's frame (`writeTakerFrame`), the long delivery past another
-thread's write (`deliverLongReplyRecvFrame_mapTcbInPlace`) and the fault
-answer's message (`performFaultAnswer_msg`).  The composed take over every arm
+thread's write (`deliverLongReplyRecvFrame_mapTcbInPlace`).  The fault answer
+runs before the take (WS-SX SX32), so no take frame commutes past it.  The
+composed take over every arm
 and answer is `ReplyRecvTakeComposed`; the Call takes read the same frame.
 -/
 
@@ -586,31 +587,6 @@ theorem performFaultAnswer_noResizeDue (X : SystemState) (c : SeLe4n.ThreadId)
     · split
       · exact updateTcb_noResizeDue _ _ _ hNo
       · exact updateTcb_noResizeDue _ _ _ hNo
-
-/-- **The fault answer commutes past another thread's message-slot write**:
-it reads the caller's placement and home and writes the caller (and, on an
-abandon, the run queue), none of which a message-slot write of `r` moves. -/
-theorem performFaultAnswer_msg (X : SystemState) (c r : SeLe4n.ThreadId)
-    (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
-    (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat)
-    (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n off : Nat)
-    (hNe : c ≠ r) (hNo : X.objects.noResizeDue) :
-    performFaultAnswer (X.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) c kind label ip sp lr
-        x0 x1 x2 x3 x4 x5 x6 x7 layout rf n off =
-      (performFaultAnswer X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n
-        off).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
-  unfold performFaultAnswer applyFaultRestart faultAbandonOnCore faultAbandonCore
-  rw [placedCoreOf?_msg, determineTargetCore_msg]
-  split
-  · exact updateTcb_msg r ρ μ π X c _ hNo (fun h => absurd h hNe)
-  · split
-    · rw [removeRunnableOnCore_msg]
-      exact updateTcb_msg r ρ μ π _ c _ (removeRunnableOnCore_noResizeDue _ _ _ hNo)
-        (fun h => absurd h hNe)
-    · split
-      · exact updateTcb_msg r ρ μ π X c _ hNo (fun h => absurd h hNe)
-      · exact updateTcb_msg r ρ μ π X c _ hNo (fun h => absurd h hNe)
 
 end SeLe4n.Kernel
 

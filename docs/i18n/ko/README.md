@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.60-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.61-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -141,7 +141,7 @@ Rust 하드웨어 계층과 함께 대상 기기에서 부팅되는 커널 이�
 
 | 항목 | 값 |
 |------|-----|
-| **버전** | `0.37.60` |
+| **버전** | `0.37.61` |
 | **Lean 툴체인** | `v4.28.0` |
 | **프로덕션 Lean LoC** | 705개 파일, 691,994줄 |
 | **테스트 Lean LoC** | 71개 테스트 스위트, 91,877줄 |

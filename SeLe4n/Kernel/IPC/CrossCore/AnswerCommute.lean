@@ -350,11 +350,15 @@ theorem removeRunnableOnCore_ledger (st : SystemState) (t : SeLe4n.ThreadId) (c 
 theorem modifyObject_ledger (st : SystemState) (o : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
     (recordPhysicalWrites st ws).modifyObject o f = recordPhysicalWrites (st.modifyObject o f) ws := rfl
 
-theorem updateTcb_ledger (st : SystemState) (x : SeLe4n.ThreadId) (f : TCB → TCB)
-    (hNo : st.objects.noResizeDue) :
+theorem updateTcb_ledger (st : SystemState) (x : SeLe4n.ThreadId) (f : TCB → TCB) :
     (recordPhysicalWrites st ws).updateTcb x f = recordPhysicalWrites (st.updateTcb x f) ws := by
-  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo,
-    SystemState.updateTcb_eq_mapTcbInPlace (recordPhysicalWrites st ws) _ _ hNo]; rfl
+  cases h : st.getTcb? x with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none h,
+      SystemState.updateTcb_eq_self_of_none (st := recordPhysicalWrites st ws) h]
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some h,
+      SystemState.updateTcb_eq_of_some (st := recordPhysicalWrites st ws) h]; rfl
 
 theorem runAppendLinks_ledger (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
     (recordPhysicalWrites st ws).runAppendLinks c t p = recordPhysicalWrites (st.runAppendLinks c t p) ws := by
@@ -433,8 +437,7 @@ theorem markKeyChangeParts_ledger (st : SystemState) (tid : SeLe4n.ThreadId) (p0
     · rfl
     · exact markKeyFlagsOver_ledger ws st _ _ _ _
 
-theorem updatePipBoostOnCore_ledger (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hNo : st.objects.noResizeDue) :
+theorem updatePipBoostOnCore_ledger (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
     PriorityInheritance.updatePipBoostOnCore (recordPhysicalWrites st ws) c tid =
       recordPhysicalWrites (PriorityInheritance.updatePipBoostOnCore st c tid) ws := by
   rw [PriorityInheritance.updatePipBoostOnCore_eq_impl]
@@ -449,13 +452,12 @@ theorem updatePipBoostOnCore_ledger (st : SystemState) (c : CoreId) (tid : SeLe4
       PriorityInheritance.optCode_computeMaxWaiterPriority]
     split
     · rfl
-    · rw [updateTcb_ledger ws st tid _ hNo]
+    · rw [updateTcb_ledger ws st tid _]
       split
       · rw [runRequeueOnCore_ledger, markKeyChangeParts_ledger]
       · rw [markKeyChangeParts_ledger]
 
-theorem propagatePipChainStateWalk_ledger (st : SystemState) (tid : SeLe4n.ThreadId) (fuel : Nat)
-    (hNo : st.objects.noResizeDue) :
+theorem propagatePipChainStateWalk_ledger (st : SystemState) (tid : SeLe4n.ThreadId) (fuel : Nat) :
     PriorityInheritance.propagatePipChainStateWalk (recordPhysicalWrites st ws) tid fuel =
       recordPhysicalWrites (PriorityInheritance.propagatePipChainStateWalk st tid fuel) ws := by
   induction fuel generalizing st tid with
@@ -464,18 +466,17 @@ theorem propagatePipChainStateWalk_ledger (st : SystemState) (tid : SeLe4n.Threa
     unfold PriorityInheritance.propagatePipChainStateWalk
     show (match PriorityInheritance.blockingServer st tid with | some s => _ | none => _) = _
     rw [show determineTargetCore (recordPhysicalWrites st ws) tid = determineTargetCore st tid from rfl,
-      updatePipBoostOnCore_ledger ws st _ _ hNo]
+      updatePipBoostOnCore_ledger ws st _ _]
     cases PriorityInheritance.blockingServer st tid with
     | none => rfl
-    | some s => exact ih _ _ (updatePipBoostOnCore_noResizeDue _ _ _ hNo)
+    | some s => exact ih _ _
 
-theorem propagatePipChainCrossCore_ledger (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
-    (hNo : st.objects.noResizeDue) :
+theorem propagatePipChainCrossCore_ledger (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) :
     (PriorityInheritance.propagatePipChainCrossCore (recordPhysicalWrites st ws) tid ec).1 =
       recordPhysicalWrites (PriorityInheritance.propagatePipChainCrossCore st tid ec).1 ws := by
   rw [PriorityInheritance.propagatePipChainCrossCore_eq_walks,
     PriorityInheritance.propagatePipChainCrossCore_eq_walks]
-  exact propagatePipChainStateWalk_ledger ws st tid _ hNo
+  exact propagatePipChainStateWalk_ledger ws st tid _
 
 end Ledger
 

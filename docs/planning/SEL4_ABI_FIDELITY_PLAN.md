@@ -891,6 +891,25 @@ A different answer changes only the rows that cite it.
   sessions. SX32 switches the definition anyway, so it restates the
   abandon's downstream proofs directly on the switched composite; the
   commutation buys nothing SX32 does not already do.
+- **D58. The quiet branch reads its buffer frame per consumer.** *SX32's
+  finding 1, the coordinator's ruling (2026-11-26): route (a), the generic
+  ledger family.* An ordinary answer longer than four words stages its
+  overflow words by recording them in the physical-write log, so SX31's
+  equality gains a second premise beside the short message (D55): the
+  dequeued sender asks to transfer nothing, so the tail records nothing and
+  commutes with the recording (`replyRecvReceiveTail_ledger`), and every
+  result of the tail reads the caller's IPC buffer as the reply step left it
+  (`ipcWordReadsAgree`). No generic buffer frame of the tail exists; each
+  consumer proves it on its own path.
+- **D59. Both fault kinds answer first in the compiled forms.** *SX32's
+  finding 2, the coordinator's ruling (2026-11-26): option B.* seL4's
+  `doReplyTransfer` runs `handleFaultReply` before `handleRecv` for a restart
+  and an abandon alike, so the block, take and Call-take fault performers run
+  the answer on the popped reply leg and the tail on the answered state. Each
+  `@[csimp]` stays unconditional: the receive, take and Call-take guards the
+  tail reads are carried across the answer (`answerGuardFrame`: every slot
+  but the caller's agrees off its run links, and the caller's keeps the codes
+  the guards read). The duplicate fault forms that answered last are retired.
 
 ## 4. Rows
 
@@ -1571,17 +1590,19 @@ is 21,021,237 bytes and compiles in 769 s.
 - `RefusalCarryingReplyRecv.c` unchanged against SX29's kept copy, or its difference reported;
 - every heap reading 0.
 
-### SX32 — The caller's answer in the reply step (D53, D54)
+### SX32 — The caller's answer in the reply step (D53, D54, D58, D59)
+
+**LANDED at `v0.37.61`** (not proof-only: the fault fast forms answer first, D59). `endpointReplyRecvAnsweringOnCore` answers the caller after the reply leg, the pop and the reply's capability transfer and before the receive leg. The in-place theorems are restated through SX31's equality for the ordinary answer and the restart, at a known reply step (`_answerFirst_at`), and directly for the abandon; the take and Call-take guards are carried across the fault answer (`answerGuardFrame`) with no invariant premise. The families (records, run queues, readiness, saved registers, lenders, queue labels, the IPC bundle) and the write and lock sets follow the new order; KernelRecords closes the caller's fault record before the receive. SX33's lemma is `replyRecvReplyStepState` with each family at it. Weakenings: the CapsDelivered `_transfer` theorems and `held_transfer` take `tid ≠ c`, and `take_of_pop` and `callTake_of_pop` take the head and the caller apart and no resize due, all discharged by their callers from the arm's facts; the quiet branch takes a buffer-read frame per consumer (D58).
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX32.1 | The reply step answers the caller before the receive, on every path, as seL4's `doReplyTransfer` does: the reply leg, the pop and the reply's capability transfer, then the caller's frame written or its fault answered (`replyRecvAnswerCaller`), all before the receive leg. No refusal changes. The priority-inheritance reversion and the holder's deschedule stay after the receive (D53). | The composed in-place theorems, the invariant families and the write sets restated through SX31's equality, unconditionally where it holds, and directly on the switched composite for a fault abandon, which SX31's equality does not cover (D57); the lemma SX33 reports from: the state after the reply step satisfies the invariant families. | Tier 3 anchors, censuses and conformance rows; `RefusalCarryingReplyRecv.c` no larger than SX29's (12,944,474 bytes) and its compile about 500 s or less |
 
 **Acceptance:**
-- the caller answered in the reply step on every path, each in-place equality restated without an invariant premise;
-- `RefusalCarryingReplyRecv.c` no larger than 12,944,474 bytes and its compile about 500 s or less;
+- the caller answered in the reply step on every path, each in-place equality restated without an invariant premise (**met**);
+- `RefusalCarryingReplyRecv.c` no larger than 12,944,474 bytes and its compile about 500 s or less (**met**: byte-identical to SX29's, the performers' signatures unchanged);
 - every heap reading 0, `own-context-reply-recv-takes-call` among them;
-- the IR measurement run again and its count reported against 1,498.
+- the IR measurement run again and its count reported against 1,498 (**met**: 1,498, the same lines).
 
 ### SX33 — ReplyRecv's refusals in seL4's order (D51, D52, D53)
 

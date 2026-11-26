@@ -30,12 +30,185 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 
-theorem ipcBufferReadsAgree_descheduleAtPlacement (s : SystemState) (t : SeLe4n.ThreadId) :
-    ipcBufferReadsAgree (descheduleAtPlacement s t) s := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · exact ipcBufferReadsAgree_removeRunnableOnCore _ _ _
-  · exact .refl _
+/-! ## The receive leg's guard across the caller's fault answer
+
+The fault answer (`faultReplyApplyOnCore`) writes the caller's own TCB — its
+restart frame, its fault record, its thread state — and, on an abandon, takes
+it off its core's run queue, which rewrites its neighbours' run-queue links.
+None of that is read by the receive leg's guard: the caller's slot keeps its
+kind and its stash codes, every other slot keeps everything off its run-queue
+links.  So the receive, run after the answer as seL4's `doReplyTransfer` runs
+before `handleRecv` (WS-SX SX32), is guarded as it was before it. -/
+
+/-- What the caller's fault answer leaves of the state the receive's guards
+read: the table's finds; every slot but the caller's off its run-queue links;
+the caller's slot the same off its run-queue links, or a TCB keeping its
+`ipcStateCode` and `pendingReceiveReplyCode`. -/
+def answerGuardFrame (c : SeLe4n.ThreadId) (s' s : SystemState) : Prop :=
+  s'.objectsKeepFinds s ∧
+    (∀ x, x ≠ c.toObjId → (s'.objects[x]?).map KernelObject.withoutRunLinks =
+      (s.objects[x]?).map KernelObject.withoutRunLinks) ∧
+    ((s'.objects[c.toObjId]?).map KernelObject.withoutRunLinks =
+        (s.objects[c.toObjId]?).map KernelObject.withoutRunLinks ∨
+      ∃ t t', s.objects[c.toObjId]? = some (.tcb t) ∧ s'.objects[c.toObjId]? = some (.tcb t') ∧
+        t'.ipcStateCode = t.ipcStateCode ∧ t'.pendingReceiveReplyCode = t.pendingReceiveReplyCode)
+
+theorem answerGuardFrame_of_offRunLinks {c : SeLe4n.ThreadId} {s' s : SystemState}
+    (hK : s'.objectsKeepFinds s) (h : s'.objectsAgreeOffRunLinks s) : answerGuardFrame c s' s :=
+  ⟨hK, fun x _ => h x, .inl (h _)⟩
+
+/-- A run-queue-only step, then a caller write: the frame composes. -/
+theorem answerGuardFrame.trans_offRunLinks {c : SeLe4n.ThreadId} {a b d : SystemState}
+    (h₂ : answerGuardFrame c d b) (hK : b.objectsKeepFinds a) (h₁ : b.objectsAgreeOffRunLinks a) :
+    answerGuardFrame c d a := by
+  refine ⟨h₂.1.trans hK, fun x hx => (h₂.2.1 x hx).trans (h₁ x), ?_⟩
+  rcases h₂.2.2 with h | ⟨t, t', ht, ht', e1, e2⟩
+  · exact .inl (h.trans (h₁ _))
+  · obtain ⟨t0, h0, e0⟩ := agreeAt_tcb (h₁ c.toObjId).symm ht
+    refine .inr ⟨t0, t', h0, ht', ?_, ?_⟩
+    · rw [e1]; exact (congrArg TCB.ipcStateCode e0).symm
+    · rw [e2]; exact (congrArg TCB.pendingReceiveReplyCode e0).symm
+
+/-- A write to the caller's TCB keeping its stash codes. -/
+theorem answerGuardFrame_mapTcbInPlace (s : SystemState) (c : SeLe4n.ThreadId) (g : TCB → TCB)
+    (hC : ∀ t, (g t).ipcStateCode = t.ipcStateCode)
+    (hP : ∀ t, (g t).pendingReceiveReplyCode = t.pendingReceiveReplyCode) :
+    answerGuardFrame c (s.mapTcbInPlace c g) s := by
+  refine ⟨SystemState.mapTcbInPlace_keepsFinds _ _ _, fun x hx => ?_, ?_⟩
+  · rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
+  · rw [SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _)]
+    cases e : s.objects[c.toObjId]? with
+    | none => exact .inl rfl
+    | some o =>
+      cases o with
+      | tcb t => exact .inr ⟨t, g t, rfl, rfl, hC t, hP t⟩
+      | _ => exact .inl rfl
+
+/-- **The caller's fault answer keeps what the receive's guards read.** -/
+theorem faultReplyApplyOnCore_answerGuardFrame (s : SystemState) (c : SeLe4n.ThreadId)
+    (f : Architecture.FaultReplyOutcome) (hNo : s.objects.noResizeDue) :
+    answerGuardFrame c (faultReplyApplyOnCore s c f) s ∧
+      (faultReplyApplyOnCore s c f).objects.noResizeDue := by
+  cases f with
+  | restart frame =>
+    show answerGuardFrame c (applyFaultRestart s c frame) s ∧
+      (applyFaultRestart s c frame).objects.noResizeDue
+    unfold applyFaultRestart
+    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
+    exact ⟨answerGuardFrame_mapTcbInPlace s c _ (fun _ => rfl) (fun _ => rfl), hNo⟩
+  | abandon =>
+    show answerGuardFrame c (faultAbandonOnCore s c (faultAbandonCore s c)) s ∧
+      (faultAbandonOnCore s c (faultAbandonCore s c)).objects.noResizeDue
+    unfold faultAbandonOnCore
+    have hNo1 := removeRunnableOnCore_noResizeDue s c (faultAbandonCore s c) hNo
+    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1]
+    refine ⟨?_, hNo1⟩
+    exact (answerGuardFrame_mapTcbInPlace _ c
+      (fun tcb => { tcb.setPendingFault none with threadState := .Inactive })
+      (fun _ => rfl) (fun _ => rfl)).trans_offRunLinks
+      (removeRunnableOnCore_keepsFinds s c _) (removeRunnableOnCore_objectsAgreeOffRunLinks s c _)
+
+namespace answerGuardFrame
+
+variable {c : SeLe4n.ThreadId} {s' s : SystemState}
+
+/-- Every slot keeps its kind. -/
+theorem getObjectType? (h : answerGuardFrame c s' s) (x : SeLe4n.ObjId) :
+    s'.getObjectType? x = s.getObjectType? x := by
+  by_cases hx : x = c.toObjId
+  · subst hx
+    rcases h.2.2 with e | ⟨t, t', ht, ht', -, -⟩
+    · exact getObjectType?_of_view e
+    · unfold SystemState.getObjectType?; rw [ht, ht']; rfl
+  · exact getObjectType?_of_view (h.2.1 x hx)
+
+/-- An object other than a TCB is kept. -/
+theorem obj (h : answerGuardFrame c s' s) {x : SeLe4n.ObjId} {o : KernelObject}
+    (hNot : ∀ t, o ≠ .tcb t) (hx : s.objects[x]? = some o) : s'.objects[x]? = some o := by
+  by_cases hc : x = c.toObjId
+  · subst hc
+    rcases h.2.2 with e | ⟨t, t', ht, -, -, -⟩
+    · exact agreeAt_of_not_tcb e hNot hx
+    · rw [hx] at ht; cases ht; exact absurd rfl (hNot t)
+  · exact agreeAt_of_not_tcb (h.2.1 x hc) hNot hx
+
+/-- Every thread stays a thread. -/
+theorem getTcb?_isSome (h : answerGuardFrame c s' s) (p : SeLe4n.ThreadId)
+    (hp : (s.getTcb? p).isSome = true) : (s'.getTcb? p).isSome = true := by
+  obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
+  have h1 := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
+  by_cases hc : p.toObjId = c.toObjId
+  · rcases h.2.2 with e | ⟨t0, t', -, ht', -, -⟩
+    · obtain ⟨t', h', -⟩ := agreeAt_tcb (hc ▸ e) h1
+      exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h'⟩
+    · exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (hc ▸ ht')⟩
+  · obtain ⟨t', h', -⟩ := agreeAt_tcb (h.2.1 _ hc) h1
+    exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h'⟩
+
+/-- The stash test reads the same. -/
+theorem stasherTestAt (h : answerGuardFrame c s' s) (x : SeLe4n.ThreadId) (n : Nat) :
+    _root_.SeLe4n.Kernel.stasherTestAt s' x n = _root_.SeLe4n.Kernel.stasherTestAt s x n := by
+  by_cases hc : x.toObjId = c.toObjId
+  · rcases h.2.2 with e | ⟨t, t', ht, ht', e1, e2⟩
+    · exact stasherTestAt_of_view (hc ▸ e) n
+    · unfold _root_.SeLe4n.Kernel.stasherTestAt SystemState.getTcb?
+      rw [hc, ht, ht']
+      simp only [e1, e2]
+  · exact stasherTestAt_of_view (h.2.1 _ hc) n
+
+end answerGuardFrame
+
+/-- **The receive leg's guard carries across the caller's answer**: the
+endpoint, the receiver (not the caller) and its admission, and
+`receiveBlocksInPlace`, read before the answer, hold after it. -/
+theorem receiveGuard_of_answerGuardFrame {c : SeLe4n.ThreadId} {s' s : SystemState}
+    (h : answerGuardFrame c s' s)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {tid : SeLe4n.ThreadId} {rt : TCB}
+    {tail? : Option SeLe4n.ThreadId} {rid? : Option SeLe4n.ReplyId} (hNe : tid ≠ c)
+    (hE : s.objects[epId]? = some (.endpoint ep))
+    (hR : s.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hG : receiveBlocksInPlace s epId tid tail? rid? = true) :
+    s'.objects[epId]? = some (.endpoint ep) ∧
+      (∃ rt', s'.objects[tid.toObjId]? = some (.tcb rt') ∧ receiveBlockAdmits rt' = true ∧
+        rt'.boundNotificationCode = rt.boundNotificationCode) ∧
+      receiveBlocksInPlace s' epId tid tail? rid? = true := by
+  have hTc : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  refine ⟨h.obj (fun _ e => by cases e) hE, ?_, ?_⟩
+  · obtain ⟨rt', h1, e⟩ := agreeAt_tcb (h.2.1 _ hTc) hR
+    refine ⟨rt', h1, ?_, ?_⟩
+    · have : receiveBlockAdmits rt' = receiveBlockAdmits rt'.withoutRunLinks := rfl
+      rw [this, e]; exact hA
+    · show rt'.withoutRunLinks.boundNotificationCode = rt.withoutRunLinks.boundNotificationCode
+      rw [e]
+  · unfold receiveBlocksInPlace at hG ⊢
+    simp only [Bool.and_eq_true] at hG ⊢
+    obtain ⟨⟨hEnq, hSt⟩, hRec⟩ := hG
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ h.1 h.getObjectType? h.getTcb?_isSome hEnq, ?_⟩, ?_⟩
+    · revert hSt
+      cases rid? with
+      | none => intro _; rfl
+      | some rid =>
+        simp only [SystemState.replyStashValid]
+        cases hr : s.getReply? rid with
+        | none => intro e; cases e
+        | some r =>
+          intro hs
+          have h1 := h.obj (fun _ e => by cases e) ((SystemState.getReply?_eq_some_iff _ _ _).mp hr)
+          rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr h1]
+          dsimp only at hs ⊢
+          rw [replyStashedAt_eq_stasherTestAt] at hs ⊢
+          revert hs
+          cases r.stasherCode with
+          | zero => exact id
+          | succ k => dsimp only; rw [h.stasherTestAt]; exact id
+    · revert hRec
+      cases rid? with
+      | none => exact id
+      | some rid =>
+        simp only [SeLe4n.ReplyId.optCode, replyRecordsInPlace, Bool.and_eq_true]
+        rintro ⟨a, b⟩
+        exact ⟨(h.1 _).trans a, storeLeavesIndexAndTypes_of_frame h.getObjectType? b⟩
 
 /-! ## The per-arm reply legs, blocking
 
@@ -152,13 +325,54 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
       exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
         (s' := S1.mapTcbInPlace c (holdMessage msg)) hV hRec.2⟩
 
+/-- The state the receive leg runs on, in the order the fast forms take: a
+faulted caller's answer first, as the composite now runs it (WS-SX SX32, seL4's
+`doReplyTransfer` before `handleRecv`); an ordinary answer stages a register
+frame, which the fast forms write last (`replyRecvStageLast`), the two orders
+being equal there (`endpointReplyRecvAnsweringOnCore_answerFirst_at`). -/
+@[inline] def replyRecvFaultFirst (answer : Option Architecture.FaultReplyOutcome) (Y : SystemState)
+    (c : SeLe4n.ThreadId) : SystemState :=
+  match answer with
+  | none => Y
+  | some f => faultReplyApplyOnCore Y c f
+
+/-- What is left of the caller's answer once the receive leg has run: the
+ordinary answer's frame staged, reporting `capInfo`; nothing for a fault, answered first
+(`replyRecvFaultFirst`). -/
+@[inline] def replyRecvStageLast (answer : Option Architecture.FaultReplyOutcome) (Z : SystemState)
+    (c : SeLe4n.ThreadId) (capInfo : Nat) : SystemState :=
+  match answer with
+  | none => Architecture.stageDeliveredMessage Z c capInfo
+  | some _ => Z
+
+/-- **The receive's guard on the state it runs on**: read on the state the
+reply leg and the pop leave, it holds on that state with a fault answered first. -/
+theorem replyRecvFaultFirst_receiveGuard (answer : Option Architecture.FaultReplyOutcome)
+    {P : SystemState} {c tid : SeLe4n.ThreadId} {epId : SeLe4n.ObjId} {ep : Endpoint} {rt : TCB}
+    {tail? : Option SeLe4n.ThreadId} {rid? : Option SeLe4n.ReplyId} (hNe : tid ≠ c)
+    (hNo : P.objects.noResizeDue)
+    (hE : P.objects[epId]? = some (.endpoint ep))
+    (hR : P.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hG : receiveBlocksInPlace P epId tid tail? rid? = true) :
+    (replyRecvFaultFirst answer P c).objects[epId]? = some (.endpoint ep) ∧
+      (∃ rt', (replyRecvFaultFirst answer P c).objects[tid.toObjId]? = some (.tcb rt') ∧
+        receiveBlockAdmits rt' = true) ∧
+      receiveBlocksInPlace (replyRecvFaultFirst answer P c) epId tid tail? rid? = true ∧
+      (replyRecvFaultFirst answer P c).objects.noResizeDue := by
+  cases answer with
+  | none => exact ⟨hE, ⟨rt, hR, hA⟩, hG, hNo⟩
+  | some f =>
+    obtain ⟨hF, hNoA⟩ := faultReplyApplyOnCore_answerGuardFrame P c f hNo
+    obtain ⟨a, ⟨r, b, d, -⟩, e⟩ := receiveGuard_of_answerGuardFrame hF hNe hE hR hA hG
+    exact ⟨a, ⟨r, b, d⟩, e, hNoA⟩
+
 /-- **The reply-receive that blocks, in place, on either answer**: under the reply's guard
 (`replyWakesInPlace`), with the receiver the server the caller recorded, no
 sender waiting and the receive's block admissible (read on the pre-state and
-carried across the reply leg, `storeReplyRendezvous_receiveGuard`), the
-composite answering the caller with `answer` is the reply's writes, the
-receive's block, the server's priority walk and the caller answered
-(`replyRecvAnswerCaller`). -/
+carried across the reply leg, `storeReplyRendezvous_receiveGuard`, and across a
+fault answer, `receiveGuard_of_answerGuardFrame`), the composite answering the
+caller with `answer` is the reply's writes, a fault's answer, the receive's
+block, the server's priority walk and an ordinary answer's frame staged. -/
 theorem replyRecvAnsweringOnCore_blocks_inPlace
     (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
@@ -179,41 +393,55 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     (hInert : answer = none →
       replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+      .ok ({ results := #[] }, replyRecvStageLast answer
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true (storeReplyRendezvous st c tid rid msg) tid) epId tid
+            (receiveReturnSchedContext true
+              (replyRecvFaultFirst answer (storeReplyRendezvous st c tid rid msg) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) := by
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     exact hG.1.1.1.2
-  obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
-    hT hIpc hRO hG
   obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
     epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   have hNo1 := storeReplyRendezvous_noResizeDue st c tid rid msg hNo
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid hNo1
-    hE0 hR0 hA0 hG0
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
+  cases answer with
+  | none =>
+    have hXf := replyRecvReplyTransfer_of_inert none st tid c grant ct hTc hInert
+      (storeReplyRendezvous st c tid rid msg)
+    have h := replyRecvOnCore_blocks_transfer st epId tid c rid msg grant core ct ep0 ep hSz hT hIpc
+      hRO hG hS hXf hE0 hR0 hA0 hNo1 hG0 hNe
+    simpa only [CapTransferSummary.capInfo_empty] using h
+  | some f =>
+  obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
+    hT hIpc hRO hG
+  obtain ⟨hF, hNoA⟩ := faultReplyApplyOnCore_answerGuardFrame (storeReplyRendezvous st c tid rid msg)
+    c f hNo1
+  obtain ⟨hE0', ⟨rt0', hR0', hA0', -⟩, hG0'⟩ := receiveGuard_of_answerGuardFrame hF hNe hE0 hR0 hA0
+    hG0
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid hNoA
+    hE0' hR0' hA0' hG0'
   have hRec : recordedReplyServer? st c = some tid := by
     simp only [recordedReplyServer?, hTc, hIpc]
+  simp only [replyRecvStageLast, replyRecvFaultFirst]
   generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hHead hE1 hR1 hG1
+  generalize hA1' : faultReplyApplyOnCore S1 c f = A at hE1 hR1 hG1
   have hPop : replyRecvPopDonation rid c S1 = .ok (none, S1) := by
     unfold replyRecvPopDonation
     rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
     simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
-  have hEp1 : (receiveReturnSchedContext true S1 tid).getEndpoint? epId = some ep :=
+  have hEp1 : (receiveReturnSchedContext true A tid).getEndpoint? epId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core
-      (receiveReturnSchedContext true S1 tid) =
-      (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true S1 tid) epId tid
+      (receiveReturnSchedContext true A tid) =
+      (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true A tid) epId tid
         ep.recvTailCode
         (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
     unfold endpointReceiveDualWithCapsOnCore
     rw [receiveBlock_inPlace_eq _ epId ep tid rt1 (some rid) core hE1 hS hR1 hA1 hG1]
-    have hSnd : (receiveRendezvousSender? (receiveReturnSchedContext true S1 tid) epId).isNone =
+    have hSnd : (receiveRendezvousSender? (receiveReturnSchedContext true A tid) epId).isNone =
         true := by
       simp [receiveRendezvousSender?, hEp1, hS]
     simp only [hSnd, ↓reduceIte]
@@ -222,8 +450,8 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, Option.bind_some, hS,
-    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+  simp only [hRec, Option.getD_some, hEq, hPop, replyRecvReplyTransfer, replyRecvAnswerCaller, hA1',
+    hRecv, Option.bind_some, hS, replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
   simp [applyReceiveLegPipHandoff]
 
 /-- **A donated reply-receive that may block in place**, read on the
@@ -491,17 +719,17 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
     (hInert : answer = none →
       replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+      .ok ({ results := #[] }, replyRecvStageLast answer
         (PriorityInheritance.propagatePipChainCrossCore
           (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer
               (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
-                ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) tid) epId tid
+                ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer
               (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
-                ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) tid) epId tid
+                ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId := by
   obtain ⟨rp', scId, sc, hRp', hN, hScO, hHead, hBelow, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR,
@@ -522,13 +750,31 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
     simp only [recordedReplyServer?, hTc, hIpc]
   have hNoP := popDonationSettledInPlace_noResizeDue _ c tid scId (determineTargetCore st c)
     (storeReplyRendezvous_noResizeDue st c tid rid msg hNo)
-  rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
-  generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hPop hE1 hR1 hG1 hNoP
-  generalize hP : popDonationSettledInPlace S1 c tid scId (determineTargetCore st c) = P
-    at hPop hE1 hR1 hG1 hNoP
-  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+  cases answer with
+  | none =>
+    obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true _ tid hNoP
+      hE1 hR1 hA1 hG1
+    refine ⟨?_, receiveBlock_receiver_blocked _ epId ep tid rt2 (some rid) core hE2 hR2 hA2 hG2⟩
+    have h := replyRecvOnCore_donated_transfer st epId tid c rid msg grant core ct ep0 ep rp hSz hT
+      hIpc hRO hSRes hG hS hRp
+      (S2 := popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid scId
+        (determineTargetCore st c))
+      (by rw [hSc]; exact replyRecvReplyTransfer_of_inert none st tid c grant ct hTc hInert _)
+      hE1 hR1 hA1 hNoP hG1 (fun e => hNe e.symm)
+    simpa only [CapTransferSummary.capInfo_empty] using h
+  | some f =>
+  obtain ⟨hF, hNoA⟩ := faultReplyApplyOnCore_answerGuardFrame _ c f hNoP
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, -⟩, hG1⟩ := receiveGuard_of_answerGuardFrame hF (fun e => hNe e.symm)
     hE1 hR1 hA1 hG1
-  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  simp only [replyRecvStageLast, replyRecvFaultFirst]
+  rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
+  generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hPop hE1 hR1 hG1 hNoA
+  generalize hP : popDonationSettledInPlace S1 c tid scId (determineTargetCore st c) = P
+    at hPop hE1 hR1 hG1 hNoA
+  generalize hAP : faultReplyApplyOnCore P c f = A at hE1 hR1 hG1 hNoA
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true A tid hNoA
+    hE1 hR1 hA1 hG1
+  generalize hQ : receiveReturnSchedContext true A tid = Q at hE2 hR2 hG2
   have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
       (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
@@ -546,7 +792,8 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
   refine ⟨?_, tb, hTb, hBk⟩
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hQ, hRecv, hEp1, Option.bind_some, hS]
+  simp only [hRecS, Option.getD_some, hEq, hPop, replyRecvReplyTransfer, replyRecvAnswerCaller, hAP,
+    hQ, hRecv, hEp1, Option.bind_some, hS]
   simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff]
 
 /-- Whether reply object `rid` has no frame below it on its context's stack, so
@@ -821,17 +1068,17 @@ theorem replyRecvAnsweringOnCore_held_inPlace
     (hInert : answer = none →
       replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+      .ok ({ results := #[] }, replyRecvStageLast answer
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer
               (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg) tid
-                ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+                ⟨replyHeadContextCode st rid - 1⟩) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer
               (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg) tid
-                ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+                ⟨replyHeadContextCode st rid - 1⟩) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId := by
   obtain ⟨rp', scId, sc, _, hRp', hN, hScO, hHead, hBelow, hCode, hCRes, _, hNe, hNo, _, _, hLC, hFC,
@@ -856,9 +1103,24 @@ theorem replyRecvAnsweringOnCore_held_inPlace
   generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hPop hE1 hR1 hG1 hNoP
   generalize hP : keepDonatedSchedContextInPlace S1 tid scId = P
     at hPop hE1 hR1 hG1 hNoP
-  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+  -- the state the receive runs on: a fault answered first, an ordinary answer staged last
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1, hNoY⟩ : (replyRecvFaultFirst answer P c).objects[epId]? =
+        some (.endpoint ep) ∧
+      (∃ rt', (replyRecvFaultFirst answer P c).objects[tid.toObjId]? = some (.tcb rt') ∧
+        receiveBlockAdmits rt' = true) ∧
+      receiveBlocksInPlace (replyRecvFaultFirst answer P c) epId tid ep.receiveQ.tail (some rid) =
+        true ∧ (replyRecvFaultFirst answer P c).objects.noResizeDue := by
+    cases answer with
+    | none => exact ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1, hNoP⟩
+    | some f =>
+      obtain ⟨hF, hNoA⟩ := faultReplyApplyOnCore_answerGuardFrame P c f hNoP
+      obtain ⟨a, ⟨r, b, d, -⟩, e⟩ := receiveGuard_of_answerGuardFrame hF (fun e => hNe e.symm)
+        hE1 hR1 hA1 hG1
+      exact ⟨a, ⟨r, b, d⟩, e, hNoA⟩
+  generalize hY : replyRecvFaultFirst answer P c = Y at hE1 hR1 hG1 hNoY
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true Y tid hNoY
     hE1 hR1 hA1 hG1
-  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  generalize hQ : receiveReturnSchedContext true Y tid = Q at hE2 hR2 hG2
   have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
       (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
@@ -875,9 +1137,33 @@ theorem replyRecvAnsweringOnCore_held_inPlace
     unfold rendezvousDequeuedCall lookupTcb
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
   refine ⟨?_, tb, hTb, hBk⟩
-  unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hQ, hRecv, hEp1, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff]
+  cases answer with
+  | none =>
+    have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true Y tid hNoY
+    have hSnd0 : receiveRendezvousSender? Q epId = none := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [replyRecvFaultFirst] at hY
+    subst hY
+    rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+      (by simp) (Ne.symm (fun e => hNe e.symm)) hEq hPop (hXf P) hNoP (by rw [hQ, hSnd0]; simp)
+      (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+    · simp only [hRecS, Option.getD_some, hQ, hRecv]
+      simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvAnswerCaller,
+        replyRecvStageLast]
+    · simp only [hRecS, Option.getD_some, hQ, hRecv] at hE
+      simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff] at hE
+      obtain ⟨-, rfl⟩ := hE
+      exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+        (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+        ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+          ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+            (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true _ tid hNoP)))).words
+  | some f =>
+    simp only [replyRecvFaultFirst] at hY
+    unfold endpointReplyRecvAnsweringOnCore
+    simp only [hRecS, Option.getD_some, hEq, hPop, hXf, replyRecvAnswerCaller, hY, hQ, hRecv,
+      Option.bind_some, hS]
+    simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvStageLast]
 
 /-- **The unheld pop carries the receive's guard**: on the state the reply leg
 to a caller recording no server and its unheld pop leave, the endpoint is as it
@@ -1052,19 +1338,19 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
     (hInert : answer = none →
       replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+      .ok ({ results := #[] }, replyRecvStageLast answer
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer
               (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
                 (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
-                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer
               (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
                 (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
-                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) c) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId := by
   obtain ⟨rp', scId, hRp', hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, hPopR, hAppl⟩ :=
@@ -1097,9 +1383,23 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
   generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hPopR hE1 hR1 hG1 hNoP
   generalize hP : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace S1 c scId)
     (determineTargetCore st c) scId = P at hPopR hE1 hR1 hG1 hNoP
-  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1, hNoY⟩ : (replyRecvFaultFirst answer P c).objects[epId]? =
+        some (.endpoint ep) ∧
+      (∃ rt', (replyRecvFaultFirst answer P c).objects[tid.toObjId]? = some (.tcb rt') ∧
+        receiveBlockAdmits rt' = true) ∧
+      receiveBlocksInPlace (replyRecvFaultFirst answer P c) epId tid ep.receiveQ.tail (some rid) =
+        true ∧ (replyRecvFaultFirst answer P c).objects.noResizeDue := by
+    cases answer with
+    | none => exact ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1, hNoP⟩
+    | some f =>
+      obtain ⟨hF, hNoA⟩ := faultReplyApplyOnCore_answerGuardFrame P c f hNoP
+      obtain ⟨a, ⟨r, b, d, -⟩, e⟩ := receiveGuard_of_answerGuardFrame hF (hNe)
+        hE1 hR1 hA1 hG1
+      exact ⟨a, ⟨r, b, d⟩, e, hNoA⟩
+  generalize hY : replyRecvFaultFirst answer P c = Y at hE1 hR1 hG1 hNoY
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true Y tid hNoY
     hE1 hR1 hA1 hG1
-  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  generalize hQ : receiveReturnSchedContext true Y tid = Q at hE2 hR2 hG2
   have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
       (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
@@ -1116,10 +1416,33 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
     have h := hG2
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hQ, hRecv, hEp1, Option.bind_some, hS,
-    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
-  simp [applyReceiveLegPipHandoff]
+  cases answer with
+  | none =>
+    have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true Y tid hNoY
+    have hSnd0 : receiveRendezvousSender? Q epId = none := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [replyRecvFaultFirst] at hY
+    subst hY
+    rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+      (by simp) (Ne.symm hNe) hEq hPopR (hXf P) hNoP (by rw [hQ, hSnd0]; simp)
+      (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+    · simp only [hRecS, Option.getD_none, hQ, hRecv]
+      simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
+        replyRecvAnswerCaller, replyRecvStageLast]
+    · simp only [hRecS, Option.getD_none, hQ, hRecv] at hE
+      simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff] at hE
+      obtain ⟨-, rfl⟩ := hE
+      exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+        (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+        ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+          ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+            (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true _ tid hNoP)))).words
+  | some f =>
+    simp only [replyRecvFaultFirst] at hY
+    unfold endpointReplyRecvAnsweringOnCore
+    simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, replyRecvAnswerCaller, hY, hQ, hRecv,
+      Option.bind_some, hS, replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+    simp [applyReceiveLegPipHandoff, replyRecvStageLast]
 
 /-- **The reply leg to a caller recording no server carries the receive's
 guard** (WS-SX SX8.3): on the state the reply leg alone leaves (`storeReplyLeg`,
@@ -1259,13 +1582,15 @@ theorem replyRecvAnsweringOnCore_unlinked_inPlace
     (hInert : answer = none →
       replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+      .ok ({ results := #[] }, replyRecvStageLast answer
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true (storeReplyLeg st c rid msg) tid) epId tid
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer (storeReplyLeg st c rid msg) c)
+              tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
-            (receiveReturnSchedContext true (storeReplyLeg st c rid msg) tid) epId tid
+            (receiveReturnSchedContext true (replyRecvFaultFirst answer (storeReplyLeg st c rid msg) c)
+              tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId := by
   have hW : replyWakesInPlace st c ct rid = true := hG
@@ -1287,28 +1612,46 @@ theorem replyRecvAnsweringOnCore_unlinked_inPlace
     simp only [Reply.consumed, hNext]
   obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyLeg_receiveGuard st c tid rid msg ct rp
     epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
-  have hNo1 := storeReplyLeg_noResizeDue st c rid msg hNo
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid hNo1
-    hE0 hR0 hA0 hG0
+  have hNoP := storeReplyLeg_noResizeDue st c rid msg hNo
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
   have hRecS : recordedReplyServer? st c = none := by
     simp only [recordedReplyServer?, hTc, hIpc]
-  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hHead hE1 hR1 hG1
+  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hHead hE0 hR0 hG0 hNoP
   have hPop : replyRecvPopDonation rid c S1 = .ok (none, S1) := by
     unfold replyRecvPopDonation
     rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
     simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
-  have hEp1 : (receiveReturnSchedContext true S1 tid).getEndpoint? epId = some ep :=
+  have hE1 := hE0
+  have hG1 := hG0
+  obtain ⟨rt1, hR1, hA1⟩ : ∃ r, S1.objects[tid.toObjId]? = some (.tcb r) ∧
+      receiveBlockAdmits r = true := ⟨rt0, hR0, hA0⟩
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1, hNoY⟩ : (replyRecvFaultFirst answer S1 c).objects[epId]? =
+        some (.endpoint ep) ∧
+      (∃ rt', (replyRecvFaultFirst answer S1 c).objects[tid.toObjId]? = some (.tcb rt') ∧
+        receiveBlockAdmits rt' = true) ∧
+      receiveBlocksInPlace (replyRecvFaultFirst answer S1 c) epId tid ep.receiveQ.tail (some rid) =
+        true ∧ (replyRecvFaultFirst answer S1 c).objects.noResizeDue := by
+    cases answer with
+    | none => exact ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1, hNoP⟩
+    | some f =>
+      obtain ⟨hF, hNoA⟩ := faultReplyApplyOnCore_answerGuardFrame S1 c f hNoP
+      obtain ⟨a, ⟨r, b, d, -⟩, e⟩ := receiveGuard_of_answerGuardFrame hF (hNe)
+        hE1 hR1 hA1 hG1
+      exact ⟨a, ⟨r, b, d⟩, e, hNoA⟩
+  generalize hY : replyRecvFaultFirst answer S1 c = Y at hE1 hR1 hG1 hNoY
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true Y tid hNoY
+    hE1 hR1 hA1 hG1
+  have hEp1 : (receiveReturnSchedContext true Y tid).getEndpoint? epId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
   have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core
-      (receiveReturnSchedContext true S1 tid) =
-      (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true S1 tid) epId tid
+      (receiveReturnSchedContext true Y tid) =
+      (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true Y tid) epId tid
         ep.recvTailCode
         (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
     unfold endpointReceiveDualWithCapsOnCore
     rw [receiveBlock_inPlace_eq _ epId ep tid rt1 (some rid) core hE1 hS hR1 hA1 hG1]
-    have hSnd : (receiveRendezvousSender? (receiveReturnSchedContext true S1 tid) epId).isNone =
+    have hSnd : (receiveRendezvousSender? (receiveReturnSchedContext true Y tid) epId).isNone =
         true := by
       simp [receiveRendezvousSender?, hEp1, hS]
     simp only [hSnd, ↓reduceIte]
@@ -1319,10 +1662,33 @@ theorem replyRecvAnsweringOnCore_unlinked_inPlace
     have h := hG1
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_none, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS,
-    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
-  simp [applyReceiveLegPipHandoff]
+  cases answer with
+  | none =>
+    have hNoQ := receiveReturnSchedContext_noResizeDue true Y tid hNoY
+    have hSnd0 : receiveRendezvousSender? (receiveReturnSchedContext true Y tid) epId = none := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [replyRecvFaultFirst] at hY
+    subst hY
+    rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+      (by simp) (Ne.symm hNe) hEq hPop (hXf S1) hNoP (by rw [hSnd0]; simp)
+      (fun _ => .inr ⟨by unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+    · simp only [hRecS, Option.getD_none, hRecv]
+      simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
+        replyRecvAnswerCaller, replyRecvStageLast]
+    · simp only [hRecS, Option.getD_none, hRecv] at hE
+      simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff] at hE
+      obtain ⟨-, rfl⟩ := hE
+      exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+        (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+        ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+          ((ipcBufferReadsAgree_storeReceiveBlock _ epId tid _ _ hNoQ).trans
+            (ipcBufferReadsAgree_receiveReturnSchedContext true _ tid hNoP)))).words
+  | some f =>
+    simp only [replyRecvFaultFirst] at hY
+    unfold endpointReplyRecvAnsweringOnCore
+    simp only [hRecS, Option.getD_none, hEq, hPop, hXf, replyRecvAnswerCaller, hY, hRecv,
+      Option.bind_some, hS, replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+    simp [applyReceiveLegPipHandoff, replyRecvStageLast]
 
 /-- **The reply arm of a reply-receive**: what the reply leg pops, read on the
 pre-state.  An enumeration, so choosing an arm allocates nothing: the context
@@ -1660,11 +2026,12 @@ theorem replyRecvAnsweringOnCore_arm_inPlace (arm : ReplyRecvArm)
     (hRec : replyRecordsInPlace st (rid.val + 1) = true)
     (hInert : answer = none → replyTransferInert st tid ct grant = true) :
     endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, replyRecvAnswerCaller answer
-        (arm.tail (arm.pop (arm.leg st c tid rid msg) c tid scId home) tid rid epId ep.recvTailCode core)
-        c 0) ∧
-      ∃ x, (ReplyRecvArm.blocked (arm.pop (arm.leg st c tid rid msg) c tid scId home) tid rid epId
-          ep.recvTailCode core).getTcb? tid = some x ∧ x.ipcState = .blockedOnReceive epId := by
+      .ok ({ results := #[] }, replyRecvStageLast answer
+        (arm.tail (replyRecvFaultFirst answer (arm.pop (arm.leg st c tid rid msg) c tid scId home) c)
+          tid rid epId ep.recvTailCode core) c 0) ∧
+      ∃ x, (ReplyRecvArm.blocked
+          (replyRecvFaultFirst answer (arm.pop (arm.leg st c tid rid msg) c tid scId home) c) tid rid
+          epId ep.recvTailCode core).getTcb? tid = some x ∧ x.ipcState = .blockedOnReceive epId := by
   cases arm with
   | rendezvous =>
     obtain ⟨⟨ep0, hIpc⟩, hG, hNe, hA, hFree⟩ := hAd
@@ -1677,8 +2044,10 @@ theorem replyRecvAnsweringOnCore_arm_inPlace (arm : ReplyRecvArm)
       exact hG.1.1.1.2
     obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct
       rp epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
-    obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid
+    obtain ⟨hEy, ⟨rty, hRy, hAy⟩, hGy, hNoY⟩ := replyRecvFaultFirst_receiveGuard answer hNe
       (storeReplyRendezvous_noResizeDue st c tid rid msg hNo) hE0 hR0 hA0 hG0
+    obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid
+      hNoY hEy hRy hAy hGy
     exact receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1 hA1 hG1
   | donated =>
     obtain ⟨⟨ep0, hIpc⟩, hSRes, hG, hA, rfl, rfl⟩ := hAd
@@ -1793,7 +2162,8 @@ theorem replyRecvOnCore_arm_delivered (arm : ReplyRecvArm)
   obtain ⟨x', hX', hB'⟩ := arm.ready_blocked st c tid rid msg epId ep.recvTailCode core hNo hNe hX
   unfold endpointReplyRecvOnCore
   rw [hEq]
-  simp only [CapTransferSummary.capInfo_empty, replyRecvAnswerCaller]
+  simp only [CapTransferSummary.capInfo_empty, replyRecvAnswerCaller, replyRecvStageLast,
+    replyRecvFaultFirst]
   have h1 := arm.legReady_noResizeDue st c tid rid hNo
   have hNoX : (arm.ready st c tid rid scId home epId ep.recvTailCode core).objects.noResizeDue := by
     unfold ReplyRecvArm.ready
@@ -1884,7 +2254,8 @@ theorem replyRecvOnCore_arm_deliveredLong (arm : ReplyRecvArm)
     hT hRO hE hS hR hEnq hRp hStash hRec (fun _ => hInert)
   unfold endpointReplyRecvOnCore
   rw [hEq]
-  simp only [CapTransferSummary.capInfo_empty, replyRecvAnswerCaller]
+  simp only [CapTransferSummary.capInfo_empty, replyRecvAnswerCaller, replyRecvStageLast,
+    replyRecvFaultFirst]
   have h1 := arm.legReady_noResizeDue st c tid rid hNo
   have hNoP := arm.pop_noResizeDue (scId := scId) (home := home) _ c tid h1
   have hAP := (arm.ipcBufferReadsAgree_pop (scId := scId) (home := home) _ c tid h1).trans
@@ -1918,53 +2289,33 @@ theorem ReplyRecvArm.ipcBufferReadsAgree_leg (arm : ReplyRecvArm) (st : SystemSt
   exact (ipcBufferReadsAgree_mapTcbInPlace _ c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans
     (arm.ipcBufferReadsAgree_legReady st c tid rid hNo)
 
-/-- The arm's writes after a fault answer's reply leg, in place. -/
-@[inline] def ReplyRecvArm.faultReady (arm : ReplyRecvArm) (st : SystemState)
-    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId)
-    (epId : SeLe4n.ObjId) (tailCode : Nat)
-    (core : CoreId) : SystemState :=
-  arm.tailFast (arm.pop (arm.faultLeg st c tid rid) c tid scId home) tid rid epId tailCode core
-
-theorem ReplyRecvArm.faultReady_eq (arm : ReplyRecvArm)
-    {scId : SeLe4n.SchedContextId} {home : CoreId} (st : SystemState)
-    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat)
-    (core : CoreId) :
-    arm.faultReady st c tid rid scId home epId tailCode core =
-      arm.tail (arm.pop (arm.leg st c tid rid IpcMessage.empty) c tid scId home) tid rid epId tailCode
-        core := by
-  unfold ReplyRecvArm.faultReady
-  rw [arm.faultLeg_eq, ReplyRecvArm.tailFast_eq]
-
-/-- The server the fault answer's writes leave blocked, as the arm's guard
-reads it. -/
-theorem ReplyRecvArm.faultReady_blocked (arm : ReplyRecvArm)
-    {scId : SeLe4n.SchedContextId} {home : CoreId} (st : SystemState)
-    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat)
-    (core : CoreId) (hNo : st.objects.noResizeDue) {x : TCB}
-    (hX : (ReplyRecvArm.blocked (arm.pop (arm.leg st c tid rid IpcMessage.empty) c tid scId home) tid rid
-      epId tailCode core).getTcb? tid = some x) :
-    ∃ x', (arm.faultReady st c tid rid scId home epId tailCode core).getTcb? tid = some x' ∧
-      x'.ipcState = x.ipcState ∧
-      (arm.faultReady st c tid rid scId home epId tailCode core).objects.noResizeDue := by
-  have h2 := arm.pop_noResizeDue (scId := scId) (home := home) _ c tid (arm.leg_noResizeDue st c tid rid IpcMessage.empty hNo)
-  have h3 := ReplyRecvArm.blocked_noResizeDue _ tid rid epId tailCode core h2
-  obtain ⟨x1, hX1, e1⟩ := arm.desched_ipcStateCarried _ tid tid x hX
-  obtain ⟨x2, hX2, e2⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core
-    (arm.desched_noResizeDue _ tid h3) tid x1 hX1
-  rw [arm.faultReady_eq]
-  exact ⟨x2, hX2, e2.trans e1, arm.tail_noResizeDue _ tid rid epId tailCode core h2⟩
-
 /-- **The blocking reply-receive answering a fault, over every arm**: the
-reply's writes with no message, the arm's pop, the receive's tail, then the
-fault answer (`performFaultAnswer`). -/
+reply's writes with no message, the arm's pop, then the fault answer
+(`performFaultAnswer`) in the reply step, then the receive's tail — seL4's
+`doReplyTransfer` (`handleFaultReply`) before `handleRecv` (WS-SX SX32). -/
 @[noinline] def performReplyRecvArmFaultAnswer (arm : ReplyRecvArm)
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat)
     (core : CoreId) (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat) :
     SystemState :=
-  performFaultAnswer (arm.faultReady st c tid rid scId home epId tailCode core) c kind label
-    ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0
+  arm.tailFast (performFaultAnswer (arm.pop (arm.faultLeg st c tid rid) c tid scId home) c kind label
+    ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0)
+    tid rid epId tailCode core
+
+/-- The server the receive's tail leaves blocked on the state a fault's answer
+leaves, as the arm's guard reads it, stays blocked through the arm's
+deschedule and the priority walk. -/
+theorem ReplyRecvArm.tail_blocked (arm : ReplyRecvArm) (Y : SystemState) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat) (core : CoreId)
+    (hNo : Y.objects.noResizeDue) {x : TCB}
+    (hX : (ReplyRecvArm.blocked Y tid rid epId tailCode core).getTcb? tid = some x) :
+    ∃ x', (arm.tail Y tid rid epId tailCode core).getTcb? tid = some x' ∧ x'.ipcState = x.ipcState := by
+  have h3 := ReplyRecvArm.blocked_noResizeDue _ tid rid epId tailCode core hNo
+  obtain ⟨x1, hX1, e1⟩ := arm.desched_ipcStateCarried _ tid tid x hX
+  obtain ⟨x2, hX2, e2⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core
+    (arm.desched_noResizeDue _ tid h3) tid x1 hX1
+  exact ⟨x2, hX2, e2.trans e1⟩
 
 /-- **The blocking reply-receive answering a fault is the specification's, over
 every arm**, and it stages nothing for the server, which the receive leaves
@@ -2025,28 +2376,45 @@ theorem replyRecvTransferOnCore_arm_fault_inPlace (arm : ReplyRecvArm)
       { registers := Architecture.regMessageBody layout rf len, badge := badge })
       { registers := Architecture.regMessageBody layout rf len, badge := badge } =
       IpcMessage.empty := by rw [hAns]; rfl
+  have hFF : replyRecvFaultFirst (replyRecvCallerFaultAnswer? st c label
+        { registers := Architecture.regMessageBody layout rf len, badge := badge })
+        (arm.pop (arm.leg st c tid rid IpcMessage.empty) c tid scId home) c =
+      performFaultAnswer (arm.pop (arm.faultLeg st c tid rid) c tid scId home) c ct.faultKind label
+        ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4
+        ct.faultX5 ct.faultX6 ct.faultX7 layout rf (Architecture.regMessageLength layout len) 0 := by
+    rw [← hAp, hAns, arm.faultLeg_eq]; rfl
+  have hNoA : (performFaultAnswer (arm.pop (arm.faultLeg st c tid rid) c tid scId home) c
+      ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
+      ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 layout rf
+      (Architecture.regMessageLength layout len) 0).objects.noResizeDue := by
+    rw [← hFF, hAns]
+    exact (faultReplyApplyOnCore_answerGuardFrame _ c _ (arm.pop_noResizeDue (scId := scId)
+      (home := home) _ c tid (arm.leg_noResizeDue st c tid rid IpcMessage.empty hNo))).2
+  have hSL : ∀ Z, replyRecvStageLast (replyRecvCallerFaultAnswer? st c label
+      { registers := Architecture.regMessageBody layout rf len, badge := badge }) Z c 0 = Z :=
+    fun Z => by rw [hAns]; rfl
+  rw [hFF] at hEq hX
+  rw [hSL] at hEq
   refine ⟨?_, ?_⟩
   · unfold replyRecvTransferOnCore performReplyRecvArmFaultAnswer
-    rw [hL, hEq, hAp, arm.faultReady_eq]
-  · obtain ⟨x', hX', e', hNoF⟩ := arm.faultReady_blocked st c tid rid epId ep.recvTailCode core
-      hNo hX
-    obtain ⟨x3, hX3, e3⟩ := performFaultAnswer_ipcStateAt _ c tid ct.faultKind label ct.faultIp
-      ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
-      ct.faultX6 ct.faultX7 layout rf (Architecture.regMessageLength layout len) 0 hCT hNoF x' hX'
+    rw [hL, hEq, ReplyRecvArm.tailFast_eq]
+  · obtain ⟨x', hX', e'⟩ := arm.tail_blocked _ tid rid epId ep.recvTailCode core hNoA hX
     unfold performReplyRecvArmFaultAnswer
-    exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x3 hX3
-      (by rw [e3, e', hB]; exact fun h => by cases h)
+    rw [ReplyRecvArm.tailFast_eq]
+    exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x' hX'
+      (by rw [e', hB]; exact fun h => by cases h)
 
 /-- **The long blocking reply-receive answering a fault, over every arm**: as
 `performReplyRecvArmFaultAnswer`, the reply's words past MR3 read from the
-replier's buffer (`performFaultAnswerLong`). -/
+replier's buffer (`performFaultAnswerLong`) on the state the answer runs on,
+before the receive's tail. -/
 @[noinline] def performReplyRecvArmFaultAnswerLong (arm : ReplyRecvArm)
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat)
     (core : CoreId) (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
     (rf : SeLe4n.RegisterFile) (len : Nat) : SystemState :=
-  performFaultAnswerLong (arm.faultReady st c tid rid scId home epId tailCode core) c kind label
-    ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 tid rf len
+  arm.tailFast (performFaultAnswerLong (arm.pop (arm.faultLeg st c tid rid) c tid scId home) c kind
+    label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 tid rf len) tid rid epId tailCode core
 
 /-- **The long blocking reply-receive answering a fault is the
 specification's, over every arm**, and it stages nothing for the server. -/
@@ -2089,29 +2457,37 @@ theorem replyRecvTransferOnCore_arm_fault_inPlaceLong (arm : ReplyRecvArm)
   have hAns := replyRecvCallerFaultAnswer?_of_fault st c ct tf label msg hTc hPF
   have hNoL := arm.leg_noResizeDue st c tid rid IpcMessage.empty hNo
   have hNoP := arm.pop_noResizeDue (scId := scId) (home := home) _ c tid hNoL
-  have hW : ipcWordReadsAgree (arm.tail (arm.pop (arm.leg st c tid rid IpcMessage.empty) c tid scId home)
-      tid rid epId ep.recvTailCode core) st :=
-    ((arm.ipcBufferReadsAgree_tail _ tid rid epId ep.recvTailCode core hNoP).trans
-      ((arm.ipcBufferReadsAgree_pop (scId := scId) (home := home) _ c tid hNoL).trans
-        (arm.ipcBufferReadsAgree_leg st c tid rid IpcMessage.empty hNo))).words
+  have hW : ipcWordReadsAgree (arm.pop (arm.leg st c tid rid IpcMessage.empty) c tid scId home)
+      st :=
+    ((arm.ipcBufferReadsAgree_pop (scId := scId) (home := home) _ c tid hNoL).trans
+      (arm.ipcBufferReadsAgree_leg st c tid rid IpcMessage.empty hNo)).words
   have hL : replyRecvLegMessage (replyRecvCallerFaultAnswer? st c label msg) msg =
       IpcMessage.empty := by rw [hAns]; rfl
+  have hFF : replyRecvFaultFirst (replyRecvCallerFaultAnswer? st c label msg)
+        (arm.pop (arm.leg st c tid rid IpcMessage.empty) c tid scId home) c =
+      performFaultAnswerLong (arm.pop (arm.faultLeg st c tid rid) c tid scId home) c ct.faultKind
+        label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3
+        ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 tid rf len := by
+    rw [hAns, arm.faultLeg_eq]
+    exact faultReplyApplyOnCore_decode_eq_performFaultAnswerLong _ c ct tf hPF _ _ tid rf len
+      (replyWordOr_longReplyRecvRegs st _ tid rf len label hLen hW)
+  have hNoA : (performFaultAnswerLong (arm.pop (arm.faultLeg st c tid rid) c tid scId home) c
+      ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
+      ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 tid rf len).objects.noResizeDue := by
+    rw [← hFF, hAns]
+    exact (faultReplyApplyOnCore_answerGuardFrame _ c _ hNoP).2
+  have hSL : ∀ Z, replyRecvStageLast (replyRecvCallerFaultAnswer? st c label msg) Z c 0 = Z :=
+    fun Z => by rw [hAns]; rfl
+  rw [hFF] at hEq hX
+  rw [hSL] at hEq
   refine ⟨?_, ?_⟩
-  · unfold replyRecvTransferOnCore
-    rw [hL, hEq]
-    unfold performReplyRecvArmFaultAnswerLong replyRecvAnswerCaller
-    rw [hAns, arm.faultReady_eq]
-    dsimp only
-    rw [faultReplyApplyOnCore_decode_eq_performFaultAnswerLong _ c ct tf hPF _ _ tid rf len
-      (replyWordOr_longReplyRecvRegs st _ tid rf len label hLen hW)]
-  · obtain ⟨x', hX', e', hNoF⟩ := arm.faultReady_blocked st c tid rid epId ep.recvTailCode core
-      hNo hX
-    obtain ⟨x3, hX3, e3⟩ := performFaultAnswerLong_ipcStateAt _ c tid ct.faultKind label
-      ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4
-      ct.faultX5 ct.faultX6 ct.faultX7 tid rf len hCT hNoF x' hX'
+  · unfold replyRecvTransferOnCore performReplyRecvArmFaultAnswerLong
+    rw [hL, hEq, ReplyRecvArm.tailFast_eq]
+  · obtain ⟨x', hX', e'⟩ := arm.tail_blocked _ tid rid epId ep.recvTailCode core hNoA hX
     unfold performReplyRecvArmFaultAnswerLong
-    exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x3 hX3
-      (by rw [e3, e', hB]; exact fun h => by cases h)
+    rw [ReplyRecvArm.tailFast_eq]
+    exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x' hX'
+      (by rw [e', hB]; exact fun h => by cases h)
 
 /-! ### The capability transfer -/
 
@@ -2137,7 +2513,7 @@ theorem replyRecvOnCore_held_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
     (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
     (hNo2 : S2.objects.noResizeDue)
-    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) (hNeTC : tid ≠ c) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -2178,9 +2554,23 @@ theorem replyRecvOnCore_held_transfer (st : SystemState) (epId : SeLe4n.ObjId)
       ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid = false := by
     unfold rendezvousDequeuedCall lookupTcb
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hXf', hQ, hRecv]
-  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  have hSnd0 : receiveRendezvousSender? Q epId = none := by
+    simp [receiveRendezvousSender?, hEp2, hS]
+  have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true S2 tid hNo2
+  unfold endpointReplyRecvOnCore
+  rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+    (by simp) (Ne.symm hNeTC) hEq hPop hXf' hNo2 (by rw [hQ, hSnd0]; simp)
+    (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+  · simp only [hRecS, Option.getD_some, hQ, hRecv]
+    simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  · simp only [hRecS, Option.getD_some, hQ, hRecv] at hE
+    simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff] at hE
+    obtain ⟨-, rfl⟩ := hE
+    exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+      (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+      ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+        ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+          (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true S2 tid hNo2)))).words
 
 /-- **The blocking reply-receive whose reply leg transfers, over every arm**:
 with the reply leg's transfer answering `(summary, S2)` on the state the arm's
@@ -2206,27 +2596,28 @@ theorem replyRecvOnCore_arm_transfer (arm : ReplyRecvArm)
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (arm.tail S2 tid rid epId ep.recvTailCode core) c summary.capInfo) := by
+  have hNeTC := (hAd.facts hT).1
   cases arm with
   | rendezvous =>
     obtain ⟨⟨ep0, hIpc⟩, hG, -, -, -⟩ := hAd
     exact replyRecvOnCore_blocks_transfer st epId tid c rid msg grant core ct ep0 ep hSz hT hIpc
-      hRO hG hS hXf hE2 hR2 hA2 hNo2 hG2
+      hRO hG hS hXf hE2 hR2 hA2 hNo2 hG2 hNeTC
   | donated =>
     obtain ⟨⟨ep0, hIpc⟩, hSRes, hG, -, rfl, rfl⟩ := hAd
     exact replyRecvOnCore_donated_transfer st epId tid c rid msg grant core ct ep0 ep rp hSz hT hIpc
-      hRO hSRes hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2
+      hRO hSRes hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2 hNeTC
   | held =>
     obtain ⟨⟨ep0, hIpc⟩, hSRes, hG, -, -, rfl⟩ := hAd
     exact replyRecvOnCore_held_transfer st epId tid c rid msg grant core ct ep0 ep rp hSz hT hIpc
-      hRO hSRes hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2
+      hRO hSRes hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2 hNeTC
   | unheld =>
     obtain ⟨⟨ep0, hIpc⟩, hG, -, -, rfl, rfl⟩ := hAd
     exact replyRecvOnCore_unheld_transfer st epId tid c rid msg grant core ct ep0 ep rp hSz hT hIpc
-      hRO hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2
+      hRO hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2 hNeTC
   | unlinked =>
     obtain ⟨⟨ep0, hIpc⟩, hG, -, -⟩ := hAd
     exact replyRecvOnCore_unlinked_transfer st epId tid c rid msg grant core ct ep0 ep rp hSz hT
-      hIpc hRO hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2
+      hIpc hRO hG hS hRp hXf hE2 hR2 hA2 hNo2 hG2 hNeTC
 
 /-- **The reply leg and the arm's pop carry the receive's guard**: on the state
 they leave, the endpoint is as it was, the server may block on it and its block
