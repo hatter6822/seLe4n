@@ -974,6 +974,14 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
+    -- The two store steps read as states, which the fold's checks-first form
+    -- (`cutReplyFrameOutOrSelf_eq_checked`, `@[csimp]`) and the compiled cut's
+    -- fallbacks run: the same stores, proven equal to the specification's
+    -- (`cutReplyFrameStores_eq_state`, `severReplyFrameBelowStores_eq_state`).
+  , (`SeLe4n.Kernel.cutReplyFrameStoresState,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
+  , (`SeLe4n.Kernel.severReplyFrameBelowStoresState,
+      .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
       .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed]
         [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_lendingLabelsEqual])

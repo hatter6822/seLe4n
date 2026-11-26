@@ -66,9 +66,7 @@ found in place; otherwise the specification's stores run. -/
     (st.storeReplyWith below.toObjId fun b => { b with next := none }).storeReplyWith
       rid.toObjId fun r => { r with prev := none }
   else
-    match severReplyFrameBelowStores st rid below r b with
-    | .ok st' => st'
-    | .error _ => st
+    severReplyFrameBelowStoresState st rid below r b
 
 theorem severReplyFrameBelowStoresInPlace_eq {st : SystemState} {rid below : SeLe4n.ReplyId}
     {r b : Reply} (hR : st.objects[rid.toObjId]? = some (.reply r))
@@ -84,8 +82,7 @@ theorem severReplyFrameBelowStoresInPlace_eq {st : SystemState} {rid below : SeL
     have h2 := SystemState.storeObject_reply_eq_storeReplyWith hR1 (fun r => { r with prev := none })
     unfold severReplyFrameBelowStores
     rw [h1]; dsimp only; rw [h2]
-  · obtain ⟨s, hs⟩ := severReplyFrameBelowStores_isOk st rid below r b
-    rw [hs]
+  · exact severReplyFrameBelowStores_eq_state st rid below r b
 
 /-- **The frame-above splice, as compiled**: the frame above's `prev`, the frame
 below's `next` (when there is one) and the cut frame's two links, each written in
@@ -100,18 +97,14 @@ otherwise the specification's stores run. -/
       (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
         rid.toObjId fun r => { r with prev := none, next := none }
     else
-      match cutReplyFrameStores st rid above r a with
-      | .ok st' => st'
-      | .error _ => st
+      cutReplyFrameStoresState st rid above r a
   | some (below, _) =>
     if st.objects.findsInPlace above.toObjId && st.objects.findsInPlace below.toObjId then
       ((st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
         below.toObjId fun b => { b with next := none }).storeReplyWith
         rid.toObjId fun r => { r with prev := none, next := none }
     else
-      match cutReplyFrameStores st rid above r a with
-      | .ok st' => st'
-      | .error _ => st
+      cutReplyFrameStoresState st rid above r a
 
 theorem cutReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.ReplyId}
     {r a : Reply} (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
@@ -145,8 +138,7 @@ theorem cutReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.Rep
           (fun r => { r with prev := none, next := none })]
       · rw [SystemState.storeObject_reply_eq_storeReplyWith hR1
           (fun r => { r with prev := none, next := none })]
-    · obtain ⟨s, hs⟩ := cutReplyFrameStores_isOk st rid above r a
-      rw [hs]
+    · exact cutReplyFrameStores_eq_state st rid above r a
   | some p =>
     obtain ⟨below, b⟩ := p
     dsimp only
@@ -181,8 +173,7 @@ theorem cutReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.Rep
       unfold cutReplyFrameStores
       rw [hBelow]; dsimp only
       rw [h1]; dsimp only; rw [h2]; dsimp only; rw [h3]
-    · obtain ⟨s, hs⟩ := cutReplyFrameStores_isOk st rid above r a
-      rw [hs]
+    · exact cutReplyFrameStores_eq_state st rid above r a
 
 /-- **The splice of a reply heading no stack, as compiled**: the same reads and
 the same stores as `cutReplyFrameOutOrSelf`, with no `Except` cell on the
@@ -253,40 +244,6 @@ theorem cutReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.ReplyI
             have hP' : a.prev = some rid := by simpa using hP
             rw [cutReplyFrameStoresInPlace_eq hR hN hA hP']
 
-/-- A reply's `prev` names `rid`, read off the link itself, so no `some` cell is
-built to compare it with (`Reply.prevNames_eq`). -/
-@[inline] def Reply.prevNames (a : Reply) (rid : SeLe4n.ReplyId) : Bool :=
-  match a.prev with
-  | some x => x == rid
-  | none => false
-
-theorem Reply.prevNames_eq (a : Reply) (rid : SeLe4n.ReplyId) :
-    a.prevNames rid = !(a.prev != some rid) := by
-  unfold Reply.prevNames
-  cases a.prev with
-  | none => rfl
-  | some x => simp [bne]
-
-/-- A reply's `next` is the frame link to `rid`, read off the link itself, so no
-`some (.frame rid)` cells are built to compare it with
-(`Reply.nextNamesFrame_eq`). -/
-@[inline] def Reply.nextNamesFrame (b : Reply) (rid : SeLe4n.ReplyId) : Bool :=
-  match b.next with
-  | some (.frame x) => x == rid
-  | _ => false
-
-theorem Reply.nextNamesFrame_eq (b : Reply) (rid : SeLe4n.ReplyId) :
-    b.nextNamesFrame rid = !(b.next != some (.frame rid)) := by
-  unfold Reply.nextNamesFrame
-  rcases b.next with _ | ⟨x⟩ | ⟨_⟩
-  · rfl
-  · by_cases h : x = rid
-    · subst h; simp
-    · have h1 : (x == rid) = false := by simpa using h
-      have h2 : (some (ReplyStackLink.frame x) == some (.frame rid)) = false := by simpa using h
-      simp [bne, h1, h2]
-  · simp
-
 /-- `cutFrameBelow?`'s question, answered as a test: the cut frame's `prev`
 names a frame other than the one above that resolves and links up to the cut
 frame.  Read off the links, so no cell is built for the answer
@@ -310,25 +267,19 @@ with the frame link nor the resolved pair builds a cell. -/
           below.toObjId fun b => { b with next := none }).storeReplyWith
           rid.toObjId fun r => { r with prev := none, next := none }
       else
-        match cutReplyFrameStores st rid above r a with
-        | .ok st' => st'
-        | .error _ => st
+        cutReplyFrameStoresState st rid above r a
     else
       if st.objects.findsInPlace above.toObjId then
         (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
           rid.toObjId fun r => { r with prev := none, next := none }
       else
-        match cutReplyFrameStores st rid above r a with
-        | .ok st' => st'
-        | .error _ => st
+        cutReplyFrameStoresState st rid above r a
   | none =>
     if st.objects.findsInPlace above.toObjId then
       (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
         rid.toObjId fun r => { r with prev := none, next := none }
     else
-      match cutReplyFrameStores st rid above r a with
-      | .ok st' => st'
-      | .error _ => st
+      cutReplyFrameStoresState st rid above r a
 
 @[csimp] theorem cutReplyFrameStoresInPlace_eq_impl :
     @cutReplyFrameStoresInPlace = @cutReplyFrameStoresInPlaceImpl := by

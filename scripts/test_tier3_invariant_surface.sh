@@ -882,6 +882,12 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReplyOnCore_eq_checked(
 run_check "INVARIANT" rg -n '^def endpointReplyOnCoreChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The splice the removal runs checks first too: its refusals on the entry
+# state, its two store steps read as states.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem cutReplyFrameOutOrSelf_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def cutReplyFrameOutOrSelfChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem cutReplyFrameStores_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # Both receive-side footprints resolve the member through the shared resolver,
@@ -4790,8 +4796,8 @@ run_check "INVARIANT" rg -n '^                  \(storeSendRendezvousCode st end
 # a finalised context lets go of its stack in the head reply's slot.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem cutReplyFrameStoresInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem cutReplyFrameOutOrSelfInPlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
-run_check "INVARIANT" rg -n '^theorem Reply\.prevNames_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
-run_check "INVARIANT" rg -n '^theorem Reply\.nextNamesFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/ReplyFrameInPlace.lean
+run_check "INVARIANT" rg -n '^theorem Reply\.prevNames_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem Reply\.nextNamesFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem TCB\.blockingServer\?_eq_impl($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem blockingServer_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem resumeReadyMidState_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
