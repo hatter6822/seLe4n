@@ -954,6 +954,32 @@ theorem savedRegsUnwritten.receiveReturn (blocks : Bool) (st : SystemState)
     · rw [e, hs],
    receiveReturnSchedContext_objects_invExt blocks st tid hInv⟩
 
+/-- **The reply step writes only the answered caller's saved registers**
+(WS-SX SX32, the state a refused receive reports, WS-SX SX33): the reply leg, the
+pop and the transfer write none, and the answer writes the caller, which the
+reply leg found blocked on its reply. -/
+theorem replyRecvReplyStep_savedRegsWrittenFree {answer : Option Architecture.FaultReplyOutcome}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool} {ec e : CoreId} {st st1 : SystemState}
+    {sgi : Option (CoreId × Concurrency.SgiKind)}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st1q : SystemState}
+    (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hInv : st.objects.invExt)
+    (hR : endpointReplyOnCore tid prevCaller msg ec st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q)) :
+    savedRegsWrittenFree e st st (replyRecvReplyStepState answer st tid grant rid prevCaller st1) ∧
+      (replyRecvReplyStepState answer st tid grant rid prevCaller st1).objects.invExt := by
+  have h0 := endpointReplyOnCore_savedRegsUnwritten tid prevCaller msg ec hInv
+  rw [hR] at h0
+  have hPC := endpointReplyOnCore_ok_target_notReady (sgi := sgi) (by rw [hR])
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [replyRecvReplyStepState_eq_of_ok hPop hX]
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have h1q := h0.trans (replyRecvPopDonation_savedRegsUnwritten h0.2 hPop)
+  have h1 := h1q.trans (receiveTransferCaps_savedRegsUnwritten h1q.2 hX)
+  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer st1p prevCaller xs.capInfo h1.2
+  exact ⟨h1.writtenFree.trans (.of_kept k5 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR hPC), i5⟩
+
 /-- WS-ZA ZA6.26: **the reply-and-receive writes only the answered caller and
 the woken sender**: its legs write no saved register; the reply's staging names
 the caller the reply leg found blocked on its reply, and the send's completion
@@ -996,13 +1022,19 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
       st1.objects[o]? = some (.endpoint ep) := fun o ep hx =>
     (replyRecvPopDonation_frame h0.2 hPop).1 o ep
       ((receiveTransferCaps_ipcFrame h1q.2 hXU).1 o ep hx)
+  -- The caller is answered in the reply step (seL4's `doReplyTransfer`): it
+  -- writes the caller alone, which the reply leg found blocked on its reply.
+  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer st1p prevCaller xs.capInfo h1.2
+  have hA : savedRegsWrittenFree e st st (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) :=
+    h1.writtenFree.trans (.of_kept k5 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR hPC)
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hA i5 h
   -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
-  have h1r := h1.trans (savedRegsUnwritten.receiveReturn true st1p tid h1.2)
+  have h1r := savedRegsUnwritten.receiveReturn true st1a tid i5
   have h2v := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
     ec h1r.2
   revert h h2v
   generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
-    (receiveReturnSchedContext true st1p tid) = r2
+    (receiveReturnSchedContext true st1a tid) = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h
@@ -1018,8 +1050,6 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   have h3 := h2.trans (replyRecvPostReceiveDonation_savedRegsUnwritten h2.2 hPost)
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)
-  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer _ prevCaller _ h4.2
-  exact ⟨h4.writtenFree.trans (.of_kept k5 fun _ e =>
-    e ▸ offCoreFree_of_notReady hD hRT hBNR hPC), i5⟩
+  exact ⟨hA.trans h4.writtenFree, h4.2⟩
 
 end SeLe4n.Kernel

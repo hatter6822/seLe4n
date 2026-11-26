@@ -1161,11 +1161,41 @@ theorem receiveReturnSchedContext_receiveEntryFacts (blocks : Bool) {stC : Syste
       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hy)
     exact ⟨x, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hx, by rcases hxy with h | h <;> (subst x; exact hA)⟩
 
+/-- **The run queues agree at the reply step's state** (WS-SX SX32, the state a
+refused receive reports, WS-SX SX33): the reply leg, the pop and the transfer
+are stages, and the caller's answer, to a caller the reply leg woke, an entry
+stage. -/
+theorem replyRecvReplyStep_runQueueEntryStage {answer : Option Architecture.FaultReplyOutcome}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st1q : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hR : endpointReplyOnCore tid prevCaller msg c st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q)) :
+    SystemState.RunQueueEntryStage st (replyRecvReplyStepState answer st tid grant rid prevCaller st1) := by
+  have hOk : (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi := by rw [hR]
+  obtain ⟨-, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+  have hNIp : isIdleThreadId prevCaller = false :=
+    notIdle_of_blocked hD (getTcb?_of_lookupTcb _ _ _ hL) (by rw [hS]; exact fun h => by cases h)
+  have hRdy1 : st1.readyOrAbsent prevCaller := fun x hx =>
+    endpointReplyOnCore_ok_target_ready _ _ _ _ _ hInv hOk (by rw [hR]; exact hx)
+  have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+  rw [hR] at hE
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [replyRecvReplyStepState_eq_of_ok hPop hX]
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have hPopS := (replyRecvPopDonation_runQueueStage hPop).trans (receiveTransferCaps_runQueueStage hX)
+  obtain ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+  exact (hE.trans hPopS).entry.trans (replyRecvAnswerCaller_runQueueEntryStage answer st1p prevCaller
+    xs.capInfo ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1) hNIp)
+
 /-- `ReplyRecv`: the reply, the donation pop, then a receive on the same core by
 the same current thread.  The reply and the pop keep every endpoint head
 wakeable and the caller current, so the receive half is a kernel entry.  The
-caller the reply woke is ready and is not the replier, so the receive keeps it
-ready and the fault answer's abandon may deschedule it. -/
+caller the reply woke is ready and is not the replier, so its answer, in the
+reply step, may deschedule it and keeps the receive's entry facts. -/
 theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
@@ -1249,21 +1279,26 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
     activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
   have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
       (hQ1 _ rfl))
-  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  -- The caller is answered in the reply step (WS-SX SX32, seL4's
+  -- `doReplyTransfer` before `handleRecv`): it was woken ready and is not the
+  -- replier, so the answer keeps what the receive asks of its state.
   obtain ⟨hI1, hR1⟩ := hE.1.links hInv hRf
   obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
-  have RR := receiveReturnSchedContext_runQueueStage true st1p tid
-  obtain ⟨hIR, hRR⟩ := RR.1.links hIp hRp
-  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true hIp hHp
-    ((hPC c).trans hC1) hAp
+  have AS := replyRecvAnswerCaller_runQueueEntryStage answer st1p prevCaller xs.capInfo
+    ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1) hNIp
+  obtain ⟨hHa, hCura, hActa⟩ := replyRecvAnswerCaller_receiveEntryFacts answer xs.capInfo hIp hHp
+    ((hPC c).trans hC1) hAp hNe
+  obtain ⟨hIa, hRa⟩ := AS.1.links hIp hRp
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at AS hHa hCura hActa hIa hRa h
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have RR := receiveReturnSchedContext_runQueueStage true st1a tid
+  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true hIa hHa hCura hActa
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
-    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
-  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
-    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
+    (receiveReturnSchedContext true st1a tid) hHR hCurR hNI hActR
   generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c
-    (receiveReturnSchedContext true st1p tid) = q at hR hRK h
+    (receiveReturnSchedContext true st1a tid) = q at hR h
   obtain ⟨st2, r2⟩ := q
-  dsimp only at hR hRK
+  dsimp only at hR
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h
   · cases h
   split at h
@@ -1272,19 +1307,13 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
   cases h
   -- The donor the post-receive hand-off reads is blocked on its reply, and the
   -- stages so far keep every thread coherent, so it is not suspended.
-  have hAll := ((hE.trans hPopS).trans RR).entry.trans hR
+  have hAll := (((hE.trans hPopS).entry.trans AS).trans RR.entry).trans hR
   obtain ⟨hI2, hR2⟩ := hAll.1.links hInv hRf
   have hD2 := hAll.2 hInv hRf hR2 hD
   have hPH := (replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
     (applyReceiveLegPipHandoff_runQueueStage st3 tid nt
       ((recordedReplyServer? st prevCaller).getD tid) c)
-  -- The woken caller stays ready: the pop and the post-receive stages are
-  -- monotone, and the receive blocks only the replier.
-  have hRdyX := (hPH.2.2 hI2 hR2).readyOrAbsent
-    (hRK hIR hRR prevCaller hNe ((RR.2.2 hIp hRp).readyOrAbsent
-      ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1)))
-  exact hAll.trans (hPH.entry.trans
-    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller _ hRdyX hNIp))
+  exact hAll.trans hPH.entry
 
 /-- A receive run on its busy-reply-cancelled state keeps the run queues in
 agreement with the threads' links: the `.receive` arm, and the `.replyRecv`

@@ -1355,7 +1355,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.registerInterface
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
+  -- WS-SX SX32: the in-place theorems split the caller's answer into the fault
+  -- answered before the tail and the message staged after it, and the reply
+  -- step's state is the one a refused receive reports (SX33); the composite and
+  -- its fast forms run both halves inline.
+  , `SeLe4n.Kernel.replyRecvFaultFirst
   , `SeLe4n.Kernel.replyRecvReceiveLegState
+  , `SeLe4n.Kernel.replyRecvReplyStepState
+  , `SeLe4n.Kernel.replyRecvStageLast
   -- WS-SX SX25: the composed blocking reply-receive's reply leg and receive
   -- tail as the specification runs them, which the arm-generic performers
   -- are proven equal to (`replyRecvAnsweringOnCore_arm_inPlace`,
@@ -1365,11 +1372,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.ReplyRecvArm.tail
   -- WS-SX SX27: the Call take's legs over the replier's register file, as the
   -- specification reads them, which the word forms the performers run are
-  -- proven equal to (`ReplyRecvArm.callTakeLegsW_eq` and its long and fault
-  -- forms); the performers take the reply's inline words read once on the
-  -- pre-state.
-  , `SeLe4n.Kernel.ReplyRecvArm.callFaultTakeLegs
-  , `SeLe4n.Kernel.ReplyRecvArm.callFaultTakeLegsLong
+  -- proven equal to (`ReplyRecvArm.callTakeLegsW_eq` and its long form); the
+  -- performers take the reply's inline words read once on the pre-state.
   , `SeLe4n.Kernel.ReplyRecvArm.callTakeLegs
   , `SeLe4n.Kernel.ReplyRecvArm.callTakeLegsLong
   , `SeLe4n.Kernel.replyTransferOnCore

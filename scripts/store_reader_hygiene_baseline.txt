@@ -733,7 +733,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsFrame.lean|transfe
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsFrame.lean|transferFrame.tcb|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsFrame.lean|transferFrame_mapValueAt|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean|ReplyRecvArm.faultTakeFrame_staged|2
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean|ReplyRecvArm.faultTakeFrame_stagedLong|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean|ReplyRecvArm.takeFrame_staged|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean|ReplyRecvArm.takeFrame_stagedLong|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean|ReplyRecvArm.takeGuard|6

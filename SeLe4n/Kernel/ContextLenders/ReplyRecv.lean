@@ -179,6 +179,33 @@ theorem replyRecvPostReceiveDonation_preserves_lendingLabelsEqual {ctx : Labelin
       exact (F.andThen fun hI => LendersFrame.propagatePipChainCrossCore _ recordedServer
         serverCore _ hI).stage hIn
 
+/-- **The lending labels hold at the reply step's state** (WS-SX SX32, the state
+a refused receive reports, WS-SX SX33): the reply leg, the pop (its owner the
+reply's recorded caller), the transfer and the caller's answer. -/
+theorem replyRecvReplyStep_lendersStage {ctx : LabelingContext}
+    {answer : Option Architecture.FaultReplyOutcome} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st1 : SystemState} {sgi : Option (CoreId × Concurrency.SgiKind)}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st1q : SystemState}
+    (hInv : st.objects.invExt) (hC : replyAnsweredCaller? st rid = some prevCaller)
+    (hR : endpointReplyOnCore tid prevCaller msg c st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q)) :
+    LendersStage ctx st (replyRecvReplyStepState answer st tid grant rid prevCaller st1) := by
+  intro hF
+  have A := LendersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller) (msg := msg)
+    (c := c) hInv
+  rw [hR] at A
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [replyRecvReplyStepState_eq_of_ok hPop hX]
+  have F0 := LendersStep.replyRecvPopDonation (ctx := ctx) A.invExt hPop
+    (calledFrame_labelEq hF.1 hC A.links)
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have F1 : LendersFrame st1q st1p :=
+    LendersFrame.of_kept (chainObjectsKept.receiveTransferCaps F0.invExt hX)
+      (RecordsFrame.receiveTransferCaps F0.invExt hX)
+  exact (LendersFrame.replyRecvAnswerCaller answer st1p prevCaller xs.capInfo F1.invExt).stage
+    (F1.stage (F0.stage (A.stage hF)))
+
 /-- **What the reply-receive's answering leg reads at the states it runs
 from**: the donation chain's shape where the receive leg runs (after seL4-MCS's
 return), the chain facts where the lend runs (after the receive leg, and after
@@ -191,9 +218,11 @@ def ReplyRecvLendersPremises (st : SystemState)
   ∀ st1 sgi, endpointReplyOnCore tid prevCaller msg c st = (st1, .ok sgi) →
     ∀ ret st1q, replyRecvPopDonation rid prevCaller st1 = .ok (ret, st1q) →
     ∀ xs st1p, replyRecvReplyTransfer answer st tid prevCaller grant st1q = .ok (xs, st1p) →
-      donationChainWellFormed (receiveReturnSchedContext true st1p tid) ∧
+      donationChainWellFormed
+          (receiveReturnSchedContext true (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) tid) ∧
       ∀ st2 res, endpointReceiveDualWithCapsOnCore epId tid (some rid) c
-          (receiveReturnSchedContext true st1p tid) = (st2, res) →
+          (receiveReturnSchedContext true (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo)
+            tid) = (st2, res) →
         LendersPremises st2 ∧
         ∀ sc holder, ret = some (sc, holder) →
           LendersPremises (replyRecvHolderDeschedule tid holder st2)
@@ -202,9 +231,10 @@ def ReplyRecvLendersPremises (st : SystemState)
 `handleReplyRecv`): the reply leg, the pop (a labelled step whose owner is the
 reply's recorded caller, read at the pre-reply state through
 `calledFrame_labelEq` and carried across the reply leg's links shrink), the
-reply's capability transfer, the return, the receive leg, the lend (its label
-equation from the receive gate `hG` and the waiters `hW`), the priority
-hand-off and the answer to the replied-to caller. -/
+reply's capability transfer, the answer to the replied-to caller (in the reply
+step, seL4's `doReplyTransfer`), the return, the receive leg, the lend (its
+label equation from the receive gate `hG` and the waiters `hW`) and the
+priority hand-off. -/
 theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext}
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
@@ -246,18 +276,28 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext}
   have F1 : LendersFrame st1q st1p :=
     LendersFrame.of_kept (chainObjectsKept.receiveTransferCaps F0.invExt hX')
       (RecordsFrame.receiveTransferCaps F0.invExt hX')
-  have FR := LendersStep.receiveReturnSchedContext (ctx := ctx) true st1p tid F1.invExt
-  have S1 : lendingLabelsEqual ctx (receiveReturnSchedContext true st1p tid) :=
-    FR.stage (F1.stage (F0.stage (A.stage hF)))
+  -- seL4's `doReplyTransfer`: the caller is answered in the reply step, before
+  -- the receive leg.
+  have FA := LendersFrame.replyRecvAnswerCaller answer st1p prevCaller xs.capInfo F1.invExt
   have FW0 := RecordsFrame.replyRecvPopDonation AW.invExt hPop
   have FW1 := FW0.trans (RecordsFrame.receiveTransferCaps FW0.invExt hX')
-  have hWR := (QueueLabelsFrame.receiveReturnSchedContext true st1p tid FW1.invExt).waiters
-    ((QueueLabelsFrame.of_frame FW1).waiters (AW.waiters hW))
-  obtain ⟨hQp, hRp, -⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hX hReady
-  have hQR := (receiveReturnSchedContext_receiveLegFacts true st1p tid FW1.invExt hQp hRp).1
+  have FWA : QueueLabelsFrame st1p (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) := by
+    cases answer with
+    | none => exact .of_frame (RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo FW1.invExt)
+    | some o => exact QueueLabelsFrame.faultReplyApplyOnCore _ prevCaller o FW1.invExt
+  obtain ⟨hQp, hRp, hEp⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hX hReady
+  obtain ⟨hQa, hRa, -⟩ := replyRecvAnswerCaller_receiveLegFacts answer (st := st) prevCaller tid
+    xs.capInfo FW1.invExt hQp hRp hEp
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at FA FWA hQa hRa h hP2 hChainR
+  have FR := LendersStep.receiveReturnSchedContext (ctx := ctx) true st1a tid FA.invExt
+  have S1 : lendingLabelsEqual ctx (receiveReturnSchedContext true st1a tid) :=
+    FR.stage (FA.stage (F1.stage (F0.stage (A.stage hF))))
+  have hWR := (QueueLabelsFrame.receiveReturnSchedContext true st1a tid FWA.invExt).waiters
+    (FWA.waiters ((QueueLabelsFrame.of_frame FW1).waiters (AW.waiters hW)))
+  have hQR := (receiveReturnSchedContext_receiveLegFacts true st1a tid FWA.invExt hQa hRa).1
   revert h
   cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) c
-      (receiveReturnSchedContext true st1p tid) with
+      (receiveReturnSchedContext true st1a tid) with
   | mk st2 res2 =>
   cases res2 with
   | error _ => intro h; cases h
@@ -279,7 +319,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext}
   have hI3 := (RecordsFrame.replyRecvPostReceiveDonation hP3.invExt hPost).invExt
   have F4 := LendersFrame.applyReceiveLegPipHandoff st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) c hI3
-  exact (F4.andThen fun hI => LendersFrame.replyRecvAnswerCaller answer _ prevCaller _ hI).stage h2
+  exact F4.stage h2
 
 /-- **The `.replyRecv` arm's transition carries equal lending labels**: the
 answering leg at the answer the replied-to caller's fault record selects. -/

@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCapsFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyUnheldPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvFrame
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvAnswerFirst
 
 /-!
 # The reply-receive whose reply leg transfers capabilities, in place
@@ -120,6 +121,14 @@ theorem replyCapRequest_of_routedReplyRecv (st : SystemState) (replier : SeLe4n.
     blockedSenderDecode, hDec, hMi, routedExtraCaps_eq_of_replyRecv hR]
   rfl
 
+/-- A deschedule at the thread's placement keeps every buffer read. -/
+theorem ipcBufferReadsAgree_descheduleAtPlacement (s : SystemState) (t : SeLe4n.ThreadId) :
+    ipcBufferReadsAgree (descheduleAtPlacement s t) s := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact ipcBufferReadsAgree_removeRunnableOnCore _ _ _
+  · exact .refl _
+
 /-! ### The reply-receive that blocks -/
 
 /-- **The reply-receive that blocks, its reply leg transferring**: under the
@@ -143,7 +152,7 @@ theorem replyRecvOnCore_blocks_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
     (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
     (hNo2 : S2.objects.noResizeDue)
-    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) (hNe : tid ≠ c) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -172,13 +181,28 @@ theorem replyRecvOnCore_blocks_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp2, hS]
     simp only [hSnd, ↓reduceIte]
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRec, Option.getD_some, hEq, hPop, hXf', hQ, hRecv, Option.bind_some, hS]
   have hRes : tid.isReserved = false := by
     have h := hG3
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  have hSnd0 : receiveRendezvousSender? Q epId = none := by
+    simp [receiveRendezvousSender?, hEp2, hS]
+  have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true S2 tid hNo2
+  unfold endpointReplyRecvOnCore
+  rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+    (by simp) (Ne.symm hNe) hEq hPop hXf' hNo2 (by rw [hQ, hSnd0]; simp)
+    (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+  · simp only [hRec, Option.getD_some, hQ, hRecv]
+    simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
+      replyRecvAnswerCaller]
+  · simp only [hRec, Option.getD_some, hQ, hRecv] at hE
+    simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff] at hE
+    obtain ⟨-, rfl⟩ := hE
+    exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+      (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+      ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+        ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+          (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true S2 tid hNo2)))).words
 
 /-! ### The donated reply-receive -/
 
@@ -204,7 +228,7 @@ theorem replyRecvOnCore_donated_transfer (st : SystemState) (epId : SeLe4n.ObjId
     (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
     (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
     (hNo2 : S2.objects.noResizeDue)
-    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) (hNeTC : tid ≠ c) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -246,9 +270,26 @@ theorem replyRecvOnCore_donated_transfer (st : SystemState) (epId : SeLe4n.ObjId
       ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid = false := by
     unfold rendezvousDequeuedCall lookupTcb
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hXf', hQ, hRecv, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  have hSnd0 : receiveRendezvousSender? Q epId = none := by
+    simp [receiveRendezvousSender?, hEp2, hS]
+  have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true S2 tid hNo2
+  unfold endpointReplyRecvOnCore
+  rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+    (by simp) (Ne.symm hNeTC) hEq hPop hXf' hNo2 (by rw [hQ, hSnd0]; simp)
+    (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+  · simp only [hRecS, Option.getD_some, hQ, hRecv]
+    simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  · simp only [hRecS, Option.getD_some, hQ, hRecv] at hE
+    simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff] at hE
+    obtain ⟨-, rfl⟩ := hE
+    have h3 := removeRunnableOnCore_noResizeDue _ tid core (storeReceiveBlock_noResizeDue _ epId tid
+      ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid)) hNoQ)
+    exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+      (descheduleAtPlacement_noResizeDue _ _ h3)).trans
+      ((ipcBufferReadsAgree_descheduleAtPlacement _ tid).trans
+      ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+        ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+          (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true S2 tid hNo2))))).words
 
 /-! ### The reply-receive answering a caller recording no server -/
 
@@ -274,7 +315,7 @@ theorem replyRecvOnCore_unheld_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
     (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
     (hNo2 : S2.objects.noResizeDue)
-    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) (hNeTC : tid ≠ c) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -311,13 +352,28 @@ theorem replyRecvOnCore_unheld_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp2, hS]
     simp only [hSnd, ↓reduceIte]
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf', hQ, hRecv, Option.bind_some, hS]
   have hRes : tid.isReserved = false := by
     have h := hG3
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  have hSnd0 : receiveRendezvousSender? Q epId = none := by
+    simp [receiveRendezvousSender?, hEp2, hS]
+  have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true S2 tid hNo2
+  unfold endpointReplyRecvOnCore
+  rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+    (by simp) (Ne.symm hNeTC) hEq hPopR hXf' hNo2 (by rw [hQ, hSnd0]; simp)
+    (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+  · simp only [hRecS, Option.getD_none, hQ, hRecv]
+    simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
+      replyRecvAnswerCaller]
+  · simp only [hRecS, Option.getD_none, hQ, hRecv] at hE
+    simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff] at hE
+    obtain ⟨-, rfl⟩ := hE
+    exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+      (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+      ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+        ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+          (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true S2 tid hNo2)))).words
 
 /-! ### The reply-receive on a reply object linked to nothing -/
 
@@ -340,7 +396,7 @@ theorem replyRecvOnCore_unlinked_transfer (st : SystemState) (epId : SeLe4n.ObjI
     (hE2 : S2.objects[epId]? = some (.endpoint ep)) {rt2 : TCB}
     (hR2 : S2.objects[tid.toObjId]? = some (.tcb rt2)) (hA2 : receiveBlockAdmits rt2 = true)
     (hNo2 : S2.objects.noResizeDue)
-    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) :
+    (hG2 : receiveBlocksInPlace S2 epId tid ep.receiveQ.tail (some rid) = true) (hNeTC : tid ≠ c) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -381,13 +437,28 @@ theorem replyRecvOnCore_unlinked_transfer (st : SystemState) (epId : SeLe4n.ObjI
     have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp2, hS]
     simp only [hSnd, ↓reduceIte]
-  unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_none, hEq, hPop, hXf', hQ, hRecv, Option.bind_some, hS]
   have hRes : tid.isReserved = false := by
     have h := hG3
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
+  have hSnd0 : receiveRendezvousSender? Q epId = none := by
+    simp [receiveRendezvousSender?, hEp2, hS]
+  have hNoQ : Q.objects.noResizeDue := hQ ▸ receiveReturnSchedContext_noResizeDue true S2 tid hNo2
+  unfold endpointReplyRecvOnCore
+  rw [endpointReplyRecvAnsweringOnCore_answerFirst_at none epId tid rid c msg grant core st
+    (by simp) (Ne.symm hNeTC) hEq hPop hXf' hNo2 (by rw [hQ, hSnd0]; simp)
+    (fun _ => .inr ⟨by rw [hQ]; unfold receiveCapRequest; rw [hSnd0], fun s0 E hE => ?_⟩)]
+  · simp only [hRecS, Option.getD_none, hQ, hRecv]
+    simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
+      replyRecvAnswerCaller]
+  · simp only [hRecS, Option.getD_none, hQ, hRecv] at hE
+    simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff] at hE
+    obtain ⟨-, rfl⟩ := hE
+    exact ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core
+      (removeRunnableOnCore_noResizeDue _ _ _ (storeReceiveBlock_noResizeDue _ _ _ _ _ hNoQ))).trans
+      ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
+        ((ipcBufferReadsAgree_storeReceiveBlock Q epId tid _ _ hNoQ).trans
+          (hQ ▸ ipcBufferReadsAgree_receiveReturnSchedContext true S2 tid hNo2)))).words
 
 /-- Under `replyUnlinkedInPlace`, the reply object is consumed free (it heads no
 stack, so consumption takes its links off). -/

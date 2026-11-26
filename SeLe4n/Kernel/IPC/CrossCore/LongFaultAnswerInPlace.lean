@@ -493,27 +493,4 @@ theorem faultReplyTransferChecked_unlinked_inPlaceLong (ctx : LabelingContext) (
 
 /-! ## The long fault reply-receive -/
 
-/-- The long fault answer leaves every other thread in the IPC state it was in. -/
-theorem performFaultAnswerLong_ipcStateAt (X : SystemState) (c t : SeLe4n.ThreadId)
-    (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (s : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (len : Nat)
-    (hNe : c.toObjId ≠ t.toObjId) (hNo : X.objects.noResizeDue) (x : TCB)
-    (hX : X.getTcb? t = some x) :
-    ∃ x', (performFaultAnswerLong X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 s rf
-      len).getTcb? t = some x' ∧ x'.ipcState = x.ipcState := by
-  have hUp : ∀ (Y : SystemState) (f : TCB → TCB), Y.objects.noResizeDue →
-      (Y.updateTcb c f).getTcb? t = Y.getTcb? t := fun Y f hY => by
-    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hY,
-      SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hNe]
-  unfold performFaultAnswerLong applyFaultRestart faultAbandonOnCore
-  split
-  · exact ⟨x, by rw [hUp _ _ hNo]; exact hX, rfl⟩
-  · split
-    · obtain ⟨x1, h1, e1⟩ := ipcStateCarried_of_agree
-        (removeRunnableOnCore_objectsAgreeOffRunLinks X c (faultAbandonCore X c)) t x hX
-      exact ⟨x1, by rw [hUp _ _ (removeRunnableOnCore_noResizeDue _ _ _ hNo)]; exact h1, e1⟩
-    · split
-      · exact ⟨x, by rw [hUp _ _ hNo]; exact hX, rfl⟩
-      · exact ⟨x, by rw [hUp _ _ hNo]; exact hX, rfl⟩
-
 end SeLe4n.Kernel

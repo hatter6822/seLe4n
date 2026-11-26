@@ -1826,13 +1826,22 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
     (receiveTransferCaps_preserves_machine hXU)) (banksKeptOffCore_of_eq
       (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hXU))))
   have hPInv : st1p.objects.invExt := hXK.2.2
-  obtain ⟨hRt, hRtInv⟩ := receiveReturnSchedContext_stepCovers e true st1p tid hPInv
+  -- The caller is answered in the reply step (WS-SX SX32), before the receive leg.
+  obtain ⟨hS1, hS1Inv⟩ : stepCovers e st1p (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) ∧
+      (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo).objects.invExt := by
+    cases answer with
+    | none =>
+      have hK := stageDeliveredMessage_keyFrame st1p prevCaller xs.capInfo hPInv
+      exact ⟨hK.stepCovers, hK.2.2⟩
+    | some o => exact faultReplyApplyOnCore_stepCovers e st1p prevCaller o hPInv
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hS1 hS1Inv h
+  obtain ⟨hRt, hRtInv⟩ := receiveReturnSchedContext_stepCovers e true st1a tid hS1Inv
   obtain ⟨hV, hVInv⟩ := endpointReceiveDualWithCapsOnCore_stepCovers e (endpointId := epId)
     (receiver := tid) (replyId := some rid)
     (executingCore := executingCore) hRtInv
   revert h hV hVInv
   generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
-    (receiveReturnSchedContext true st1p tid) = r2
+    (receiveReturnSchedContext true st1a tid) = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h
@@ -1847,15 +1856,8 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
   obtain ⟨hD, hDInv⟩ := replyRecvPostReceiveDonation_stepCovers e hVInv hPost
   obtain ⟨hW, hWInv⟩ := applyReceiveLegPipHandoff_stepCovers e st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) executingCore hDInv
-  obtain ⟨hS1, hS1Inv⟩ : stepCovers e _ (replyRecvAnswerCaller answer _ prevCaller _) ∧
-      (replyRecvAnswerCaller answer _ prevCaller _).objects.invExt := by
-    cases answer with
-    | none =>
-      have hK := stageDeliveredMessage_keyFrame _ prevCaller xs.capInfo hWInv
-      exact ⟨hK.stepCovers, hK.2.2⟩
-    | some o => exact faultReplyApplyOnCore_stepCovers e _ prevCaller o hWInv
   exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans (stepCovers_trans
-    (stepCovers_trans (stepCovers_trans hR hP) hRt) hV) hD) hW) hS1, hS1Inv⟩
+    (stepCovers_trans (stepCovers_trans hR hP) hS1) hRt) hV) hD) hW, hWInv⟩
 
 /-- **seL4's `sendSignal` covers**, on a state where the binding pair holds: the
 wake (`notificationSignalBoundOnCore_stepCovers`), then the donation to the thread

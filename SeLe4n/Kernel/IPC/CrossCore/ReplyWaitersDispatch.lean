@@ -634,10 +634,16 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
           refine replyWaitersConsistent.of_views ?_ hB1
           rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
           rw [receiveTransferCaps_replyViews_eq hIq hX, replyRecvPopDonation_replyViews_eq hI1 hP]
-        have hIr := receiveReturnSchedContext_objects_invExt true st1p tid hIp
-        have hBr : (receiveReturnSchedContext true st1p tid).replyWaitersConsistent :=
-          replyWaitersConsistent.of_views (receiveReturnSchedContext_replyViews_eq true st1p tid hIp)
-            hBp
+        -- the caller's answer, in the reply step (WS-SX SX32), keeps the views
+        have hIa := replyRecvAnswerCaller_preserves_objects_invExt answer st1p prevCaller
+          xs.capInfo hIp
+        have hBa : (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo).replyWaitersConsistent :=
+          replyWaitersConsistent.of_views (replyRecvAnswerCaller_replyViews_eq _ _ _ _ hIp) hBp
+        generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at h hRecv1 hHead1 hIa hBa
+        have hIr := receiveReturnSchedContext_objects_invExt true st1a tid hIa
+        have hBr : (receiveReturnSchedContext true st1a tid).replyWaitersConsistent :=
+          replyWaitersConsistent.of_views (receiveReturnSchedContext_replyViews_eq true st1a tid hIa)
+            hBa
         have hB2 := endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent epId tid
           (some rid) ec _ hIr hBr hRecv1 hHead1
         have hI2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid
@@ -651,11 +657,8 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
           · rename_i st3 hD
             cases h
             have hI3 := replyRecvPostReceiveDonation_preserves_objects_invExt _ _ _ _ _ _ _ _ hI2 hD
-            have hI4 := applyReceiveLegPipHandoff_preserves_objects_invExt st3 tid nxt
-              ((recordedReplyServer? st prevCaller).getD tid) ec hI3
             refine replyWaitersConsistent.of_views ?_ hB2
-            rw [replyRecvAnswerCaller_replyViews_eq _ _ _ _ hI4,
-              applyReceiveLegPipHandoff_replyViews_eq _ _ _ _ _ hI3,
+            rw [applyReceiveLegPipHandoff_replyViews_eq _ _ _ _ _ hI3,
               replyRecvPostReceiveDonation_replyViews_eq hI2 hD]
 
 -- ============================================================================

@@ -25,6 +25,32 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
+/-- **The queue labels hold at the reply step's state** (WS-SX SX32, the state a
+refused receive reports, WS-SX SX33): the reply leg, the pop, the transfer and
+the caller's answer write no endpoint queue and no waiter's IPC state. -/
+theorem QueueLabelsFrame.replyRecvReplyStep {answer : Option Architecture.FaultReplyOutcome}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st1 : SystemState}
+    {sgi : Option (CoreId × Concurrency.SgiKind)}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st1q : SystemState}
+    (hInv : st.objects.invExt)
+    (hR : _root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st = (st1, .ok sgi))
+    (hPop : _root_.SeLe4n.Kernel.replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q)) :
+    QueueLabelsFrame st (replyRecvReplyStepState answer st tid grant rid prevCaller st1) := by
+  have A := QueueLabelsFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
+    (msg := msg) (c := c) hInv
+  rw [hR] at A
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [replyRecvReplyStepState_eq_of_ok hPop hX]
+  have F0 := RecordsFrame.replyRecvPopDonation A.invExt hPop
+  have F1 := F0.trans (RecordsFrame.receiveTransferCaps F0.invExt
+    (by rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX; exact hX))
+  have FA : QueueLabelsFrame st1p (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) := by
+    cases answer with
+    | none => exact .of_frame (RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo F1.invExt)
+    | some o => exact QueueLabelsFrame.faultReplyApplyOnCore _ prevCaller o F1.invExt
+  exact (A.trans (.of_frame F1)).trans FA
+
 namespace QueueLabelsGrowFrame
 
 /-- **The reply-receive blocks at most its server, on its endpoint.** -/
@@ -57,15 +83,22 @@ theorem endpointReplyRecvAnsweringOnCore
   have F0 := RecordsFrame.replyRecvPopDonation A.invExt hPop
   have F1 := F0.trans (RecordsFrame.receiveTransferCaps F0.invExt
     (by rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX; exact hX))
-  have FR : RecordsFrame st1p (receiveReturnSchedContext true st1p tid) :=
-    receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) true st1p tid
-      (RecordsFrame.refl F1.invExt)
-      (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS tid F1.invExt)
+  -- The caller is answered in the reply step, before the receive leg.
+  generalize hA : replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at h
+  have FA : QueueLabelsFrame st1p st1a := by
+    subst hA
+    cases answer with
+    | none => exact .of_frame (RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo F1.invExt)
+    | some o => exact QueueLabelsFrame.faultReplyApplyOnCore _ prevCaller o F1.invExt
+  have FR : RecordsFrame st1a (receiveReturnSchedContext true st1a tid) :=
+    receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) true st1a tid
+      (RecordsFrame.refl FA.invExt)
+      (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS tid FA.invExt)
   have S2 := endpointReceiveDualWithCapsOnCore (endpointId := epId) (receiver := tid)
     (replyId := some rid) (c := c) FR.invExt
   revert h S2
   generalize _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId tid (some rid)
-    c (receiveReturnSchedContext true st1p tid) = r2
+    c (receiveReturnSchedContext true st1a tid) = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h
@@ -80,14 +113,8 @@ theorem endpointReplyRecvAnsweringOnCore
   have F3 := RecordsFrame.replyRecvPostReceiveDonation S2.invExt hPost
   have F4 := RecordsFrame.applyReceiveLegPipHandoff st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) c F3.invExt
-  have Mid : QueueLabelsGrowFrame tid epId st _ :=
-    ((A.trans (.of_frame (F1.trans FR))).thenGrow S2).thenFrame (.of_frame (F3.trans F4))
-  cases answer with
-  | none =>
-    exact Mid.thenFrame (.of_frame (RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo
-      F4.invExt))
-  | some o =>
-    exact Mid.thenFrame (QueueLabelsFrame.faultReplyApplyOnCore _ prevCaller o F4.invExt)
+  exact ((((A.trans (.of_frame F1)).trans FA).trans (.of_frame FR)).thenGrow S2).thenFrame
+    (.of_frame (F3.trans F4))
 
 end QueueLabelsGrowFrame
 

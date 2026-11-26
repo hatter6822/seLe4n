@@ -240,6 +240,49 @@ theorem replyRecvAnswerCaller_preserves_ipcInvariantFull
     · exact applyFaultRestart_preserves_ipcInvariantFull _ _ _ hObjInv hInv
     · exact faultAbandonOnCore_preserves_ipcInvariantFull _ _ _ hObjInv hInv
 
+/-- **The IPC bundle holds at the reply step's state** (WS-SX SX32, the state a
+refused receive reports, WS-SX SX33): the reply leg (relaxed at the woken caller,
+upgraded by the no-donation-edge confinement), the pop under its own obligations
+at the reply leg's state, the transfer and the caller's answer. -/
+theorem replyRecvReplyStep_preserves_ipcInvariantFull
+    {answer : Option Architecture.FaultReplyOutcome} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool} {ec : CoreId}
+    {st st1 : SystemState} {sgi : Option (CoreId × Concurrency.SgiKind)}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st1q : SystemState}
+    (hReach : ipcReachable st)
+    (hR : endpointReplyOnCore tid prevCaller msg ec st = (st1, .ok sgi))
+    (hNoEdge1 : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
+      st1.objects[s.toObjId]? = some (.tcb sTcb) → sTcb.schedContextBinding ≠ .donated sc0 prevCaller)
+    (hHolderDonation1 : replyFrameHeadHolderDonation st1 rid prevCaller)
+    (hStackValid1 : ∀ scId serverTid originalOwner,
+      replyStackOuterCallerValid st1 scId serverTid originalOwner)
+    (hUnheldBound1 : unheldReplyHeadBoundByNone st1 rid)
+    (hPop : replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q)) :
+    ipcInvariantFull (replyRecvReplyStepState answer st tid grant rid prevCaller st1) ∧
+      (replyRecvReplyStepState answer st tid grant rid prevCaller st1).objects.invExt := by
+  have hExc1 := endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner tid
+    prevCaller msg ec st hReach.ipcInvariantFull hReach.objects_invExt
+    hReach.allTimeoutBudgetsNone
+  have hObjInv1 := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg ec st
+    hReach.objects_invExt
+  rw [hR] at hExc1 hObjInv1
+  have hInv1 : ipcInvariantFull st1 :=
+    ipcInvariantFull_of_exceptDonationOwner_of_no_edge _ prevCaller hExc1 hNoEdge1
+  have hInv1q : ipcInvariantFull st1q :=
+    replyRecvPopDonation_preserves_ipcInvariantFull rid prevCaller st1 st1q r
+      hObjInv1 hInv1 hHolderDonation1 hStackValid1
+      (unheldReplyPopCoherent_of_boundByNone hUnheldBound1 fun _ => hNoEdge1) hPop
+  have hObjInv1q : st1q.objects.invExt :=
+    replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 st1q r hObjInv1 hPop
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [replyRecvReplyStepState_eq_of_ok hPop hX]
+  have hObjInv1p : st1p.objects.invExt := replyRecvReplyTransfer_objects_invExt hObjInv1q hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have hInv1p := receiveTransferCaps_preserves_ipcInvariantFull hInv1q hObjInv1q hX
+  exact ⟨replyRecvAnswerCaller_preserves_ipcInvariantFull answer st1p prevCaller xs.capInfo
+      hObjInv1p hInv1p,
+    replyRecvAnswerCaller_preserves_objects_invExt answer st1p prevCaller xs.capInfo hObjInv1p⟩
+
 /-- **`.replyRecv`'s composite bundle**: reply leg (relaxed at the woken
 caller, upgraded by the no-donation-edge confinement), donation pop, receive leg,
 post-receive donation, and both return-frame stagers.
@@ -365,10 +408,17 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
               exact receiveTransferCaps_preserves_ipcInvariantFull hInv1q hObjInv1q hX
             have hObjInv1p0 : st1p.objects.invExt :=
               replyRecvReplyTransfer_objects_invExt hObjInv1q hX
+            -- The caller is answered in the reply step (WS-SX SX32), before the
+            -- receive leg.
+            have hInv1a := replyRecvAnswerCaller_preserves_ipcInvariantFull answer st1p
+              prevCaller xs.capInfo hObjInv1p0 hInv1p0
+            have hObjInv1a := replyRecvAnswerCaller_preserves_objects_invExt answer st1p
+              prevCaller xs.capInfo hObjInv1p0
+            generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hInv1a hObjInv1a hStep hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hReturnStage
             -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the
             -- receive leg; the leg's obligations are stated at its post-state.
             obtain ⟨hInv1p, hObjInv1p⟩ :=
-              receiveReturnSchedContext_preserves_ipcInvariantFull true st1p tid hObjInv1p0 hInv1p0
+              receiveReturnSchedContext_preserves_ipcInvariantFull true st1a tid hObjInv1a hInv1a
             obtain ⟨tcbR, hT1, hReadyR⟩ := hReceiverReady1
             have hT1obj := (SystemState.getTcb?_eq_some_iff _ tid tcbR).mp hT1
             have hFresh1 := readyThread_endpointQueueFresh _ tid tcbR
@@ -377,7 +427,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             have hTail1 := recvTailCrossQueueFresh _ epId
               hInv1p.dualQueueSystemInvariant hInv1p.endpointQueueTailBlockedConsistent
             have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
-              epId tid (some rid) ec (receiveReturnSchedContext true st1p tid)
+              epId tid (some rid) ec (receiveReturnSchedContext true st1a tid)
               hInv1p hObjInv1p hCleanupStack1 hBudgets1 hFresh1 hTail1
               (fun r hr => by obtain rfl := Option.some.inj hr; exact hReplyIdValid1)
               (fun tcb hTcb => by
@@ -389,7 +439,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                 obtain rfl := Option.some.inj hTcb
                 exact hReadyR)
             cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
-                (receiveReturnSchedContext true st1p tid) with
+                (receiveReturnSchedContext true st1a tid) with
             | mk st2 res2 =>
                 rw [hRecv] at hStep hInv2
                 cases res2 with
@@ -426,12 +476,8 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                         have hInv3P := applyReceiveLegPipHandoff_preserves_ipcInvariantFull st3
                           tid nextThread ((recordedReplyServer? st prevCaller).getD tid) ec
                           hObjInv3 hInv3
-                        have hInvD := replyRecvAnswerCaller_preserves_ipcInvariantFull answer _
-                          prevCaller xs.capInfo hObjInv3P hInv3P
-                        have hObjInvD := replyRecvAnswerCaller_preserves_objects_invExt answer _
-                          prevCaller xs.capInfo hObjInv3P
                         rw [← hOut]
-                        exact ⟨hInvD, hObjInvD⟩
+                        exact ⟨hInv3P, hObjInv3P⟩
 
 -- ============================================================================
 -- §4  The dispatch payoff's pre-state pack

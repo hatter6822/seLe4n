@@ -797,4 +797,164 @@ theorem replyRecvAnswerCaller_runQueueEntryStage (answer : Option Architecture.F
   | none => exact (stageDeliveredMessage_runQueueStage _ _ _).entry
   | some o => exact faultReplyApplyOnCore_runQueueEntryStage st prevCaller o hRdy hNI
 
+/-! ### The receive's entry facts across the caller's answer
+
+The caller is answered in the reply step, before the receive (WS-SX SX32,
+seL4's `doReplyTransfer` before `handleRecv`), so what the receive asks of its
+state must hold on the answered one: every endpoint head wakeable, the replier
+current and active.  The answer writes only the caller's TCB (its frame, its
+fault record, its thread state) and, on an abandon, its run-queue neighbours'
+links, and an abandon takes no thread but the caller off a core. -/
+
+/-- The deschedule puts no thread on a core. -/
+theorem removeRunnableOnCore_currentOnCore_back (st : SystemState) (t : SeLe4n.ThreadId)
+    (c c' : Concurrency.CoreId) {x : SeLe4n.ThreadId}
+    (h : (removeRunnableOnCore st t c).scheduler.currentOnCore c' = some x) :
+    st.scheduler.currentOnCore c' = some x := by
+  by_cases hc : c = c'
+  · subst hc
+    rw [removeRunnableOnCore_currentOnCore_self] at h
+    split at h
+    · cases h
+    · exact h
+  · rwa [removeRunnableOnCore_currentOnCore_ne _ _ _ _ hc] at h
+
+/-- …and takes no thread but its own off one. -/
+theorem removeRunnableOnCore_currentOnCore_fwd (st : SystemState) (t : SeLe4n.ThreadId)
+    (c c' : Concurrency.CoreId) {x : SeLe4n.ThreadId} (hx : x ≠ t)
+    (h : st.scheduler.currentOnCore c' = some x) :
+    (removeRunnableOnCore st t c).scheduler.currentOnCore c' = some x := by
+  by_cases hc : c = c'
+  · subst hc
+    rw [removeRunnableOnCore_currentOnCore_self]
+    split
+    · rename_i h'; rw [h] at h'; exact absurd (Option.some.inj h') hx
+    · exact h
+  · rwa [removeRunnableOnCore_currentOnCore_ne _ _ _ _ hc]
+
+/-- A thread read after the deschedule, off its run-queue links, as it was. -/
+theorem removeRunnableOnCore_getTcb?_back (st : SystemState) (t : SeLe4n.ThreadId)
+    (c : Concurrency.CoreId) {w : SeLe4n.ThreadId} {t' : TCB}
+    (h : (removeRunnableOnCore st t c).getTcb? w = some t') :
+    ∃ t0, st.getTcb? w = some t0 ∧ t0.withoutRunLinks = t'.withoutRunLinks := by
+  have hA := removeRunnableOnCore_objectsAgreeOffRunLinks st t c w.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h] at hA
+  cases e : st.objects[w.toObjId]? with
+  | none => rw [e] at hA; cases hA
+  | some o =>
+    rw [e] at hA
+    obtain ⟨t0, rfl, ht⟩ := KernelObject.withoutRunLinks_eq_tcb (Option.some.inj hA).symm
+    exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ _ _).mpr e, ht⟩
+
+theorem removeRunnableOnCore_getTcb?_fwd (st : SystemState) (t : SeLe4n.ThreadId)
+    (c : Concurrency.CoreId) {w : SeLe4n.ThreadId} {t0 : TCB}
+    (h : st.getTcb? w = some t0) :
+    ∃ t', (removeRunnableOnCore st t c).getTcb? w = some t' ∧ t0.withoutRunLinks = t'.withoutRunLinks := by
+  have hA := removeRunnableOnCore_objectsAgreeOffRunLinks st t c w.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h] at hA
+  cases e : (removeRunnableOnCore st t c).objects[w.toObjId]? with
+  | none => rw [e] at hA; cases hA
+  | some o =>
+    rw [e] at hA
+    obtain ⟨t', rfl, ht⟩ := KernelObject.withoutRunLinks_eq_tcb (Option.some.inj hA)
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr e, ht.symm⟩
+
+/-- The deschedule writes no object but a TCB. -/
+theorem removeRunnableOnCore_objects_back_nonTcb (st : SystemState) (t : SeLe4n.ThreadId)
+    (c : Concurrency.CoreId) {k : SeLe4n.ObjId} {o : KernelObject} (ho : ∀ x, o ≠ .tcb x)
+    (h : (removeRunnableOnCore st t c).objects[k]? = some o) : st.objects[k]? = some o := by
+  have hA := removeRunnableOnCore_objectsAgreeOffRunLinks st t c k
+  rw [h] at hA
+  cases e : st.objects[k]? with
+  | none => rw [e] at hA; cases hA
+  | some o' =>
+    rw [e] at hA
+    have h1 := (Option.some.inj hA).symm
+    cases o' with
+    | tcb x =>
+      cases o with
+      | tcb y => exact absurd rfl (ho y)
+      | _ => cases h1
+    | _ =>
+      rw [KernelObject.withoutRunLinks_eq_self_of_not_tcb ho] at h1
+      exact congrArg some h1
+
+/-- The deschedule keeps every endpoint head wakeable. -/
+theorem endpointHeadsWakeable.removeRunnableOnCore {st : SystemState}
+    (h : endpointHeadsWakeable st) (t : SeLe4n.ThreadId) (c : Concurrency.CoreId) :
+    endpointHeadsWakeable (removeRunnableOnCore st t c) := by
+  intro epId ep hE r hr
+  have hA := removeRunnableOnCore_objectsAgreeOffRunLinks st t c epId
+  have hEo := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE
+  rw [hEo] at hA
+  have hE0 : st.getEndpoint? epId = some ep := by
+    apply (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr
+    cases e : st.objects[epId]? with
+    | none => rw [e] at hA; cases hA
+    | some o =>
+      rw [e] at hA
+      have h1 := (Option.some.inj hA).symm
+      cases o with
+      | tcb _ => cases h1
+      | _ => exact congrArg some h1
+  obtain ⟨hN, hB⟩ := h epId ep hE0 r hr
+  refine ⟨fun c' hc => hN c' (removeRunnableOnCore_currentOnCore_back st t c c' hc), fun t' hT => ?_⟩
+  obtain ⟨t0, h0, e⟩ := removeRunnableOnCore_getTcb?_back st t c hT
+  have hs : t0.ipcState = t'.ipcState := by have := congrArg TCB.ipcState e; exact this
+  rw [← hs]; exact hB t0 h0
+
+/-- **The caller's answer keeps what the receive asks of its state**: every
+endpoint head wakeable, the replier (not the caller) current on its core and
+active.  The staged frame and the restart write the caller's TCB, keeping its
+IPC state; the abandon takes the caller off its core first, which moves no
+other thread off a core. -/
+theorem replyRecvAnswerCaller_receiveEntryFacts (answer : Option Architecture.FaultReplyOutcome)
+    {S : SystemState} {p tid : SeLe4n.ThreadId} (capInfo : Nat) {e : Concurrency.CoreId}
+    (hInv : S.objects.invExt) (hH : endpointHeadsWakeable S)
+    (hCur : S.scheduler.currentOnCore e = some tid) (hAct : S.activeAt tid) (hNe : p ≠ tid) :
+    endpointHeadsWakeable (replyRecvAnswerCaller answer S p capInfo) ∧
+      (replyRecvAnswerCaller answer S p capInfo).scheduler.currentOnCore e = some tid ∧
+      (replyRecvAnswerCaller answer S p capInfo).activeAt tid := by
+  have upd : ∀ (X : SystemState) (f : TCB → TCB), X.objects.invExt →
+      (∀ x, (f x).ipcState = x.ipcState) → endpointHeadsWakeable X →
+      X.scheduler.currentOnCore e = some tid → X.activeAt tid →
+      endpointHeadsWakeable (X.updateTcb p f) ∧
+        (X.updateTcb p f).scheduler.currentOnCore e = some tid ∧ (X.updateTcb p f).activeAt tid := by
+    intro X f hI hf hHX hC hA
+    refine ⟨hHX.updateTcb hI hf, by rw [SystemState.updateTcb_scheduler]; exact hC, ?_⟩
+    obtain ⟨x, hx, hxA⟩ := hA
+    refine ⟨x, ?_, hxA⟩
+    rw [SystemState.updateTcb_getTcb?_ne _ _ _ hI tid
+      (fun h => hNe (SeLe4n.ThreadId.toObjId_injective _ _ h))]
+    exact hx
+  cases answer with
+  | none =>
+    show endpointHeadsWakeable (Architecture.stageDeliveredMessage S p capInfo) ∧
+      (Architecture.stageDeliveredMessage S p capInfo).scheduler.currentOnCore e = some tid ∧
+      (Architecture.stageDeliveredMessage S p capInfo).activeAt tid
+    unfold Architecture.stageDeliveredMessage
+    split
+    · split
+      · split
+        · exact upd S _ hInv (fun _ => rfl) hH hCur hAct
+        · exact ⟨hH, hCur, hAct⟩
+      · exact ⟨hH, hCur, hAct⟩
+    · exact ⟨hH, hCur, hAct⟩
+  | some o =>
+    cases o with
+    | restart frame => exact upd S _ hInv (fun _ => rfl) hH hCur hAct
+    | abandon =>
+      show endpointHeadsWakeable (faultAbandonOnCore S p (faultAbandonCore S p)) ∧
+        (faultAbandonOnCore S p (faultAbandonCore S p)).scheduler.currentOnCore e = some tid ∧
+        (faultAbandonOnCore S p (faultAbandonCore S p)).activeAt tid
+      unfold faultAbandonOnCore
+      refine upd _ _ (removeRunnableOnCore_objects_invExt S p _ hInv) (fun _ => rfl)
+        (hH.removeRunnableOnCore p _)
+        (removeRunnableOnCore_currentOnCore_fwd S p _ e (Ne.symm hNe) hCur) ?_
+      obtain ⟨x, hx, hxA⟩ := hAct
+      obtain ⟨x', hx', ex⟩ := removeRunnableOnCore_getTcb?_fwd S p (faultAbandonCore S p) hx
+      have hts : x.threadState = x'.threadState := by
+        have := congrArg TCB.threadState ex; exact this
+      exact ⟨x', hx', by unfold TCB.Active at hxA ⊢; rw [← hts]; exact hxA⟩
+
 end SeLe4n.Kernel

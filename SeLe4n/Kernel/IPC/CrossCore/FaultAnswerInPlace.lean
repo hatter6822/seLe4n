@@ -66,29 +66,6 @@ theorem replyRecvCallerFaultAnswer?_of_fault (st : SystemState) (c : SeLe4n.Thre
   rw [hT]
   simp only [hPF]
 
-/-- The fault answer leaves every other thread in the IPC state it was in. -/
-theorem performFaultAnswer_ipcStateAt (X : SystemState) (c t : SeLe4n.ThreadId)
-    (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n off : Nat)
-    (hNe : c.toObjId ≠ t.toObjId) (hNo : X.objects.noResizeDue) (x : TCB)
-    (hX : X.getTcb? t = some x) :
-    ∃ x', (performFaultAnswer X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n
-      off).getTcb? t = some x' ∧ x'.ipcState = x.ipcState := by
-  have hUp : ∀ (Y : SystemState) (f : TCB → TCB), Y.objects.noResizeDue →
-      (Y.updateTcb c f).getTcb? t = Y.getTcb? t := fun Y f hY => by
-    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hY,
-      SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hNe]
-  unfold performFaultAnswer applyFaultRestart faultAbandonOnCore
-  split
-  · exact ⟨x, by rw [hUp _ _ hNo]; exact hX, rfl⟩
-  · split
-    · obtain ⟨x1, h1, e1⟩ := ipcStateCarried_of_agree
-        (removeRunnableOnCore_objectsAgreeOffRunLinks X c (faultAbandonCore X c)) t x hX
-      exact ⟨x1, by rw [hUp _ _ (removeRunnableOnCore_noResizeDue _ _ _ hNo)]; exact h1, e1⟩
-    · split
-      · exact ⟨x, by rw [hUp _ _ hNo]; exact hX, rfl⟩
-      · exact ⟨x, by rw [hUp _ _ hNo]; exact hX, rfl⟩
-
 /-- The reply leg's writes with no message to a caller recording no server
 (`storeReplyLeg` at `IpcMessage.empty`), written out as
 `storeFaultReplyRendezvous` is, so the empty message the woken thread holds is

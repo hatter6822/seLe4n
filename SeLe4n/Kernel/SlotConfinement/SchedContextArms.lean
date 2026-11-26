@@ -369,13 +369,18 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
               replyId prevCaller st1 st1q returnedSc? hInv1 hPop) hX
         -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, between the reply
         -- transfer and the receive leg: it writes no confined slot.
-        have hRetConf := receiveReturnSchedContext_confinedToCores true st1p receiver
-        have hInv1r : (receiveReturnSchedContext true st1p receiver).objects.invExt :=
-          receiveReturnSchedContext_objects_invExt true st1p receiver hInv1p
+        -- The caller is answered in the reply step (WS-SX SX32): its cores.
+        have hAnsConf := replyRecvAnswerCaller_confinedToCores answer st1p prevCaller xs.capInfo
+        have hInv1a : (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo).objects.invExt :=
+          replyRecvAnswerCaller_preserves_objects_invExt answer st1p prevCaller xs.capInfo hInv1p
+        generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hAnsConf hInv1a hStep ⊢
+        have hRetConf := receiveReturnSchedContext_confinedToCores true st1a receiver
+        have hInv1r : (receiveReturnSchedContext true st1a receiver).objects.invExt :=
+          receiveReturnSchedContext_objects_invExt true st1a receiver hInv1a
         have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
-          (some replyId) executingCore (receiveReturnSchedContext true st1p receiver) hInv1r
+          (some replyId) executingCore (receiveReturnSchedContext true st1a receiver) hInv1r
         cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
-            executingCore (receiveReturnSchedContext true st1p receiver) with
+            executingCore (receiveReturnSchedContext true st1a receiver) with
         | mk st2 res2 =>
           rw [hRcv] at hRecv hStep
           cases res2 with
@@ -411,30 +416,25 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                   (replyRecvPostReceiveDonationWriteSet receiver
                     ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                     executingCore returnedSc? st2 ++
-                    (replyRecvPostDonationTailCores answer receiver nextThread
-                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                    (replyRecvPostDonationTailCores receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore
                         returnedSc? st2)) := by
                 rw [← hStep.2]
-                have hTail : replyRecvPostDonationTailCores answer receiver nextThread
-                    ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                have hTail : replyRecvPostDonationTailCores receiver nextThread
+                    ((recordedReplyServer? st prevCaller).getD receiver) executingCore
                     returnedSc? st2 =
                     receiveLegPipHandoffWriteSet st3 receiver nextThread
-                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore ++
-                    replyRecvAnswerCores answer
-                      (applyReceiveLegPipHandoff st3 receiver nextThread
-                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
-                      prevCaller := by
+                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore := by
                   unfold replyRecvPostDonationTailCores; rw [hDon]
                 rw [hTail]
-                exact observableSlotsConfinedToCores_trans hConf
-                    (observableSlotsConfinedToCores_trans hPip
-                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _))
+                exact observableSlotsConfinedToCores_trans hConf hPip
               have hRetRecv := observableSlotsConfinedToCores_trans hRetConf hRecv
               simp only [List.nil_append] at hRetRecv
-              have hPopRecv := observableSlotsConfinedToCores_trans hPopConf hRetRecv
-              simp only [List.nil_append] at hPopRecv
+              have hPopAns := observableSlotsConfinedToCores_trans hPopConf hAnsConf
+              simp only [List.nil_append] at hPopAns
               exact observableSlotsConfinedToCores_trans hReply
-                (observableSlotsConfinedToCores_trans hPopRecv hStaged)
+                (observableSlotsConfinedToCores_trans hPopAns
+                  (observableSlotsConfinedToCores_trans hRetRecv hStaged))
 
 /-- SM8.B.2: the affinity write touches the object store only. -/
 theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)

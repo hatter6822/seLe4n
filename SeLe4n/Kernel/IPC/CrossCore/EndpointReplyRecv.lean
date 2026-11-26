@@ -514,9 +514,9 @@ theorem replyRecvReplyTransfer_of_inert (answer : Option Architecture.FaultReply
   | some _ => rfl
 
 /-- **WS-RM RM5.2**: the state `.replyRecv`'s receive leg runs on — the reply
-leg's committed state `st1` with the donation pop applied and then the reply
-leg's capability transfer (`replyRecvReplyTransfer`, read off the entry's state
-`pre`), and then seL4-MCS `receiveIPC`'s return of the replier's bound
+leg's committed state `st1` with the donation pop applied, the reply leg's
+capability transfer (`replyRecvReplyTransfer`, read off the entry's state `pre`)
+and the caller's answer (`replyRecvAnswerCaller`), and then seL4-MCS `receiveIPC`'s return of the replier's bound
 notification's context (`receiveReturnSchedContext`, blocking: `handleReplyRecv`
 always blocks).
 
@@ -540,8 +540,29 @@ def replyRecvReceiveLegState (answer : Option Architecture.FaultReplyOutcome)
   | .ok (_, st1q) =>
       match replyRecvReplyTransfer answer pre replier target grant st1q with
       | .error _ => st1q
-      | .ok (_, st1p) => receiveReturnSchedContext true st1p replier
+      | .ok (xs, st1p) =>
+          receiveReturnSchedContext true (replyRecvAnswerCaller answer st1p target xs.capInfo)
+            replier
 
+
+/-- **The state after the reply step** (seL4's `doReplyTransfer`, WS-SX SX32):
+the reply leg's committed state `st1` with the donation pop, the reply leg's
+capability transfer and the caller's answer applied, before anything of the
+receive.  It is the state a refused receive reports (WS-SX SX33), and the
+invariant families hold at it from the reply leg's and the pop's success
+(`RecordsStep.replyRecvReplyStep` and its siblings).  Total, as
+`replyRecvReceiveLegState`: a refusing pop answers the state before it, a value
+nothing reads; the transfer never refuses (`replyRecvReplyTransfer_ok`). -/
+def replyRecvReplyStepState (answer : Option Architecture.FaultReplyOutcome)
+    (pre : SystemState) (replier : SeLe4n.ThreadId) (grant : Bool)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st1 : SystemState) : SystemState :=
+  match replyRecvPopDonation rid target st1 with
+  | .error _ => st1
+  | .ok (_, st1q) =>
+      match replyRecvReplyTransfer answer pre replier target grant st1q with
+      | .error _ => st1q
+      | .ok (xs, st1p) => replyRecvAnswerCaller answer st1p target xs.capInfo
 
 /-- The cores answering the caller may write: none for the staging (a register
 write), and the fault outcome's (`faultReplyApplyCores`: an abandon deschedules
@@ -599,9 +620,11 @@ question.  The summary is **returned** rather than
 staged here, because the arm owns the return frame — `.replyRecv`'s `extraCaps`
 is now the honest installed count instead of a hardcoded zero.
 
-**The answer** (`answer`): what the replied-to caller is left with once the legs
-have run (`replyRecvAnswerCaller`) — its delivered message staged on `none`, the
-fault outcome applied on `some` (`faultReplyApplyOnCore`).  The arm's transition
+**The answer** (`answer`): what the replied-to caller is left with, written in
+the reply step, after the reply leg's capability transfer and before the receive
+leg (`replyRecvAnswerCaller`, WS-SX SX32, seL4's `doReplyTransfer` before
+`handleRecv`) — its delivered message staged on `none`, the fault outcome applied
+on `some` (`faultReplyApplyOnCore`).  The arm's transition
 `replyRecvTransferOnCore` reads it off the caller's fault record and hands the
 reply leg the message that answer delivers (`replyRecvLegMessage`); this body takes
 the message as given, so every leg is the same transition on both answers. -/
@@ -652,8 +675,16 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
         -- notification's context before the endpoint is looked at
         -- (`maybeReturnSchedContext`, `receiveReturnSchedContext`), as the
         -- `.receive` arm's leg does.
+        -- **The caller is answered here, in the reply step** (WS-SX SX32): its
+        -- delivered message staged, or, on a faulted caller, the fault answered
+        -- (`replyRecvAnswerCaller`), before the receive leg runs -- seL4's
+        -- `doReplyTransfer`, which wakes the caller and writes its frame (or
+        -- runs `handleFaultReply`) before `handleRecv`.  The state the receive
+        -- starts from is therefore a whole reply: the caller ready with its
+        -- frame written and no fault record left to answer.
         match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
-            (receiveReturnSchedContext true st1p tid) with
+            (receiveReturnSchedContext true
+              (replyRecvAnswerCaller answer st1p prevCaller replySummary.capInfo) tid) with
         | (_, .error e) => .error e
         | (st2, .ok (nextThread, summary, _)) =>
             -- The return donation's chain walk is told the core THIS syscall
@@ -668,14 +699,8 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 returnedSc? st2 with
             | .error e => .error e
             | .ok ((), st3) =>
-                -- WS-RA RA.B.5b: stage the reply leg's woken caller
-                -- (`prevCaller`, `.ready` with the reply in `pendingMessage` —
-                -- `.call`'s frame, delivered entirely through this path) and
-                -- the receive leg's completed plain sender (unit frame).  Both
-                -- stagers are guard-inert when their target was not woken.
-                -- `prevCaller`'s staged count is the reply leg's transfer
-                -- (`replySummary`, seL4's `doReplyTransfer`); the receive
-                -- leg's own count is the returned `summary`, staged by the arm.
+                -- The receive leg's completed plain sender is staged by the arm
+                -- (unit frame); its count is the returned `summary`.
                 -- **WS-OD OD3.14: the receive leg's priority hand-off.**  The
                 -- return donation's walk starts at `recordedServer`, which is the
                 -- receiver `tid` on every NON-delegated reply and covers both
@@ -686,12 +711,8 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 -- was on `.receive` before OD3.14 -- the same defect at a sibling
                 -- site.  Gated on the equality that makes the earlier walk BE
                 -- this one, so the non-delegated arm is unchanged.
-                -- The answered caller: its delivered message staged, or, on a
-                -- faulted caller, the fault answered (`replyRecvAnswerCaller`).
-                .ok (summary, replyRecvAnswerCaller answer
-                            (applyReceiveLegPipHandoff st3 tid nextThread recordedServer
-                              executingCore)
-                            prevCaller replySummary.capInfo)
+                .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
+                  executingCore)
 
 /-- The `.replyRecv` composite for a caller carrying **no** fault: the reply leg
 delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore`
@@ -826,19 +847,18 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
           (replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
               recordedServer serverCore)
       else replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
-/-- The cores the `.replyRecv` tail writes after the post-receive donation: the receive leg's priority hand-off and the answer to the replied-to
-caller, both on the donation's post-state; empty on the fail-closed arm. -/
-def replyRecvPostDonationTailCores (answer : Option Architecture.FaultReplyOutcome)
-    (receiver nextThread recordedServer prevCaller : SeLe4n.ThreadId)
+/-- The cores the `.replyRecv` tail writes after the post-receive donation: the
+receive leg's priority hand-off, on the donation's post-state; empty on the
+fail-closed arm.  The answer to the replied-to caller is no longer here: it is
+written in the reply step (WS-SX SX32), and its cores are read there. -/
+def replyRecvPostDonationTailCores
+    (receiver nextThread recordedServer : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st2 : SystemState) : List Concurrency.CoreId :=
   match replyRecvPostReceiveDonation receiver recordedServer nextThread executingCore returned? st2 with
   | .error _ => []
   | .ok (_, st3) =>
       receiveLegPipHandoffWriteSet st3 receiver nextThread recordedServer executingCore
-        ++ replyRecvAnswerCores answer
-          (applyReceiveLegPipHandoff st3 receiver nextThread recordedServer executingCore)
-          prevCaller
 
 /-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
 caller's home core, the receive leg's set at the reply's post-state, the
@@ -873,22 +893,27 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
           -- the derivation tree), but the receive leg runs on its post-state.
           match replyRecvReplyTransfer answer st receiver prevCaller grant st1q with
           | .error _ => []
-          | .ok (_, st1p) =>
+          | .ok (xs, st1p) =>
+            -- The answer to the caller runs here, in the reply step (WS-SX
+            -- SX32), on the transfer's post-state.
+            replyRecvAnswerCores answer st1p prevCaller ++
             -- The return before the receive leg moves no run queue
             -- (`receiveReturnSchedContext_queues`); the leg runs on its post-state.
-            endpointReceiveDualWriteSet (receiveReturnSchedContext true st1p receiver) endpointId
+            (endpointReceiveDualWriteSet (receiveReturnSchedContext true
+                (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) receiver) endpointId
                 executingCore ++
               (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore
-                  (receiveReturnSchedContext true st1p receiver) with
+                  (receiveReturnSchedContext true
+                    (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) receiver) with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
-                  -- The hand-off and the answer run on the donation's post-state.
+                  -- The hand-off runs on the donation's post-state.
                   replyRecvPostReceiveDonationWriteSet receiver
                     ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                     executingCore returnedSc? st2 ++
-                    (replyRecvPostDonationTailCores answer receiver nextThread
-                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
-                        returnedSc? st2))))
+                    (replyRecvPostDonationTailCores receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore
+                        returnedSc? st2)))))
 
 /-- The cores the ordinary `.replyRecv` composite (`endpointReplyRecvOnCore`) may
 write: `endpointReplyRecvAnsweringWriteSet` at `none`. -/
@@ -1015,13 +1040,18 @@ def replyRecvHandoffReplenishCores (answer : Option Architecture.FaultReplyOutco
         -- leg runs on its post-state.
         match replyRecvReplyTransfer answer st receiver prevCaller grant st1q with
         | .error _ => []
-        | .ok (_, st1p) =>
+        | .ok (xs, st1p) =>
+          -- The caller's answer (WS-SX SX32) migrates nothing; the receive leg
+          -- runs on its post-state.
           replyDonationReturnReplenishCores st1 replyId prevCaller ++
-            (receiveReturnReplenishCoresAt true st1p receiver ++
-            (receivePreReturnReplenishCores (receiveReturnSchedContext true st1p receiver) endpointId
+            (receiveReturnReplenishCoresAt true
+              (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) receiver ++
+            (receivePreReturnReplenishCores (receiveReturnSchedContext true
+                (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) receiver) endpointId
                 receiver ++
               (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore
-                  (receiveReturnSchedContext true st1p receiver) with
+                  (receiveReturnSchedContext true
+                    (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) receiver) with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
                   replyRecvPostReceiveReplenishCores receiver nextThread returnedSc? st2)))
