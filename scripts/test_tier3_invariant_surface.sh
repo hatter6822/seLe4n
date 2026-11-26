@@ -914,6 +914,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(receiveReturnSchedContext true\n[ \t
 # A dequeued run-queue entry clears its four links with its flag (WS-SX
 # D56), as seL4's tcb_queue_remove leaves tcbSchedPrev/tcbSchedNext NULL.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def unlinkLinks [^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*setLink l4 t \(fun y =>\n[ \t]*\{ y with queued := false, prev := 0, next := 0, bucketPrev := 0, bucketNext := 0 \}\)\n" SeLe4n/Kernel/Scheduler/RunQueue.lean'
+# A present entry is rewritten in place, with no resize check (WS-SX D56).
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def setLink \(links : RHTable ThreadId RunQueueLink\) \(t : ThreadId\)\n[^\n]*\n[ \t]*if links\.contains t then links\.mapValueAt t f else links\.insert t \(f RunQueueLink\.none\)\n" SeLe4n/Kernel/Scheduler/RunQueue.lean'
 # The reply leg checks first (WS-SX SX29.2): its total form runs in the
 # specification's place through an unconditional `@[csimp]`, over the two
 # state readers and their bridges.
