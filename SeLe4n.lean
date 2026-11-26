@@ -33,6 +33,9 @@ import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerCommute
 -- WS-SX SX31: the tail's frame (what the stage reads off the caller) and the
 -- post-receive donation's commutation with the answer.
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerFrame
+-- WS-SX SX31: the composite with the answer in the reply step equals the
+-- composite as defined (consumed by the definition switch).
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvAnswerFirst
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode
