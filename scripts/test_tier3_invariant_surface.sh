@@ -875,6 +875,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_reply_arm_eq
 # arm WS-HP HP3.2 moved the ceiling to 23 for.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The reply leg checks first (WS-SX SX29.2): its total form runs in the
+# specification's place through an unconditional `@[csimp]`, over the two
+# state readers and their bridges.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReplyOnCore_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^def endpointReplyOnCoreChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # Both receive-side footprints resolve the member through the shared resolver,
