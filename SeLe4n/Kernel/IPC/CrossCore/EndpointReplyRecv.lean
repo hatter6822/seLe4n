@@ -206,6 +206,67 @@ it in the pop's place. -/
 @[csimp] theorem replyRecvPopDonation_eq_checked :
     @replyRecvPopDonation = @replyRecvPopDonationChecked := rfl
 
+/-- **Whether the donation pop commits, read on the state it runs on**
+(seL4-MCS's `reply_pop`, decided before any write): a frame heading a context
+bound to a holder pops as the held-head pop does (`heldPopCommits`: the return
+to `target` where it holds no context, the held pop where it holds one), its
+holder and `target` both promotable to valid threads; a frame heading an unheld
+context pops as `unheldPopCommits` admits; a frame heading nothing pops
+nothing.  It is the whole refusal surface of `replyRecvPopDonation`
+(`replyRecvPopDonation_ok_iff_commits`). -/
+def replyRecvPopCommits (st : SystemState) (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
+    Bool :=
+  match replyFrameHeadHolder? st rid with
+  | some (scId, holder) =>
+      holder.toValid?.isSome && target.toValid?.isSome && heldPopCommits st holder scId target
+  | none =>
+      match replyFrameHeadContext? st rid with
+      | none => true
+      | some scId => unheldPopCommits st scId target
+
+/-- Whether the held pop's outer caller is a thread other than `c`. -/
+def keptPopOuterIsNot (st : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (c : SeLe4n.ThreadId) : Bool :=
+  match replyStackOuterCaller? st scId with
+  | .ok n => heldPopOuter? st holder n != some c
+  | .error _ => true
+
+/-- **The pop's commit test, read before the reply leg that precedes it.**
+The reply leg writes no context, no other frame and no binding, keeps a head
+frame's links, and makes the answered caller `c` ready; so every read of
+`replyRecvPopCommits` on the leg's state is the same read on the state before
+it, except the held pop's outer-caller test at `c` itself, which the leg's
+wake falsifies (`keptPopOuterIsNot`).  Equal to the pop's own test on the
+leg's state wherever the caller's reply link is the frame or nothing
+(`endpointReplyOnCore_popCommits`). -/
+def replyRecvPopAdmitsCore (st : SystemState) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) :
+    Bool :=
+  match replyFrameHeadHolder? st rid with
+  | some (scId, holder) =>
+      holder.toValid?.isSome && c.toValid?.isSome &&
+        (if donationRecipientAcceptable st c then donatedReturnCommits st holder scId c
+         else keptPopCommits st holder scId && keptPopOuterIsNot st holder scId c)
+  | none =>
+      match replyFrameHeadContext? st rid with
+      | none => true
+      | some scId => unheldPopCommits st scId c
+
+/-- Whether the answered caller's reply link is the frame `rid` or nothing: the
+reply leg's removal then touches no frame but `rid`. -/
+def replyRecvCallerFrameIs (st : SystemState) (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
+    Bool :=
+  match lookupTcb st c with
+  | some t => t.replyObject == none || t.replyObject == some rid
+  | none => true
+
+/-- **The reply-receive's pop admission, on its entry state** (seL4-MCS's order:
+`reply_pop` cannot refuse, so nothing a pop refusal would undo may be written
+before it is decided).  A caller whose reply link names another frame is
+refused here too: the leg's removal would then edit that frame's neighbours,
+which the admission cannot read ahead. -/
+def replyRecvPopAdmits (st : SystemState) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) : Bool :=
+  replyRecvCallerFrameIs st c rid && replyRecvPopAdmitsCore st rid c
+
 /-- The deschedule of the thread the pop unbound, on the Call arm of
 `replyRecvPostReceiveDonation`.
 
