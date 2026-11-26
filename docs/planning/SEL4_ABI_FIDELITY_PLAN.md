@@ -840,6 +840,30 @@ A different answer changes only the rows that cite it.
   - The rows after SX30 are renumbered (SX31–SX44 became SX32–SX45): the
     switch is SX32, the refusals SX33, the gate SX34, the QEMU scenarios
     SX35, the lock-set ceiling SX44 and the closure SX45.
+- **D56. A dequeued run-queue entry clears its links.** *Found in SX31;
+  the coordinator's ruling (2026-11-26), taken inside SX31 under the rule
+  that errors found along the way are fixed in the PR that finds them.*
+  - *The finding.* `RunQueue.remove` marked the entry not queued but kept
+    its four links (`prev`, `next`, `bucketPrev`, `bucketNext`), while
+    `TCB.detachRun` already cleared the thread's own. An append writes the
+    old tail's `next` (and the bucket tail's `bucketNext`), so a thread that
+    was the tail when another thread joined and was dequeued afterwards kept
+    a link to the joiner, and one dequeued first did not. The queue itself
+    was the same either way: these are dead links in an unqueued entry,
+    read only while the entry is queued and rewritten by any re-append. It
+    is not a vulnerability. But the state depended on the order of a
+    removal and another thread's append, so the fault abandon's equality
+    across the receive leg (the reply leg wakes the caller as the tail, the
+    receive leg wakes a plain sender onto the same core) was false as a
+    state equality.
+  - *The change.* `RunQueue.remove` (`unlinkLinks`) now clears the four
+    links with the flag. This is seL4's own state: `tcb_queue_remove`
+    (`src/object/tcb.c`, seL4 `f6978b12`), called from `tcbSchedDequeue`,
+    sets whichever of the dequeued thread's `tcbSchedPrev` and
+    `tcbSchedNext` is not already `NULL` to `NULL`.
+    The clearing is in place, so nothing allocates, and no `@[csimp]`
+    equality gains a premise.
+  - SX31 is therefore not proof-only: this is its one compiled change.
 
 ## 4. Rows
 

@@ -693,16 +693,22 @@ theorem le_maxPrioCode {lk : ThreadId → RunQueueLink} {l : List ThreadId} {z :
 
 /-- The links after the queued thread `t` leaves, its four links being `pv`,
 `nx` (the queue) and `bpv`, `bnx` (its bucket): each neighbour takes over the
-link `t` held towards the other, and `t`'s entry is marked not queued.  The
-links are passed as words, not as `t`'s entry, so no reference to the entry is
-held while it is rewritten. -/
+link `t` held towards the other, and `t`'s entry is marked not queued with its
+four links cleared, as `TCB.detachRun` clears the thread's own links and as
+seL4's `tcb_queue_remove` (`src/object/tcb.c`, seL4 `f6978b12`) sets the
+dequeued thread's `tcbSchedPrev` and `tcbSchedNext` to `NULL`.  An entry that
+kept its old links would hold whatever a later append wrote into them while it
+was the tail, so the queue's state would depend on the order of a removal and
+an append of another thread (WS-SX D56).  The links are passed as words, not as
+`t`'s entry, so no reference to the entry is held while it is rewritten. -/
 def unlinkLinks (links : RHTable ThreadId RunQueueLink) (t : ThreadId)
     (pv nx bpv bnx : Nat) : RHTable ThreadId RunQueueLink :=
   let l1 := setLinkAt links pv (fun y => { y with next := nx })
   let l2 := setLinkAt l1 nx (fun y => { y with prev := pv })
   let l3 := setLinkAt l2 bpv (fun y => { y with bucketNext := bnx })
   let l4 := setLinkAt l3 bnx (fun y => { y with bucketPrev := bpv })
-  setLink l4 t (fun y => { y with queued := false })
+  setLink l4 t (fun y =>
+    { y with queued := false, prev := 0, next := 0, bucketPrev := 0, bucketNext := 0 })
 
 theorem unlinkLinks_invExtK {links : RHTable ThreadId RunQueueLink} (h : links.invExtK)
     (t : ThreadId) (pv nx bpv bnx : Nat) : (unlinkLinks links t pv nx bpv bnx).invExtK := by
@@ -714,7 +720,8 @@ theorem linkOf_unlinkLinks {links : RHTable ThreadId RunQueueLink} (h : links.in
     (t : ThreadId) (pv nx bpv bnx : Nat)
     (h1 : code t ≠ pv) (h2 : code t ≠ nx) (h3 : code t ≠ bpv) (h4 : code t ≠ bnx) (y : ThreadId) :
     linkOf (unlinkLinks links t pv nx bpv bnx) y =
-      if y = t then { linkOf links t with queued := false }
+      if y = t then
+        { linkOf links t with queued := false, prev := 0, next := 0, bucketPrev := 0, bucketNext := 0 }
       else { linkOf links y with
         next := if code y = pv then nx else (linkOf links y).next
         prev := if code y = nx then pv else (linkOf links y).prev
