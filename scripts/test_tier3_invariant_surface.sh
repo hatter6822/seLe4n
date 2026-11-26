@@ -881,9 +881,13 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_que
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_eq_answerSlots[^\n]*(\n([ \t][^\n]*)?)*\(hNo : X\.objects\.noResizeDue\) :\n[ \t]*stageDeliveredMessage X c n =" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_commute[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*F \(stageDeliveredMessage X c n\) = stageDeliveredMessage \(F X\) c n := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyFaultRestart_commute[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*F \(applyFaultRestart X c f\) = applyFaultRestart \(F X\) c f := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_answer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
-run_check "INVARIANT" rg -n '^theorem removeRunnableOnCore_answer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
-run_check "INVARIANT" rg -n 'TCB\.withMessageSlots ρ μ π = TCB\.withAnswerSlots ρ μ π id := rfl' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_answer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeRunnableOnCore_answer[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*removeRunnableOnCore \(st\.mapTcbInPlace r \(TCB\.withAnswerSlots ρ μ π κ\)\) t c =\n[ \t]*\(removeRunnableOnCore st t c\)\.mapTcbInPlace r \(TCB\.withAnswerSlots ρ μ π κ\) :=" SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean'
+run_check "INVARIANT" rg -n 'TCB\.withMessageSlots ρ μ π = TCB\.withAnswerSlots ρ μ π id := rfl' SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean
+# The delivery's message-slot commutations are the answer-slot family's
+# instances, not a second proof of it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem propagatePipChainCrossCore_msg[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*rw \[TCB\.withMessageSlots_eq_answerSlots\] at \*\n[ \t]*apply propagatePipChainCrossCore_answer <;> assumption" SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem enqueueRunnableOnCore_msg[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*rw \[TCB\.withMessageSlots_eq_answerSlots\] at \*\n[ \t]*apply enqueueRunnableOnCore_answer <;> assumption" SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_mapTcbInPlace_ne[^\n]*(\n([ \t][^\n]*)?)*\(hk : Z\.objects\[k\]\? = some o0\) \(hne : k ≠ x\.toObjId\)" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem modifyTcb_mapTcbInPlace[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*modifyTcb \(Z\.mapTcbInPlace x G\) t f = \(modifyTcb Z t f\)\.map \(·\.mapTcbInPlace x G\) := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeRunnableOnCore_ledger[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*removeRunnableOnCore \(recordPhysicalWrites st ws\) t c = recordPhysicalWrites \(removeRunnableOnCore st t c\) ws := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
