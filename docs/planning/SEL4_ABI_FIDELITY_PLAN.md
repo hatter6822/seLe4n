@@ -910,6 +910,42 @@ A different answer changes only the rows that cite it.
   tail reads are carried across the answer (`answerGuardFrame`: every slot
   but the caller's agrees off its run links, and the caller's keeps the codes
   the guards read). The duplicate fault forms that answered last are retired.
+- **D60. A refused reply lets the receive run; a pop refusal refuses the
+  whole syscall.** *SX33's first piece and the coordinator's ruling
+  (2026-11-26).* seL4's `doReplyTransfer` returns with nothing to do when
+  the reply's caller is gone or not blocked on reply, and `handleRecv` then
+  runs. So a reply-receive whose caller is not found or not waiting
+  (`replyRecvCallerAwaitsReply`), or whose reply leg the flow gate denies, now
+  takes the receive alone, the busy reply's holder cancelled where the flow
+  admits it; the choice is made in one place (`replyRecvReplyAnswers`). Before,
+  the first two refused the syscall at the pre-state. Both are reachable only
+  off the invariant (`replyCallerLinkageReciprocal`: a reply's caller is a
+  stored thread blocked on that reply), and a flow-denied reply's outcome is
+  unchanged (the receive cancels no one and refuses `.replyCapInvalid` on the
+  busy reply). seL4's `reply_pop` cannot fail, while seLe4n's pop
+  (`replyRecvPopDonation`) has defensive refusals; under the ruling, a pop
+  refusal is checked before the reply leg and refuses the whole syscall with
+  nothing written, and it is not a refused reply. *Reachability, checked:* no
+  pop refusal is reachable on a state that holds the IPC bundle, the chain
+  invariant, the binding pair and the dispatch's stated coherence hypothesis.
+  The caller's sentinel arm is excluded by the reply leg's own lookup (which
+  refuses a reserved id). The holder's is excluded by the binding pair (the
+  holder is a stored thread), since no transition stores a thread at the
+  reserved id (retype validates its child through `validateObjIdArg`); no
+  invariant states that, so it rests on this reasoning. The reply-stack
+  resolver's refusals (head, frame below, its caller) are excluded by
+  `replyStackOuterCallerResolves_of_chainWellFormed` (the relaxed chain form
+  at the answered head is enough, since it reads only the frame below). The
+  bound-thread guards are vacuous (`replyFrameHeadHolder?` reads them on the
+  same state), and the late thread lookups and the holder's binding guard are
+  excluded by the binding pair. The outer caller's guard (`outerCallerAcceptable`)
+  is derived in part: the caller is a stored thread blocked on reply
+  (`replyCallerLinkageReciprocal`'s backward half) and differs from the
+  answered caller (the two hold different reply objects). Its other two
+  clauses (it is not the holder, and it holds no loan) are the stated coherence
+  hypothesis `replyStacksSettleOnWaitingDonors` (`replyStackOuterCallerValid`),
+  which the dispatch payoff already takes and which is not derived. Each
+  refusal therefore stays as a defensive check, not deleted.
 
 ## 4. Rows
 
