@@ -875,6 +875,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_reply_arm_eq
 # arm WS-HP HP3.2 moved the ceiling to 23 for.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The caller's answer commutes with the receive side's writes (WS-SX SX30):
+# the stage and the restart are one thread's answer-slot write, and each
+# commutes with a step that commutes with that write.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_eq_answerSlots[^\n]*(\n([ \t][^\n]*)?)*\(hNo : X\.objects\.noResizeDue\) :\n[ \t]*stageDeliveredMessage X c n =" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_commute[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*F \(stageDeliveredMessage X c n\) = stageDeliveredMessage \(F X\) c n := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyFaultRestart_commute[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*F \(applyFaultRestart X c f\) = applyFaultRestart \(F X\) c f := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_answer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnableOnCore_answer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
+run_check "INVARIANT" rg -n 'TCB\.withMessageSlots ρ μ π = TCB\.withAnswerSlots ρ μ π id := rfl' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
 # The reply leg checks first (WS-SX SX29.2): its total form runs in the
 # specification's place through an unconditional `@[csimp]`, over the two
 # state readers and their bridges.

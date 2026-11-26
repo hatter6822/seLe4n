@@ -1,0 +1,606 @@
+/-
+Copyright (C) 2026 seLe4n contributors
+SPDX-License-Identifier: GPL-3.0-or-later
+-/
+import SeLe4n.Kernel.IPC.CrossCore.DeliveryCommute
+
+/-!
+# The answer to a caller commutes with the receive side's writes
+
+WS-SX SX30.  A `.replyRecv` answers the caller it replies to
+(`replyRecvAnswerCaller`): on an ordinary reply the delivered message is
+staged into the caller's saved registers (`stageDeliveredMessage`), and on a
+faulted caller the fault is answered — a restart frame installed with the
+fault record cleared (`applyFaultRestart`), or the thread abandoned.  seL4's
+`doReplyTransfer` writes that answer before `handleRecv` runs; the
+specification writes it last.
+
+Both the message stage and the restart write one thread's **answer slots** —
+its saved registers, its pending message, its stashed receive reply and its
+fault kind (`TCB.withAnswerSlots`) — and nothing the run queue, the
+reply-waiter queues or the priority walk reads or writes.  On an object table
+with no resize due every write those make is a slot write
+(`TcbWriteCommute`), so the answer commutes with each of them: written first or
+written last, the state is the same.  The delivery's message-slot write
+(`TCB.withMessageSlots`, `DeliveryCommute`) is the instance that keeps the
+fault kind (`TCB.withMessageSlots_eq_answerSlots`).
+-/
+
+namespace SeLe4n.Model
+
+/-- A TCB rewritten in its answer slots alone: its saved registers, its
+pending message, its stashed receive reply and its fault kind.  Proof-only:
+no transition runs it, so it is compiled nowhere. -/
+noncomputable def TCB.withAnswerSlots (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
+    (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat) (κ : Nat → Nat) (t : TCB) : TCB :=
+  { t with registerContext := ρ t.registerContext, pendingMessage := μ t.pendingMessage,
+           pendingReceiveReplyCode := π t.pendingReceiveReplyCode, faultKind := κ t.faultKind }
+
+section
+variable (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
+  (π : Nat → Nat) (κ : Nat → Nat) (t : TCB)
+@[simp] theorem TCB.withAnswerSlots_pipBoost : (TCB.withAnswerSlots ρ μ π κ t).pipBoost = t.pipBoost := rfl
+@[simp] theorem TCB.withAnswerSlots_pipBoostCode :
+    (TCB.withAnswerSlots ρ μ π κ t).pipBoostCode = t.pipBoostCode := rfl
+@[simp] theorem TCB.withAnswerSlots_priority : (TCB.withAnswerSlots ρ μ π κ t).priority = t.priority := rfl
+@[simp] theorem TCB.withAnswerSlots_boostedPriority :
+    (TCB.withAnswerSlots ρ μ π κ t).boostedPriority = t.boostedPriority := rfl
+@[simp] theorem TCB.withAnswerSlots_domain : (TCB.withAnswerSlots ρ μ π κ t).domain = t.domain := rfl
+@[simp] theorem TCB.withAnswerSlots_runCoreCode :
+    (TCB.withAnswerSlots ρ μ π κ t).runCoreCode = t.runCoreCode := rfl
+@[simp] theorem TCB.withAnswerSlots_ipcState : (TCB.withAnswerSlots ρ μ π κ t).ipcState = t.ipcState := rfl
+@[simp] theorem TCB.withAnswerSlots_registerContext :
+    (TCB.withAnswerSlots ρ μ π κ t).registerContext = ρ t.registerContext := rfl
+@[simp] theorem TCB.withAnswerSlots_pendingMessage :
+    (TCB.withAnswerSlots ρ μ π κ t).pendingMessage = μ t.pendingMessage := rfl
+@[simp] theorem TCB.withAnswerSlots_pendingReceiveReplyCode :
+    (TCB.withAnswerSlots ρ μ π κ t).pendingReceiveReplyCode = π t.pendingReceiveReplyCode := rfl
+@[simp] theorem TCB.withAnswerSlots_faultKind :
+    (TCB.withAnswerSlots ρ μ π κ t).faultKind = κ t.faultKind := rfl
+end
+
+/-- The delivery's message-slot write is the answer-slot write that keeps the
+fault kind. -/
+theorem TCB.withMessageSlots_eq_answerSlots (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
+    (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat) :
+    TCB.withMessageSlots ρ μ π = TCB.withAnswerSlots ρ μ π id := rfl
+
+/-- The delivered frame is an answer-slot write: the registers staged and the
+message dropped. -/
+theorem TCB.withDeliveredFrame_eq_answerSlots (f : SeLe4n.Kernel.Architecture.SyscallReturnFrame) :
+    (fun t : TCB => t.withDeliveredFrame f) =
+      TCB.withAnswerSlots (fun rf => rf.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
+        (fun _ => none) id id := rfl
+
+/-- The restart is an answer-slot write: the restart frame staged and the
+fault kind cleared. -/
+theorem TCB.restartAnswer_eq_answerSlots (f : SeLe4n.Kernel.Architecture.FaultRestartFrame) :
+    (fun t : TCB => (t.withRestartFrame f).setPendingFault none) =
+      TCB.withAnswerSlots (fun rf => rf.stageRestartFrame f) id id (fun _ => 0) := rfl
+
+end SeLe4n.Model
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
+
+section AnswerSlots
+
+variable (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
+  (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat) (κ : Nat → Nat)
+
+/-- The thread's read through the delivery: itself, or its message slots
+rewritten. -/
+theorem getTcb?_answer_cases (st : SystemState) (y : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).getTcb? y = st.getTcb? y ∨
+      (r = y ∧ (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).getTcb? y =
+        (st.getTcb? y).map (TCB.withAnswerSlots ρ μ π κ)) := by
+  rw [SystemState.getTcb?_mapTcbInPlace]
+  by_cases h : r = y
+  · exact .inr ⟨h, by rw [if_pos h]⟩
+  · exact .inl (by rw [if_neg h])
+
+theorem runLinkOn_answer (st : SystemState) (c : CoreId) (y : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runLinkOn c y = st.runLinkOn c y := by
+  unfold SystemState.runLinkOn
+  rcases getTcb?_answer_cases r ρ μ π κ st y with h | ⟨_, h⟩ <;> rw [h]
+  cases st.getTcb? y <;> rfl
+
+theorem queuedOn_answer (st : SystemState) (c : CoreId) (y : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).queuedOn c y = st.queuedOn c y := by
+  unfold SystemState.queuedOn
+  rcases getTcb?_answer_cases r ρ μ π κ st y with h | ⟨_, h⟩ <;> rw [h]
+  cases st.getTcb? y <;> rfl
+
+theorem runLinksAdmit_answer (st : SystemState) (c : CoreId) (y : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runLinksAdmit c y = st.runLinksAdmit c y := by
+  unfold SystemState.runLinksAdmit
+  rcases getTcb?_answer_cases r ρ μ π κ st y with h | ⟨_, h⟩ <;> rw [h]
+  cases st.getTcb? y <;> rfl
+
+theorem runEnqueueAdmits_answer (st : SystemState) (c : CoreId) (y : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runEnqueueAdmits c y =
+      st.runEnqueueAdmits c y := by
+  unfold SystemState.runEnqueueAdmits
+  rw [runLinksAdmit_answer]
+
+theorem runnableOnSomeCore_answer (st : SystemState) (y : SeLe4n.ThreadId) :
+    runnableOnSomeCore (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) y =
+      runnableOnSomeCore st y := by
+  unfold runnableOnSomeCore
+  simp only [queuedOn_answer]
+
+theorem wakeDeclines_answer (st : SystemState) (c : CoreId) (y : SeLe4n.ThreadId) :
+    wakeDeclines (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) c y = wakeDeclines st c y := by
+  unfold wakeDeclines
+  rw [runnableOnSomeCore_answer, runEnqueueAdmits_answer]
+
+theorem determineTargetCore_answer (st : SystemState) (y : SeLe4n.ThreadId) :
+    determineTargetCore (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) y =
+      determineTargetCore st y := by
+  unfold determineTargetCore
+  rcases getTcb?_answer_cases r ρ μ π κ st y with h | ⟨_, h⟩ <;> rw [h]
+  cases st.getTcb? y <;> rfl
+
+theorem runAppendLinks_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runAppendLinks c t p =
+      (st.runAppendLinks c t p).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runAppendLinks
+  simp only [SystemState.mapTcbInPlace_scheduler]
+  rw [SystemState.mapTcbInPlace_swap _ (TCB.withAnswerSlots ρ μ π κ) _ ?_, SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_,
+    SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_]
+  all_goals intros; rfl
+
+theorem runAppendOnCore_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runAppendOnCore c t p =
+      (st.runAppendOnCore c t p).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runAppendOnCore
+  rw [runAppendLinks_answer]
+  rfl
+
+theorem runEnqueueAdmitted_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runEnqueueAdmitted c t p =
+      (st.runEnqueueAdmitted c t p).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runEnqueueAdmitted
+  rw [runLinkOn_answer]
+  split
+  · rfl
+  · rw [runAppendOnCore_answer]; rfl
+
+/-- A slot write through `mapTcbObject` at a thread is its TCB write. -/
+theorem modifyObject_tcb_answer (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hNo : st.objects.noResizeDue)
+    (hc : t = r → ∀ x, f (TCB.withAnswerSlots ρ μ π κ x) = TCB.withAnswerSlots ρ μ π κ (f x)) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).modifyObject t.toObjId
+        (SystemState.mapTcbObject f) =
+      (st.modifyObject t.toObjId (SystemState.mapTcbObject f)).mapTcbInPlace r
+        (TCB.withAnswerSlots ρ μ π κ) := by
+  rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hNo,
+    SystemState.modifyObject_eq_mapValueAt (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) _ _ hNo,
+    SystemState.mapTcbObject_eq_mapTcb]
+  exact SystemState.mapTcbInPlace_swap st _ f hc
+
+theorem enqueueRunnableOnCore_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (hNo : st.objects.noResizeDue) :
+    enqueueRunnableOnCore (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) c t =
+      (enqueueRunnableOnCore st c t).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  rw [enqueueRunnableOnCore_eq_impl]
+  unfold enqueueRunnableOnCoreImpl
+  rw [wakeDeclines_answer]
+  have hBody : ∀ prio : SeLe4n.Priority,
+      (if wakeDeclines st c t = true then st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)
+       else
+        let st' := ((st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).modifyObject t.toObjId
+          (SystemState.mapTcbObject fun x => (x.setIpcState .ready))).runEnqueueAdmitted c t prio
+        { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }) =
+      (if wakeDeclines st c t = true then st
+       else
+        let st' := (st.modifyObject t.toObjId
+          (SystemState.mapTcbObject fun x => (x.setIpcState .ready))).runEnqueueAdmitted c t prio
+        { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }).mapTcbInPlace r
+          (TCB.withAnswerSlots ρ μ π κ) := by
+    intro prio
+    split
+    · rfl
+    · dsimp only
+      rw [modifyObject_tcb_answer r ρ μ π κ st t _ hNo ?_, runEnqueueAdmitted_answer]
+      all_goals first | rfl | (intros; rfl)
+  rcases getTcb?_answer_cases r ρ μ π κ st t with h | ⟨_, h⟩ <;> rw [h]
+  · cases st.getTcb? t with
+    | none => rfl
+    | some tcb => exact hBody tcb.boostedPriority
+  · cases st.getTcb? t with
+    | none => rfl
+    | some tcb => exact hBody tcb.boostedPriority
+
+theorem runUnlinkLinks_answer (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runUnlinkLinks t pv nx bpv bnx =
+      (st.runUnlinkLinks t pv nx bpv bnx).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runUnlinkLinks
+  dsimp only
+  rw [SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_, SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_,
+    SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_, SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_,
+    SystemState.mapTcbInPlace_swap _ (TCB.withAnswerSlots ρ μ π κ) _ ?_]
+  all_goals intros; rfl
+
+theorem runMaxCodeWalk_answer (st : SystemState) (c : CoreId) (n k acc : Nat) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runMaxCodeWalk c n k acc =
+      st.runMaxCodeWalk c n k acc := by
+  rw [SystemState.runMaxCodeWalk_eq, SystemState.runMaxCodeWalk_eq]
+  congr 1
+  funext y
+  exact runLinkOn_answer r ρ μ π κ st c y
+
+theorem runUnlinkMaxCode_answer (st : SystemState) (c : CoreId) (pv nx bpv bnx : Nat)
+    (p : SeLe4n.Priority) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runUnlinkMaxCode c pv nx bpv bnx p =
+      st.runUnlinkMaxCode c pv nx bpv bnx p := by
+  unfold SystemState.runUnlinkMaxCode
+  simp only [SystemState.mapTcbInPlace_scheduler, runMaxCodeWalk_answer]
+
+theorem runRemoveOnCore_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runRemoveOnCore c t =
+      (st.runRemoveOnCore c t).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runRemoveOnCore
+  dsimp only
+  rw [runLinkOn_answer]
+  split
+  · dsimp only
+    rw [runUnlinkLinks_answer]
+    simp only [SystemState.mapTcbInPlace_scheduler]
+    have hw : (fun n h => RunQueue.maxPrioCodeWalkBy
+        (((st.runUnlinkLinks t (st.runLinkOn c t).prev (st.runLinkOn c t).next
+          (st.runLinkOn c t).bucketPrev (st.runLinkOn c t).bucketNext).mapTcbInPlace r
+          (TCB.withAnswerSlots ρ μ π κ)).runLinkOn c) n h 0) =
+        (fun n h => RunQueue.maxPrioCodeWalkBy
+        ((st.runUnlinkLinks t (st.runLinkOn c t).prev (st.runLinkOn c t).next
+          (st.runLinkOn c t).bucketPrev (st.runLinkOn c t).bucketNext).runLinkOn c) n h 0) := by
+      funext n h
+      congr 1
+      funext y
+      exact runLinkOn_answer r ρ μ π κ _ c y
+    rw [hw]
+    rfl
+  · rfl
+
+theorem runDescheduleOnCore_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runDescheduleOnCore c t =
+      (st.runDescheduleOnCore c t).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runDescheduleOnCore
+  rw [runRemoveOnCore_answer]
+  rfl
+
+theorem removeRunnableOnCore_answer (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId) :
+    removeRunnableOnCore (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) t c =
+      (removeRunnableOnCore st t c).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) :=
+  runDescheduleOnCore_answer r ρ μ π κ st c t
+
+theorem runRequeueOnCore_answer (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).runRequeueOnCore c t p =
+      (st.runRequeueOnCore c t p).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.runRequeueOnCore
+  rw [runRemoveOnCore_answer, runEnqueueAdmitted_answer]
+  rfl
+
+theorem replyViews_answer (st : SystemState) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).replyViews = st.replyViews := by
+  rw [SystemState.replyViews_mapTcbInPlace st r (g := TCB.withAnswerSlots ρ μ π κ) (gv := id)
+    (fun _ => rfl)]
+  funext k
+  unfold ReplyViews.mapAt
+  split
+  · cases st.replyViews k <;> rfl
+  · rfl
+
+theorem linkReplyWaiter_answer (st : SystemState) (w s : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).linkReplyWaiter w s =
+      (st.linkReplyWaiter w s).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.linkReplyWaiter
+  dsimp only
+  rw [SystemState.replyHeadCode_eq, SystemState.replyHeadCode_eq, replyViews_answer]
+  rw [SystemState.mapTcbInPlace_swap _ (TCB.withAnswerSlots ρ μ π κ) _ ?_, SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_,
+    SystemState.mapTcbInPlace_swap _ (TCB.withAnswerSlots ρ μ π κ) _ ?_]
+  all_goals intros; rfl
+
+theorem unlinkReplyWaiter_answer (st : SystemState) (w s : SeLe4n.ThreadId) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).unlinkReplyWaiter w s =
+      (st.unlinkReplyWaiter w s).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold SystemState.unlinkReplyWaiter
+  dsimp only
+  rw [SystemState.replyPrevCode_eq, SystemState.replyPrevCode_eq, SystemState.replyNextCode_eq,
+    SystemState.replyNextCode_eq, replyViews_answer]
+  rw [SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_, SystemState.updateTcbAtCode_swap _ _ (TCB.withAnswerSlots ρ μ π κ) _ ?_,
+    SystemState.mapTcbInPlace_swap _ (TCB.withAnswerSlots ρ μ π κ) _ ?_, SystemState.mapTcbInPlace_swap _ (TCB.withAnswerSlots ρ μ π κ) _ ?_]
+  all_goals intros; rfl
+
+theorem effectiveSchedParams_answer (st : SystemState) (t : TCB) :
+    effectiveSchedParams (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) t =
+      effectiveSchedParams st t := by
+  unfold effectiveSchedParams
+  simp only [SystemState.getSchedContext?_mapTcbInPlace]
+
+theorem computeMaxWaiterPriority_answer (st : SystemState) (tid : SeLe4n.ThreadId) :
+    PriorityInheritance.computeMaxWaiterPriority
+        (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid =
+      PriorityInheritance.computeMaxWaiterPriority st tid := by
+  unfold PriorityInheritance.computeMaxWaiterPriority
+  rw [PriorityInheritance.waitersOf_of_replyViews _ _ _ (replyViews_answer r ρ μ π κ st)]
+  dsimp only
+  congr 1
+  funext acc w
+  rcases getTcb?_answer_cases r ρ μ π κ st w with h | ⟨_, h⟩ <;> rw [h]
+  · cases st.getTcb? w with
+    | none => rfl
+    | some t => simp only [effectiveSchedParams_answer]
+  · cases st.getTcb? w with
+    | none => rfl
+    | some t =>
+      simp only [Option.map_some, effectiveSchedParams_answer]
+      rfl
+
+theorem blockingServer_answer (st : SystemState) (tid : SeLe4n.ThreadId) :
+    PriorityInheritance.blockingServer (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid =
+      PriorityInheritance.blockingServer st tid := by
+  unfold PriorityInheritance.blockingServer
+  rcases getTcb?_answer_cases r ρ μ π κ st tid with h | ⟨_, h⟩ <;> rw [h]
+  cases st.getTcb? tid <;> rfl
+
+theorem markKeyFlagsOver_answer (st : SystemState) (tid : SeLe4n.ThreadId) (rc : Nat) (w : Bool)
+    (cs : List CoreId) :
+    markKeyFlagsOver (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid rc w cs =
+      (markKeyFlagsOver st tid rc w cs).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  induction cs generalizing st with
+  | nil => rfl
+  | cons c cs ih =>
+    unfold markKeyFlagsOver
+    simp only [SystemState.mapTcbInPlace_scheduler]
+    split
+    · exact ih (st.markReschedulePendingOnCore c)
+    · exact ih st
+
+theorem markKeyChangeParts_answer (st : SystemState) (tid : SeLe4n.ThreadId) (p0 : SeLe4n.Priority)
+    (d0 : SeLe4n.Deadline) (dom0 : SeLe4n.DomainId) :
+    markKeyChangeParts (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid p0 d0 dom0 =
+      (markKeyChangeParts st tid p0 d0 dom0).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  unfold markKeyChangeParts
+  have hBody : ∀ t : TCB,
+      (if (p0 == t.boostedPriority && d0.val == (t.deadline).val &&
+            dom0 == t.domain) = true then st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)
+       else markKeyFlagsOver (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid t.runCoreCode
+          (decide (t.boostedPriority.val < p0.val) || decide (d0.val < (t.deadline).val) ||
+            dom0 != t.domain) allCores) =
+      (if (p0 == t.boostedPriority && d0.val == (t.deadline).val &&
+            dom0 == t.domain) = true then st
+       else markKeyFlagsOver st tid t.runCoreCode
+          (decide (t.boostedPriority.val < p0.val) || decide (d0.val < (t.deadline).val) ||
+            dom0 != t.domain) allCores).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+    intro t
+    split
+    · rfl
+    · exact markKeyFlagsOver_answer r ρ μ π κ st _ _ _ _
+  rcases getTcb?_answer_cases r ρ μ π κ st tid with h | ⟨_, h⟩ <;> rw [h]
+  · cases st.getTcb? tid with
+    | none => rfl
+    | some t => exact hBody t
+  · cases st.getTcb? tid with
+    | none => rfl
+    | some t => simp only [Option.map_some]; exact hBody t
+
+theorem deadline_withAnswerSlots (t : TCB) :
+    (TCB.withAnswerSlots ρ μ π κ t).deadline = t.deadline := rfl
+
+/-- A TCB update at a thread commutes with the delivery when it is at another
+thread or leaves the message slots alone. -/
+theorem updateTcb_answer (st : SystemState) (x : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hNo : st.objects.noResizeDue)
+    (hc : x = r → ∀ t, f (TCB.withAnswerSlots ρ μ π κ t) = TCB.withAnswerSlots ρ μ π κ (f t)) :
+    (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).updateTcb x f =
+      (st.updateTcb x f).mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ) := by
+  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo,
+    SystemState.updateTcb_eq_mapTcbInPlace (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) _ _ hNo]
+  exact SystemState.mapTcbInPlace_swap st _ f hc
+
+theorem updatePipBoostOnCore_answer (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hNo : st.objects.noResizeDue) :
+    PriorityInheritance.updatePipBoostOnCore (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) c tid =
+      (PriorityInheritance.updatePipBoostOnCore st c tid).mapTcbInPlace r
+        (TCB.withAnswerSlots ρ μ π κ) := by
+  rw [PriorityInheritance.updatePipBoostOnCore_eq_impl]
+  unfold PriorityInheritance.updatePipBoostOnCoreImpl
+  rw [← PriorityInheritance.optCode_computeMaxWaiterPriority, computeMaxWaiterPriority_answer,
+    ← PriorityInheritance.optCode_computeMaxWaiterPriority]
+  simp only [SeLe4n.Priority.ofOptCode_optCode]
+  have hBody : ∀ tcb : TCB,
+      (if (tcb.pipBoostCode == SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then
+          st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)
+       else
+        markKeyChangeParts
+          (if (tcb.runCoreCode == c.val + 1 && tcb.boostedPriority !=
+                tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then
+            ((st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).updateTcb tid fun x =>
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) }).runRequeueOnCore
+              c tid (tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid))
+          else (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).updateTcb tid fun x =>
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
+          tid tcb.boostedPriority (tcb.deadline) tcb.domain) =
+      (if (tcb.pipBoostCode == SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then st
+       else
+        markKeyChangeParts
+          (if (tcb.runCoreCode == c.val + 1 && tcb.boostedPriority !=
+                tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then
+            (st.updateTcb tid fun x =>
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) }).runRequeueOnCore
+              c tid (tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid))
+          else st.updateTcb tid fun x =>
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
+          tid tcb.boostedPriority (tcb.deadline) tcb.domain).mapTcbInPlace r
+        (TCB.withAnswerSlots ρ μ π κ) := by
+    intro tcb
+    split
+    · rfl
+    · rw [updateTcb_answer r ρ μ π κ st tid _ hNo ?_]
+      · split
+        · rw [runRequeueOnCore_answer, markKeyChangeParts_answer]
+        · rw [markKeyChangeParts_answer]
+      · intros; rfl
+  rcases getTcb?_answer_cases r ρ μ π κ st tid with h | ⟨_, h⟩ <;> rw [h]
+  · cases st.getTcb? tid with
+    | none => rfl
+    | some tcb => dsimp only; exact hBody tcb
+  · cases st.getTcb? tid with
+    | none => rfl
+    | some tcb =>
+      simp only [Option.map_some, TCB.withAnswerSlots_pipBoostCode, TCB.withAnswerSlots_boostedPriority,
+        TCB.withAnswerSlots_domain, TCB.withAnswerSlots_runCoreCode, TCB.withAnswerSlots_priority,
+        deadline_withAnswerSlots]
+      exact hBody tcb
+
+theorem propagatePipChainStateWalk_answer (st : SystemState) (tid : SeLe4n.ThreadId) (fuel : Nat)
+    (hNo : st.objects.noResizeDue) :
+    PriorityInheritance.propagatePipChainStateWalk
+        (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid fuel =
+      (PriorityInheritance.propagatePipChainStateWalk st tid fuel).mapTcbInPlace r
+        (TCB.withAnswerSlots ρ μ π κ) := by
+  induction fuel generalizing st tid with
+  | zero => rfl
+  | succ n ih =>
+    unfold PriorityInheritance.propagatePipChainStateWalk
+    rw [blockingServer_answer, determineTargetCore_answer, updatePipBoostOnCore_answer r ρ μ π κ st _ _ hNo]
+    split
+    · exact ih _ _ (updatePipBoostOnCore_noResizeDue _ _ _ hNo)
+    · rfl
+
+/-- **The priority walk commutes with the delivery.** -/
+theorem propagatePipChainCrossCore_answer (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (hNo : st.objects.noResizeDue) :
+    (PriorityInheritance.propagatePipChainCrossCore
+        (st.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid ec).1 =
+      (PriorityInheritance.propagatePipChainCrossCore st tid ec).1.mapTcbInPlace r
+        (TCB.withAnswerSlots ρ μ π κ) := by
+  rw [PriorityInheritance.propagatePipChainCrossCore_eq_walks,
+    PriorityInheritance.propagatePipChainCrossCore_eq_walks]
+  exact propagatePipChainStateWalk_answer r ρ μ π κ st tid _ hNo
+
+end AnswerSlots
+
+/-! ## The answer is an answer-slot write -/
+
+section AnswerWrite
+
+open Architecture
+
+/-- **Staging a delivered message is an answer-slot write**: on a table with no
+resize due, a ready thread holding a message has its delivered frame written
+into its registers and its message dropped, and the overflow words recorded;
+any other thread is left alone. -/
+theorem stageDeliveredMessage_eq_answerSlots (X : SystemState) (c : SeLe4n.ThreadId) (n : Nat)
+    (hNo : X.objects.noResizeDue) :
+    stageDeliveredMessage X c n =
+      match X.getTcb? c with
+      | some t =>
+          if t.ipcState = .ready then
+            match t.pendingMessage with
+            | some m =>
+                recordPhysicalWrites
+                  (X.mapTcbInPlace c (TCB.withAnswerSlots
+                    (fun rf => rf.stageDeliveredWords
+                      (returnFrameOfMessage m n (messageOverflowWrites X t m).length).x0
+                      (returnFrameOfMessage m n (messageOverflowWrites X t m).length).x1
+                      (returnFrameOfMessage m n (messageOverflowWrites X t m).length).x2
+                      (returnFrameOfMessage m n (messageOverflowWrites X t m).length).x3
+                      (returnFrameOfMessage m n (messageOverflowWrites X t m).length).x4
+                      (returnFrameOfMessage m n (messageOverflowWrites X t m).length).x5)
+                    (fun _ => none) id id))
+                  (messageOverflowWrites X t m)
+            | none => X
+          else X
+      | none => X := by
+  unfold stageDeliveredMessage
+  cases X.getTcb? c with
+  | none => rfl
+  | some t =>
+    dsimp only
+    split
+    · cases t.pendingMessage with
+      | none => rfl
+      | some m =>
+        dsimp only
+        unfold writeDeliveredFrameToTcb
+        rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
+        rfl
+    · rfl
+
+/-- **The restart is an answer-slot write** on a table with no resize due. -/
+theorem applyFaultRestart_eq_answerSlots (X : SystemState) (c : SeLe4n.ThreadId)
+    (f : FaultRestartFrame) (hNo : X.objects.noResizeDue) :
+    applyFaultRestart X c f =
+      X.mapTcbInPlace c (TCB.withAnswerSlots (fun rf => rf.stageRestartFrame f) id id (fun _ => 0)) := by
+  unfold applyFaultRestart
+  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
+  rfl
+
+/-- The overflow words a delivery writes read the thread only through its
+IPC-buffer cell and address. -/
+theorem overflowDeliveryWrites_congr_tcb (X : SystemState) (t t' : TCB)
+    (hCell : t'.spaceCells = t.spaceCells) (hBuf : t'.ipcBuffer = t.ipcBuffer) :
+    ∀ (ws : List SeLe4n.RegValue) (idx : Nat),
+      overflowDeliveryWrites X t' ws idx = overflowDeliveryWrites X t ws idx
+  | [], _ => rfl
+  | w :: rest, idx => by
+      unfold overflowDeliveryWrites
+      have hP : IpcBufferRead.ipcBufferSlotPAddr? X t' idx true =
+          IpcBufferRead.ipcBufferSlotPAddr? X t idx true := by
+        unfold IpcBufferRead.ipcBufferSlotPAddr? IpcBufferRead.lookupIPCBuffer
+        rw [hCell, hBuf]
+      rw [hP, overflowDeliveryWrites_congr_tcb X t t' hCell hBuf rest (idx + 1)]
+
+theorem messageOverflowWrites_congr_tcb (X : SystemState) (t t' : TCB) (m : IpcMessage)
+    (hCell : t'.spaceCells = t.spaceCells) (hBuf : t'.ipcBuffer = t.ipcBuffer) :
+    messageOverflowWrites X t' m = messageOverflowWrites X t m :=
+  overflowDeliveryWrites_congr_tcb X t t' hCell hBuf _ 0
+
+/-- **The stage commutes with a step that commutes with its writes.**  `F`
+commutes with the caller's answer-slot write and with the ledger, keeps the
+caller's TCB up to a rewrite `g` of fields the stage does not read, and reads
+the same IPC-buffer frames: then staging first and staging last agree. -/
+theorem stageDeliveredMessage_commute (F : SystemState → SystemState) (X : SystemState)
+    (c : SeLe4n.ThreadId) (n : Nat)
+    (hNo : X.objects.noResizeDue) (hNoF : (F X).objects.noResizeDue)
+    (hM : ∀ ρ μ π κ, F (X.mapTcbInPlace c (TCB.withAnswerSlots ρ μ π κ)) =
+      (F X).mapTcbInPlace c (TCB.withAnswerSlots ρ μ π κ))
+    (hR : ∀ (Y : SystemState) ws, F (recordPhysicalWrites Y ws) = recordPhysicalWrites (F Y) ws)
+    (g : TCB → TCB) (hT : (F X).getTcb? c = (X.getTcb? c).map g)
+    (hgIpc : ∀ t, (g t).ipcState = t.ipcState) (hgMsg : ∀ t, (g t).pendingMessage = t.pendingMessage)
+    (hgCell : ∀ t, (g t).spaceCells = t.spaceCells) (hgBuf : ∀ t, (g t).ipcBuffer = t.ipcBuffer)
+    (hFrames : ∀ t m, messageOverflowWrites (F X) t m = messageOverflowWrites X t m) :
+    F (stageDeliveredMessage X c n) = stageDeliveredMessage (F X) c n := by
+  rw [stageDeliveredMessage_eq_answerSlots X c n hNo,
+    stageDeliveredMessage_eq_answerSlots (F X) c n hNoF, hT]
+  cases X.getTcb? c with
+  | none => rfl
+  | some t =>
+    simp only [Option.map_some, hgIpc, hgMsg]
+    split
+    · cases t.pendingMessage with
+      | none => rfl
+      | some m =>
+        simp only
+        rw [hR, hM, messageOverflowWrites_congr_tcb (F X) t (g t) m (hgCell t) (hgBuf t), hFrames]
+    · rfl
+
+/-- **The restart commutes with a step that commutes with its write.** -/
+theorem applyFaultRestart_commute (F : SystemState → SystemState) (X : SystemState)
+    (c : SeLe4n.ThreadId) (f : FaultRestartFrame)
+    (hNo : X.objects.noResizeDue) (hNoF : (F X).objects.noResizeDue)
+    (hM : ∀ ρ μ π κ, F (X.mapTcbInPlace c (TCB.withAnswerSlots ρ μ π κ)) =
+      (F X).mapTcbInPlace c (TCB.withAnswerSlots ρ μ π κ)) :
+    F (applyFaultRestart X c f) = applyFaultRestart (F X) c f := by
+  rw [applyFaultRestart_eq_answerSlots X c f hNo, applyFaultRestart_eq_answerSlots (F X) c f hNoF, hM]
+
+end AnswerWrite
+
+end SeLe4n.Kernel
