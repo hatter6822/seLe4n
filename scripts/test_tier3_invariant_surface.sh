@@ -4886,6 +4886,8 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyR_error_notL
 run_check "INVARIANT" rg -n -U '^theorem replyRecvTransferOnCore_refusal_notLookup [^\n]*\n(    [^\n]*\n)*    replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st = st ∨\n      isFailedLookupError ke = false := by' SeLe4n/Kernel/ReplyRecvRefusalErrors.lean
 run_check "INVARIANT" rg -n -U '^theorem syscallCapFaultAt_none_of_lookup_ok_of_notLookup [^\n]*\n(    [^\n]*\n)*    \(hKe : isFailedLookupError ke = false\) :\n    Platform\.FFI\.syscallCapFaultAt layout st s tid ke = none := by' SeLe4n/Kernel/ReplyRecvRefusalErrors.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_error_notLookup($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvRefusalErrors.lean
+# A refused reply-receive's stopped state keeps the run-queue entry stage the dispatch consumes (WS-SX SX34).
+run_check "INVARIANT" rg -n -U '^theorem replyRecvTransferStoppedState_runQueueEntryStage [^\n]*\n(    [^\n]*\n)*    SystemState\.RunQueueEntryStage st\n      \(replyRecvTransferStoppedState epId tid rid prevCaller label msg grant c st\) := by' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.
