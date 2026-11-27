@@ -28,6 +28,7 @@ import SeLe4n.Kernel.InterruptEntry
 import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
 import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
+import SeLe4n.Kernel.ReplyRecvRefusalErrors
 
 namespace SeLe4n.Kernel
 
