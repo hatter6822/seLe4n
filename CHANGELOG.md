@@ -1,3 +1,54 @@
+## v0.37.62 — A refused reply lets the reply-receive's receive run; the pop checked first (WS-SX SX33)
+
+SX33 is on SX32.  It changes behaviour, on states off the invariant
+only.  It was wrapped under the owner's D32 rule (D61): the refused
+receive's report, the wrappers carrying their callee's state, the
+general path's 1 MB cell and the C bound move to a new SX34, and
+SX34–SX45 become SX35–SX46.
+
+- **seL4 behaviour: a refused reply lets the receive run (D60).**  seL4's
+  `doReplyTransfer` returns with nothing to do when the reply's caller
+  is gone or not blocked on reply, and `handleRecv` then runs.  A
+  reply-receive whose caller is not found or not waiting
+  (`replyRecvCallerAwaitsReply`), or whose reply leg the flow gate
+  denies, now takes the receive alone, the busy reply's holder cancelled
+  where the flow admits it.  The reply's error is dropped.  The choice is
+  made in one place (`replyRecvReplyAnswers`).  Before, the first two
+  refused the syscall at the entry state.  A flow-denied reply's outcome
+  is unchanged: the receive cancels no one and refuses
+  `.replyCapInvalid` on the busy reply.
+- **The pop checked first (D60).**  The arm's transition reads the pop's
+  admission (`replyRecvPopAdmits`) on its entry state and refuses
+  `.invalidArgument 0` before the reply leg writes, so a pop refusal
+  refuses the whole syscall with nothing written, as seL4's `reply_pop`
+  cannot fail.  It is exact against the pop on the leg's state under
+  `objects.invExt`, and each fast form's in-place guard implies it with
+  no invariant.  A caller whose reply link names another frame is now
+  refused there too (off the invariant).  No pop refusal is reachable on
+  an invariant-holding state; two clauses rest on the stated hypothesis
+  `replyStacksSettleOnWaitingDonors`, registered debt.
+- **The composite's entry-state reads first.**
+  `endpointReplyRecvAnsweringOnCoreChecked`, an unconditional
+  `@[csimp]`, reads the recorded server, the reply's capability request
+  and the answered caller's receive target off the entry state and hands
+  them to an out-of-line body, so nothing reads the entry state after
+  the reply leg writes.
+- **The skipped reply's receive half, out of line.**  A reply-receive
+  whose reply half is skipped (an extra capability that does not look
+  up, a reply with no caller, a refused reply) calls one copy of the
+  receive arm (`replyRecvReceiveAloneR`) instead of inlining one at
+  every skip.  The refused-reply skip had doubled those copies
+  (`RefusalCarryingReplyRecv.c` 20,113,679 bytes); it is now 6,839,669
+  bytes (SX29's 12,944,474), compiled in 131 s, and the IR measurement
+  reads 1,373 holds against 1,498.
+- **The nothing-received outcome** (`replyRecvNothingReceived`, D53),
+  which SX34's refused receive reports.
+- **Plans.**  D60 and D61; WS-CK's first row, CK1, carries
+  `objects.invExt` in the object table's type (the owner's ruling,
+  2026-11-26), and CK1–CK3 become CK2–CK4; CK2 names the reply
+  transfer's refuse-after-write exits shared by the `.reply` arm and
+  the reply-receive signal arm.
+
 ## v0.37.61 — The reply-receive answers its caller in the reply step (WS-SX SX32)
 
 SX32 is on SX31.  It is not proof-only: the fault fast forms change
