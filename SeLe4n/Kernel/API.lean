@@ -7433,6 +7433,502 @@ def dispatchYield (executingCore : Concurrency.CoreId) : Kernel Unit :=
     | .error e => .error e
     | .ok st' => .ok ((), st')
 
+/-! ### The `.replyRecv` syscall in seL4's order (WS-SX SX36)
+
+Its receive capability is looked up after the reply, as seL4's `handleRecv` runs
+after `handleInvocation`.  The theorems are in `SeLe4n.Kernel.ReplyRecvReceiveAfterReply`. -/
+
+/-- **The receive's endpoint, read on the state it is handed** (seL4's
+`handleRecv`): the receive capability's resolution, its kind, its receive
+right, then the receive's flow gate from the endpoint to the receiver, in
+`syscallInvokeTyped`'s and the arm's order. -/
+def replyRecvReceiveEndpoint (ctx : LabelingContext) (gate : SyscallGate)
+    (tid : SeLe4n.ThreadId) (st : SystemState) : Except KernelError SeLe4n.ObjId :=
+  match syscallResolveCap gate st with
+  | .error e => .error e
+  | .ok (cap, _) =>
+    if !syscallTargetAccepted .replyRecv st cap then .error (.invalidCapability 0)
+    else if !cap.hasRight gate.requiredRight then .error (syscallMissingRightError .replyRecv)
+    else
+      match cap.target with
+      | .object epId =>
+        if endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+          .ok epId
+        else .error .flowDenied
+      | _ => .error (.invalidCapability 0)
+
+/-- **The reply-receive composite, its receive's endpoint read after the
+reply**: `endpointReplyRecvAnsweringBody` with the endpoint the receive runs on
+read by `recvEp` on the state the reply step left (the reply leg, the pop, the
+reply's capability transfer and the caller's answer), before the receive's
+return of a bound notification's context and its leg. -/
+def endpointReplyRecvAnsweringBodyThen (answer : Option Architecture.FaultReplyOutcome)
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : Concurrency.CoreId) (recordedServer : SeLe4n.ThreadId)
+    (req : Option (Capability × Array SeLe4n.CPtr)) (target : Option (TCB × Option CSpaceAddr))
+    (st : SystemState) : Except KernelError (CapTransferSummary × SystemState) :=
+    match endpointReplyOnCore tid prevCaller msg executingCore st with
+    | (_, .error e) => .error e
+    | (st1, .ok _replySgi) =>
+        match replyRecvPopDonation rid prevCaller st1 with
+        | .error e => .error e
+        | .ok (returnedSc?, st1q) =>
+        match receiveTransferCaps req none target st1q with
+        | .error e => .error e
+        | .ok (replySummary, st1p) =>
+        let stA := replyRecvAnswerCaller answer st1p prevCaller replySummary.capInfo
+        match recvEp stA with
+        | .error e => .error e
+        | .ok epId =>
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+            (receiveReturnSchedContext true stA tid) with
+        | (_, .error e) => .error e
+        | (st2, .ok (nextThread, summary, _)) =>
+            match replyRecvPostReceiveDonation tid recordedServer nextThread executingCore
+                returnedSc? st2 with
+            | .error e => .error e
+            | .ok ((), st3) =>
+                .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
+                  executingCore)
+
+/-- **The arm's transition, its receive's endpoint read after the reply**:
+`replyRecvTransferOnCore` over `endpointReplyRecvAnsweringBodyThen`. -/
+def replyRecvTransferThen (recvEp : SystemState → Except KernelError SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat)
+    (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    Except KernelError (CapTransferSummary × SystemState) :=
+  if replyRecvPopAdmits st rid prevCaller then
+    endpointReplyRecvAnsweringBodyThen (replyRecvCallerFaultAnswer? st prevCaller label msg) recvEp
+      tid rid prevCaller (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg)
+      executingCore ((recordedReplyServer? st prevCaller).getD tid)
+      (if (replyRecvCallerFaultAnswer? st prevCaller label msg).isSome then none
+        else replyCapRequest st tid grant)
+      (receiverCapTarget? st prevCaller) st
+  else .error (.invalidArgument 0)
+
+/-- **The reply-receive that completes a signal, its receive capability read
+after the reply**: the `.reply` arm's transition, then the receive's endpoint
+(`recvEp`, its lookup, verdicts and flow gate) on the state it left, then the
+completion of the bound notification. -/
+def replyRecvCompletesSignalArmThen (ctx : LabelingContext)
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) :
+    Kernel Unit :=
+  fun st =>
+    match replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg grant executingCore st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+        match recvEp st1 with
+        | .error e => .error e
+        | .ok _ =>
+          if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
+            completeSignalArm ctx tid (receiverBoundNotification st1 tid) executingCore st1
+          else .ok ((), st1)
+
+/-- **The reply a reply-receive answers before its receive**: none where an
+extra capability does not look up (the reply is skipped, WS-SX SX6.1), where
+the reply capability does not resolve, has no caller, or does not answer it;
+the resolved reply otherwise. -/
+def replyRecvAnsweringReply? (ctx : LabelingContext) (gate : SyscallGate)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (st : SystemState) :
+    Option (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool) :=
+  match callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
+  | some _ => none
+  | none =>
+    match resolveReplyRecvReply gate decoded st with
+    | .ok (some (rid, prevCaller, replyBadge, replyGrant)) =>
+      if replyRecvReplyAnswers ctx st tid prevCaller then
+        some (rid, prevCaller, replyBadge, replyGrant)
+      else none
+    | _ => none
+
+/-- **An answering reply-receive, its receive capability read after the
+reply**: the `.replyRecv` arm's answering case with the receive's endpoint
+read by `recvEp` once the caller is answered. -/
+def replyRecvAnsweringThen (ctx : LabelingContext)
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge) (replyGrant : Bool) :
+    Kernel Unit :=
+  fun st =>
+    let msg : IpcMessage :=
+      { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := replyBadge }
+    if receiveCompletesSignal ctx st tid then
+      replyRecvCompletesSignalArmThen ctx recvEp tid prevCaller decoded.msgInfo.label msg
+        replyGrant executingCore st
+    else
+      match replyRecvTransferThen recvEp tid rid prevCaller decoded.msgInfo.label msg replyGrant
+          executingCore st with
+      | .ok (summary, st') => .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
+      | .error e => .error e
+
+/-- **The `.replyRecv` syscall in seL4's order** (`SysReplyRecv`:
+`handleInvocation` on the reply capability, then `handleRecv`): where the reply
+answers a caller, the reply step, then the receive capability's lookup, kind,
+right and flow gate on the state it left (`replyRecvReceiveEndpoint`), then the
+receive; otherwise the receive alone, through the syscall gate on the state
+handed in, as before. -/
+def dispatchReplyRecvAfterReply (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) :
+    Kernel Unit :=
+  fun st =>
+    match replyRecvAnsweringReply? ctx gate decoded tid st with
+    | none =>
+      syscallInvokeTyped .replyRecv gate none
+        (dispatchWithCapChecked ctx decoded tid executingCore gate) st
+    | some (rid, prevCaller, replyBadge, replyGrant) =>
+      replyRecvAnsweringThen ctx (replyRecvReceiveEndpoint ctx gate tid) decoded tid executingCore
+        rid prevCaller replyBadge replyGrant st
+
+
+/-- **A checked syscall's arm, after the caller and its gate are known**: the
+`.replyRecv` syscall in seL4's order (`dispatchReplyRecvAfterReply`, its receive
+capability read after the reply), every other syscall through the syscall gate
+(`syscallInvokeTyped`) on the entry state.  A receive looks no extra capability
+up, so the `.replyRecv` case reads no extra-capability fault. -/
+def dispatchSyscallArmChecked (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (xf : Option (SeLe4n.CPtr × LookupFault)) : Kernel Unit :=
+  if decoded.syscallId = .replyRecv then
+    dispatchReplyRecvAfterReply ctx decoded tid executingCore gate
+  else
+    syscallInvokeTyped decoded.syscallId gate xf
+      (dispatchWithCapChecked ctx decoded tid executingCore gate)
+
+/-! ### Every completed reply-receive in seL4's order is an arm's run
+
+A reply-receive in seL4's order that completes is the checked `.replyRecv` arm
+run on a capability naming the endpoint its receive ran on: the endpoint read
+after the reply passed the receive's flow gate, and the arm reads of the
+capability only its target.  So every fact proven of the arm on an arbitrary
+capability holds of the dispatch in seL4's order. -/
+
+/-- The endpoint the receive reads passed the receive's flow gate. -/
+theorem replyRecvReceiveEndpoint_flow {ctx : LabelingContext} {gate : SyscallGate}
+    {tid : SeLe4n.ThreadId} {st : SystemState} {epId : SeLe4n.ObjId}
+    (h : replyRecvReceiveEndpoint ctx gate tid st = .ok epId) :
+    endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true := by
+  unfold replyRecvReceiveEndpoint at h
+  cases hR : syscallResolveCap gate st with
+  | error e => rw [hR] at h; cases h
+  | ok p =>
+    obtain ⟨cap, s⟩ := p
+    rw [hR] at h
+    dsimp only at h
+    by_cases hA : syscallTargetAccepted .replyRecv st cap = true
+    · rw [hA, if_neg (by decide)] at h
+      by_cases hRt : cap.hasRight gate.requiredRight = true
+      · rw [hRt, if_neg (by decide)] at h
+        cases hT : cap.target with
+        | object e =>
+          rw [hT] at h
+          dsimp only at h
+          by_cases hF : endpointFlowGate ctx e (ctx.endpointLabelOf e) (ctx.threadLabelOf tid) = true
+          · rw [if_pos hF] at h; cases h; exact hF
+          · rw [if_neg hF] at h; cases h
+        | _ => rw [hT] at h; cases h
+      · rw [Bool.not_eq_true] at hRt; rw [hRt, if_pos (by decide)] at h; cases h
+    · rw [Bool.not_eq_true] at hA; rw [hA, if_pos (by decide)] at h; cases h
+
+/-- A completed composite in seL4's order is the composite on the endpoint its
+receive's endpoint read answered. -/
+theorem endpointReplyRecvAnsweringBodyThen_ok {answer : Option Architecture.FaultReplyOutcome}
+    {recvEp : SystemState → Except KernelError SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage}
+    {executingCore : Concurrency.CoreId} {recordedServer : SeLe4n.ThreadId}
+    {req : Option (Capability × Array SeLe4n.CPtr)} {target : Option (TCB × Option CSpaceAddr)}
+    {st : SystemState} {r : CapTransferSummary × SystemState}
+    (h : endpointReplyRecvAnsweringBodyThen answer recvEp tid rid prevCaller msg executingCore
+      recordedServer req target st = .ok r) :
+    ∃ s epId, recvEp s = .ok epId ∧
+      endpointReplyRecvAnsweringBody answer epId tid rid prevCaller msg executingCore
+        recordedServer req target st = .ok r := by
+  unfold endpointReplyRecvAnsweringBodyThen at h
+  unfold endpointReplyRecvAnsweringBody
+  cases hL : endpointReplyOnCore tid prevCaller msg executingCore st with
+  | mk st1 r1 =>
+    rw [hL] at h
+    cases r1 with
+    | error e => cases h
+    | ok sgi =>
+      dsimp only at h ⊢
+      cases hP : replyRecvPopDonation rid prevCaller st1 with
+      | error e => rw [hP] at h; cases h
+      | ok p =>
+        obtain ⟨ret, st1q⟩ := p
+        rw [hP] at h
+        dsimp only at h ⊢
+        cases hX : receiveTransferCaps req none target st1q with
+        | error e => rw [hX] at h; cases h
+        | ok q =>
+          obtain ⟨sum, st1p⟩ := q
+          rw [hX] at h
+          dsimp only at h ⊢
+          cases hE : recvEp (replyRecvAnswerCaller answer st1p prevCaller sum.capInfo) with
+          | error e => rw [hE] at h; cases h
+          | ok epId =>
+            rw [hE] at h
+            exact ⟨_, epId, hE, h⟩
+
+theorem replyRecvTransferThen_ok {recvEp : SystemState → Except KernelError SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {executingCore : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : replyRecvTransferThen recvEp tid rid prevCaller label msg grant executingCore st = .ok r) :
+    ∃ s epId, recvEp s = .ok epId ∧
+      replyRecvTransferOnCore epId tid rid prevCaller label msg grant executingCore st = .ok r := by
+  unfold replyRecvTransferThen at h
+  unfold replyRecvTransferOnCore
+  by_cases hAd : replyRecvPopAdmits st rid prevCaller = true
+  · rw [if_pos hAd] at h
+    simp only [hAd, ↓reduceIte, endpointReplyRecvAnsweringOnCore_eq_checked]
+    unfold endpointReplyRecvAnsweringOnCoreChecked
+    exact endpointReplyRecvAnsweringBodyThen_ok h
+  · rw [if_neg hAd] at h; cases h
+
+theorem replyRecvCompletesSignalArmThen_ok {ctx : LabelingContext}
+    {recvEp : SystemState → Except KernelError SeLe4n.ObjId} {tid prevCaller : SeLe4n.ThreadId}
+    {label : Nat} {msg : IpcMessage} {grant : Bool} {executingCore : Concurrency.CoreId}
+    {st st' : SystemState}
+    (h : replyRecvCompletesSignalArmThen ctx recvEp tid prevCaller label msg grant executingCore st =
+      .ok ((), st')) :
+    ∃ s epId, recvEp s = .ok epId ∧
+      replyRecvCompletesSignalArm ctx tid prevCaller label msg grant executingCore st =
+        .ok ((), st') := by
+  unfold replyRecvCompletesSignalArmThen at h
+  unfold replyRecvCompletesSignalArm
+  cases hR : replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+      msg.registers msg grant executingCore st with
+  | error e => rw [hR] at h; cases h
+  | ok p =>
+    obtain ⟨⟨⟩, st1⟩ := p
+    rw [hR] at h
+    dsimp only at h ⊢
+    cases hE : recvEp st1 with
+    | error e => rw [hE] at h; cases h
+    | ok epId => rw [hE] at h; exact ⟨st1, epId, hE, h⟩
+
+/-- The reply a reply-receive answers was resolved, with no extra capability
+fault, and answers its caller. -/
+theorem replyRecvAnsweringReply?_some {ctx : LabelingContext} {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {st : SystemState}
+    {a : SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool}
+    (h : replyRecvAnsweringReply? ctx gate decoded tid st = some a) :
+    callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none ∧
+      resolveReplyRecvReply gate decoded st = .ok (some a) ∧
+      replyRecvReplyAnswers ctx st tid a.2.1 = true := by
+  unfold replyRecvAnsweringReply? at h
+  cases hX : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
+  | some _ => rw [hX] at h; cases h
+  | none =>
+    rw [hX] at h
+    dsimp only at h
+    cases hRr : resolveReplyRecvReply gate decoded st with
+    | error e => rw [hRr] at h; cases h
+    | ok r =>
+      rw [hRr] at h
+      cases r with
+      | none => cases h
+      | some q =>
+        obtain ⟨rid, pc, b, g⟩ := q
+        dsimp only at h
+        by_cases hAw : replyRecvReplyAnswers ctx st tid pc = true
+        · rw [if_pos hAw] at h; cases h; exact ⟨rfl, rfl, hAw⟩
+        · rw [if_neg hAw] at h; cases h
+
+/-- **The receive's endpoint names the capability its lookup resolved**: the
+receive capability held, with its right, on the state the lookup ran on, of the
+receive's type, naming the endpoint. -/
+theorem replyRecvReceiveEndpoint_resolved {ctx : LabelingContext} {gate : SyscallGate}
+    {tid : SeLe4n.ThreadId} {st : SystemState} {epId : SeLe4n.ObjId}
+    (h : replyRecvReceiveEndpoint ctx gate tid st = .ok epId) :
+    ∃ cap, syscallLookupCap gate st = .ok (cap, st) ∧
+      syscallTargetAccepted .replyRecv st cap = true ∧ cap.target = .object epId := by
+  unfold replyRecvReceiveEndpoint at h
+  cases hR : syscallResolveCap gate st with
+  | error e => rw [hR] at h; cases h
+  | ok p =>
+    obtain ⟨cap, s⟩ := p
+    obtain ⟨_, _, _, hS⟩ := syscallResolveCap_implies_capability_at_slot gate st cap s hR
+    subst hS
+    rw [hR] at h
+    dsimp only at h
+    by_cases hA : syscallTargetAccepted .replyRecv s cap = true
+    · rw [hA, if_neg (by decide)] at h
+      by_cases hRt : cap.hasRight gate.requiredRight = true
+      · rw [hRt, if_neg (by decide)] at h
+        refine ⟨cap, ?_, hA, ?_⟩
+        · unfold syscallLookupCap
+          rw [hR]
+          dsimp only
+          rw [if_pos hRt]
+        · cases hT : cap.target with
+          | object e =>
+            rw [hT] at h
+            dsimp only at h
+            by_cases hF : endpointFlowGate ctx e (ctx.endpointLabelOf e) (ctx.threadLabelOf tid) = true
+            · rw [if_pos hF] at h; cases h; rfl
+            · rw [if_neg hF] at h; cases h
+          | _ => rw [hT] at h; cases h
+      · rw [Bool.not_eq_true] at hRt; rw [hRt, if_pos (by decide)] at h; cases h
+    · rw [Bool.not_eq_true] at hA; rw [hA, if_pos (by decide)] at h; cases h
+
+/-- **Every completed `.replyRecv` in seL4's order is the checked arm's run on
+the capability its receive lookup resolved**, held with its right on the state
+that lookup ran on: the entry state where the reply answers no caller, the state
+the reply step left otherwise. -/
+theorem dispatchReplyRecvAfterReply_ok {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId} {gate : SyscallGate}
+    {st st' : SystemState} (hSid : decoded.syscallId = .replyRecv)
+    (h : dispatchReplyRecvAfterReply ctx decoded tid executingCore gate st = .ok ((), st')) :
+    ∃ s cap, (replyRecvAnsweringReply? ctx gate decoded tid st = none → s = st) ∧
+      syscallLookupCap gate s = .ok (cap, s) ∧
+      syscallTargetAccepted .replyRecv s cap = true ∧
+      dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st') := by
+  unfold dispatchReplyRecvAfterReply at h
+  cases hAns : replyRecvAnsweringReply? ctx gate decoded tid st with
+  | none =>
+    rw [hAns] at h
+    obtain ⟨cap, hL, hA, hD⟩ := syscallInvokeTyped_ok _ _ _ st () st' h
+    exact ⟨st, cap, fun _ => rfl, hL, hA, hD⟩
+  | some a =>
+    obtain ⟨rid, prevCaller, replyBadge, replyGrant⟩ := a
+    rw [hAns] at h
+    dsimp only at h
+    obtain ⟨hX, hRr, hAw⟩ := replyRecvAnsweringReply?_some hAns
+    dsimp only at hAw
+    unfold replyRecvAnsweringThen at h
+    dsimp only at h
+    obtain ⟨capAddr, mi, sid, regs, ic, oc, cr, rp⟩ := decoded
+    dsimp only at hSid
+    subst hSid
+    dsimp only at h hX
+    by_cases hSig : receiveCompletesSignal ctx st tid = true
+    · rw [if_pos hSig] at h
+      obtain ⟨s, epId, hE, hRun⟩ := replyRecvCompletesSignalArmThen_ok h
+      obtain ⟨⟨target, rights, badge⟩, hL, hA, hT⟩ := replyRecvReceiveEndpoint_resolved hE
+      dsimp only at hT
+      subst hT
+      refine ⟨s, _, ?_, hL, hA, ?_⟩
+      · intro h0; cases h0
+      unfold dispatchWithCapChecked dispatchCapabilityOnly
+      dsimp only
+      rw [replyRecvReceiveEndpoint_flow hE, if_neg (by decide)]
+      rw [hX]
+      dsimp only
+      rw [hRr]
+      dsimp only
+      rw [if_pos hAw]
+      rw [if_pos hSig]
+      exact hRun
+    · rw [if_neg hSig] at h
+      cases hT : replyRecvTransferThen (replyRecvReceiveEndpoint ctx gate tid) tid rid prevCaller
+          mi.label { registers := extractMessageRegisters regs mi, badge := replyBadge } replyGrant
+          executingCore st with
+      | error e => rw [hT] at h; cases h
+      | ok r =>
+        obtain ⟨summary, s'⟩ := r
+        rw [hT] at h
+        obtain ⟨s, epId, hE, hRun⟩ := replyRecvTransferThen_ok hT
+        obtain ⟨⟨target, rights, badge⟩, hL, hA, hTg⟩ := replyRecvReceiveEndpoint_resolved hE
+        dsimp only at hTg
+        subst hTg
+        refine ⟨s, _, ?_, hL, hA, ?_⟩
+        · intro h0; cases h0
+        unfold dispatchWithCapChecked dispatchCapabilityOnly
+        dsimp only
+        rw [replyRecvReceiveEndpoint_flow hE, if_neg (by decide)]
+        rw [hX]
+        dsimp only
+        rw [hRr]
+        dsimp only
+        rw [if_pos hAw]
+        rw [if_neg hSig, hRun]
+        exact h
+
+/-! ### The checked dispatcher's arm -/
+
+theorem dispatchSyscallArmChecked_replyRecv {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
+    {gate : SyscallGate} {xf : Option (SeLe4n.CPtr × LookupFault)}
+    (hSid : decoded.syscallId = .replyRecv) :
+    dispatchSyscallArmChecked ctx decoded tid executingCore gate xf =
+      dispatchReplyRecvAfterReply ctx decoded tid executingCore gate := by
+  unfold dispatchSyscallArmChecked
+  rw [if_pos hSid]
+
+theorem dispatchSyscallArmChecked_of_ne {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
+    {gate : SyscallGate} {xf : Option (SeLe4n.CPtr × LookupFault)}
+    (hSid : decoded.syscallId ≠ .replyRecv) :
+    dispatchSyscallArmChecked ctx decoded tid executingCore gate xf =
+      syscallInvokeTyped decoded.syscallId gate xf
+        (dispatchWithCapChecked ctx decoded tid executingCore gate) := by
+  unfold dispatchSyscallArmChecked
+  rw [if_neg hSid]
+
+/-- **Every completed checked arm is `dispatchWithCapChecked`'s run on the
+capability its lookup resolved**, held with its right and of its syscall's type
+on the state that lookup ran on: the entry state, except for a `.replyRecv`
+whose reply answers a caller, whose receive capability is looked up on the state
+the reply step left. -/
+theorem dispatchSyscallArmChecked_ok {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
+    {gate : SyscallGate} {xf : Option (SeLe4n.CPtr × LookupFault)} {st st' : SystemState}
+    (h : dispatchSyscallArmChecked ctx decoded tid executingCore gate xf st = .ok ((), st')) :
+    ∃ s cap, ((decoded.syscallId ≠ .replyRecv ∨
+        replyRecvAnsweringReply? ctx gate decoded tid st = none) → s = st) ∧
+      syscallLookupCap gate s = .ok (cap, s) ∧
+      syscallTargetAccepted decoded.syscallId s cap = true ∧
+      dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st') := by
+  by_cases hSid : decoded.syscallId = .replyRecv
+  · rw [dispatchSyscallArmChecked_replyRecv hSid] at h
+    obtain ⟨s, cap, hS, hL, hA, hD⟩ := dispatchReplyRecvAfterReply_ok hSid h
+    refine ⟨s, cap, fun hOr => hOr.elim (fun hN => absurd hSid hN) hS, hL, ?_, hD⟩
+    rw [hSid]; exact hA
+  · rw [dispatchSyscallArmChecked_of_ne hSid] at h
+    obtain ⟨cap, hL, hA, hD⟩ := syscallInvokeTyped_ok _ _ _ st () st' h
+    exact ⟨st, cap, fun _ => rfl, hL, hA, hD⟩
+
+
+/-- **A completed checked arm held its capability with its right on the state
+its lookup ran on** (seL4's `handleInvocation`, and for an answering
+`.replyRecv`, `handleRecv` after it): a real slot, the capability in it and its
+right, on the entry state, except for a `.replyRecv` whose reply answers a
+caller, whose receive capability is held on the state the reply step left. -/
+theorem dispatchSyscallArmChecked_requires_right {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
+    {gate : SyscallGate} {xf : Option (SeLe4n.CPtr × LookupFault)} {st st' : SystemState}
+    (h : dispatchSyscallArmChecked ctx decoded tid executingCore gate xf st = .ok ((), st')) :
+    ∃ s cap ref, ((decoded.syscallId ≠ .replyRecv ∨
+        replyRecvAnsweringReply? ctx gate decoded tid st = none) → s = st) ∧
+      gate.lookupSlot s = .ok ref ∧ SystemState.lookupSlotCap s ref = some cap ∧
+      cap.hasRight gate.requiredRight = true := by
+  obtain ⟨s, cap, hS, hL, -, -⟩ := dispatchSyscallArmChecked_ok h
+  obtain ⟨ref, hR, hC, hRt, -⟩ := syscallLookupCap_implies_capability_held gate s cap s hL
+  exact ⟨s, cap, ref, hS, hR, hC, hRt⟩
+
+/-- **A checked arm preserves an observer's projection** where the arm does on
+every capability its lookup can resolve on the state that lookup runs on (the
+entry state, or for an answering `.replyRecv` the state its reply step left). -/
+theorem dispatchSyscallArmChecked_preserves_projection {ctx : LabelingContext}
+    {observer : IfObserver} {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId}
+    {executingCore : Concurrency.CoreId} {gate : SyscallGate}
+    {xf : Option (SeLe4n.CPtr × LookupFault)} {st st' : SystemState}
+    (hInnerProj : ∀ (s : SystemState) (cap : Capability),
+        ((decoded.syscallId ≠ .replyRecv ∨
+          replyRecvAnsweringReply? ctx gate decoded tid st = none) → s = st) →
+        syscallResolveCap gate s = .ok (cap, s) →
+        ∀ stOut, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stOut) →
+        projectState ctx observer stOut = projectState ctx observer st)
+    (h : dispatchSyscallArmChecked ctx decoded tid executingCore gate xf st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨s, cap, hS, hL, -, hD⟩ := dispatchSyscallArmChecked_ok h
+  exact hInnerProj s cap hS (syscallResolveCap_of_lookup gate s cap s hL) st' hD
+
+
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
     information-flow-checked wrappers when a `LabelingContext` is provided.
 

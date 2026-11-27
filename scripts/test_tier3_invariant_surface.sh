@@ -4899,12 +4899,15 @@ run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_cnodeSlotsKept($|[ ({
 run_check "INVARIANT" rg -n '^theorem replyTransferOnCoreChecked_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
 run_check "INVARIANT" rg -n -U '^theorem replyRecvReplyStep_cnodeSlotsKept [^\n]*\n(    [^\n]*\n)*    CNodeSlotsKept st \(replyRecvAnswerCaller answer st1p prevCaller summary\.capInfo\) := by' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReceiveCap_of_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
-run_check "INVARIANT" rg -n -U '        let stA := replyRecvAnswerCaller answer st1p prevCaller replySummary\.capInfo\n        match recvEp stA with\n        \| \.error e => \.error e\n        \| \.ok epId =>\n        match endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\n            \(receiveReturnSchedContext true stA tid\) with' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
-run_check "INVARIANT" rg -n -U '    \| some \(rid, prevCaller, replyBadge, replyGrant\) =>\n      replyRecvAnsweringThen ctx \(replyRecvReceiveEndpoint ctx gate tid\) decoded tid executingCore' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n -U '        let stA := replyRecvAnswerCaller answer st1p prevCaller replySummary\.capInfo\n        match recvEp stA with\n        \| \.error e => \.error e\n        \| \.ok epId =>\n        match endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\n            \(receiveReturnSchedContext true stA tid\) with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '    \| some \(rid, prevCaller, replyBadge, replyGrant\) =>\n      replyRecvAnsweringThen ctx \(replyRecvReceiveEndpoint ctx gate tid\) decoded tid executingCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_of_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
 run_check "INVARIANT" rg -n '^theorem dispatchReplyRecvAfterReply_eq_of_entryResolved($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
-run_check "INVARIANT" rg -n '^theorem dispatchReplyRecvAfterReply_ok($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_flow($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem dispatchReplyRecvAfterReply_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_flow($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^theorem dispatchReplyRecvAfterReply_ok [^\n]*\n(    [^\n]*\n)*      syscallLookupCap gate s = \.ok \(cap, s\) ∧\n      syscallTargetAccepted \.replyRecv s cap = true ∧\n      dispatchWithCapChecked ctx decoded tid executingCore gate cap st = \.ok \(\(\), st.\) := by' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallArmChecked_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallArmChecked_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '      match recvEp stA with\n      \| \.error e =>\n          \.error \(e, replyRecvNothingReceived recordedServer executingCore returnedSc\? stA\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '  \| \.ok \(\(\), st1\) =>\n      match recvEp st1 with\n      \| \.error e => \.error \(e, st1\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyThenR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean

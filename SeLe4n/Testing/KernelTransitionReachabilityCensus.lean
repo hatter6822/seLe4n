@@ -1369,11 +1369,13 @@ def nonExecutedTransitionsPlain : List Name :=
   -- capability read after the reply (`dispatchReplyRecvAfterReply`), proven
   -- equal to the entry's order where the entry resolves the capability
   -- (`dispatchReplyRecvAfterReply_eq_of_entryResolved`); the dispatch takes it
-  -- in place of its `.replyRecv` gate in the next cut of the same row.
+  -- in place of its `.replyRecv` gate in the next cut of the same row, through
+  -- the arm `dispatchSyscallArmChecked`.
   -- Their refusal-carrying forms (`*ThenR`, proven equal with the refusal's
   -- state forgotten) and the report they give (`replyRecvAfterReplyAnsweringReport`,
   -- over `RefusalCarrying.stoppedState`) go live with it.
   , `SeLe4n.Kernel.dispatchReplyRecvAfterReply
+  , `SeLe4n.Kernel.dispatchSyscallArmChecked
   , `SeLe4n.Kernel.endpointReplyRecvAnsweringBodyThen
   , `SeLe4n.Kernel.endpointReplyRecvAnsweringBodyThenR
   , `SeLe4n.Kernel.RefusalCarrying.stoppedState
