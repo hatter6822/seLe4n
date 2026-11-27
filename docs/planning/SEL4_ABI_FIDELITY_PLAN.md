@@ -1176,7 +1176,7 @@ A different answer changes only the rows that cite it.
   and the post-receive donation's refusal-carrying forms), SX34.2 (the
   composite and the 12 wrappers carrying their callee's state, the refused
   receive's report, the consumers' third case, the non-interference proofs
-  restated) and SX34.3's readings. Two of its bounds are not met, and both
+  re-checked over it with their statements unchanged) and SX34.3's readings. Two of its bounds are not met, and both
   move to SX35.
   - **The C bound.** `RefusalCarryingReplyRecv.c` is 12,966,427 bytes
     against 12,941,835: 24,592 over, 6,989 over SX33's 12,959,438 and
