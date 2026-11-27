@@ -4804,6 +4804,43 @@ run_check "INVARIANT" rg -n '^theorem LegAdmits\.popAdmits($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n -U '^def endpointReplyRecvAnsweringOnCoreChecked [^\n]*(\n([ \t][^\n]*)?)*\n  endpointReplyRecvAnsweringBody answer epId tid rid prevCaller msg executingCore\n    \(\(recordedReplyServer\? st prevCaller\)\.getD tid\)\n    \(if answer\.isSome then none else replyCapRequest st tid grant\)\n    \(receiverCapTarget\? st prevCaller\) st\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def endpointReplyRecvAnsweringBody [^\n]*(\n([ \t][^\n]*)?)*\n    match endpointReplyOnCore tid prevCaller msg executingCore st with\n(\n|[ \t][^\n]*\n)*        match receiveTransferCaps req none target st1q with\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^@\[csimp\] theorem endpointReplyRecvAnsweringOnCore_eq_checked :\n    @endpointReplyRecvAnsweringOnCore = @endpointReplyRecvAnsweringOnCoreChecked :=' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+# The reply-receive's pop and post-receive donation, each refusal carrying the state it stopped in
+# (WS-SX SX34.1): every form is its specification with the refusal's state forgotten, with no
+# assumption; the pop's donation return, held pop and unheld pop go through their refusal-carrying
+# forms, and no form reads the state handed in once a store has run (the reschedule hook's keys are
+# read first, `markKeyChangeOf`).
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonationR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPostReceiveDonationR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^def replyRecvPopDonationR [^\n]*(\n([ \t][^\n]*)?)*\n              match returnDonatedSchedContextResolvedR holder oldScId target st with\n(\n|[ \t][^\n]*\n)*              match keepDonatedSchedContextResolvedR holder oldScId st with\n(\n|[ \t][^\n]*\n)*        match popUnheldReplyHeadR rid target \(determineTargetCore st target\) st with\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^def replyRecvPostReceiveDonationR [^\n]*(\n([ \t][^\n]*)?)*\n            match applyRendezvousCallDonationR tid nextThread st with\n(\n|[ \t][^\n]*\n)*            match applyRendezvousCallDonationR tid nextThread\n                \(replyRecvHolderDeschedule tid holder st\) with\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClearR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem storeReplyReHeadR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadPopR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolvedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContextR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContextResolvedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem returnUnheldSchedContextR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem severUnheldSchedContextR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem popUnheldReplyHeadR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationFramePushR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContextR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCoreR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonationR_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem markKeyChangeFrom_eq_of($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_negative_check "INVARIANT" rg -n 'markKeyChangeFrom st|callDonationSchedContext\? st' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n -U '^def keepDonatedSchedContextResolvedR [^\n]*\n[^\n]*\n  if keptPopsInPlace st holder scId then \.ok \(keepDonatedSchedContextInPlace st holder scId\)\n' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n -U '^def popUnheldReplyHeadR [^\n]*(\n([ \t][^\n]*)?)*\n    if unheldPopsInPlace st scId target then\n' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+# The reply-receive's transition, each refusal carrying the state its step stopped in (WS-SX SX34.2):
+# a refused receive or post-receive donation reports the nothing-received outcome on the state that
+# step returned (D60's option (b)); the transition is its specification with the refusal's state
+# forgotten, and its refusal reports `replyRecvTransferStoppedState`.
+run_check "INVARIANT" rg -n -U '      \| \(s, \.error e\) =>\n          \.error \(e, replyRecvNothingReceived recordedServer executingCore returnedSc\? s\)\n' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+run_check "INVARIANT" rg -n -U '          \| \.error \(e, s\) =>\n              \.error \(e, replyRecvNothingReceived recordedServer executingCore returnedSc\? s\)\n' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCoreR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCoreR_eq_reporting($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+run_negative_check "INVARIANT" rg -n 'receiveTransferCaps req none target st1q' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.

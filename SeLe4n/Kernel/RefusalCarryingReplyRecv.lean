@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RefusalCarryingEndpoint
+import SeLe4n.Kernel.RefusalCarryingReplyRecvTransfer
 import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace

@@ -1070,6 +1070,18 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.keepDonatedSchedContextInPlace,
       .states [`SeLe4n.Kernel.keepDonatedSchedContextInPlace_preserves_donationChainWellFormed]
         [`SeLe4n.Kernel.keepDonatedSchedContextInPlace_preserves_lendingLabelsEqual])
+    -- WS-SX SX34: the reply-receive's pop and post-receive donation with each
+    -- refusal carrying the state it stopped in.  Each is its specification's
+    -- writer with the refusal's state forgotten (`*R_eq`, no assumption), so
+    -- each mirrors that writer.
+  , (`SeLe4n.Kernel.storeDonationHeadClearR, .mirrors `SeLe4n.Kernel.storeDonationHeadClear)
+  , (`SeLe4n.Kernel.storeReplyReHeadR, .mirrors `SeLe4n.Kernel.storeReplyReHead)
+  , (`SeLe4n.Kernel.storeDonationFramePushR, .mirrors `SeLe4n.Kernel.storeDonationFramePush)
+  , (`SeLe4n.Kernel.donateSchedContextR, .mirrors `SeLe4n.Kernel.donateSchedContext)
+  , (`SeLe4n.Kernel.returnDonatedSchedContextR, .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
+  , (`SeLe4n.Kernel.returnUnheldSchedContextR, .mirrors `SeLe4n.Kernel.returnUnheldSchedContext)
+  , (`SeLe4n.Kernel.severUnheldSchedContextR, .mirrors `SeLe4n.Kernel.severUnheldSchedContext)
+  , (`SeLe4n.Kernel.keepDonatedSchedContextR, .mirrors `SeLe4n.Kernel.keepDonatedSchedContext)
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects

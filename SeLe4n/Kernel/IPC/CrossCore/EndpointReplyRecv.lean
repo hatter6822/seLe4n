@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.SchedContext.NotificationDonation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
+import SeLe4n.Kernel.IPC.Operations.DonationRefusalCarrying
 
 /-!
 # The ReplyRecv transition, `endpointReplyRecvOnCore`
@@ -205,6 +206,44 @@ def replyRecvPopDonationChecked (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId
 it in the pop's place. -/
 @[csimp] theorem replyRecvPopDonation_eq_checked :
     @replyRecvPopDonation = @replyRecvPopDonationChecked := rfl
+
+/-- **The pop, each refusal carrying the state it stopped in** (WS-SX SX34):
+`replyRecvPopDonationChecked` with its returns and pops in their
+refusal-carrying forms, so a refusal before the pop's first write carries the
+state handed in and one after it the state its stores reached; nothing reads
+the state handed in once a store has run.  It is the pop with the refusal's
+state forgotten, with no assumption (`replyRecvPopDonationR_eq`). -/
+def replyRecvPopDonationR (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
+    RefusalCarrying (Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) :=
+  fun st =>
+    match replyFrameHeadHolder? st rid with
+    | some (oldScId, holder) =>
+        match holder.toValid?, target.toValid? with
+        | some _, some _ =>
+            if donationRecipientAcceptable st target then
+              let home := determineTargetCore st target
+              match returnDonatedSchedContextResolvedR holder oldScId target st with
+              | .error es => .error es
+              | .ok st1' =>
+                  .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1' home oldScId)
+            else
+              match keepDonatedSchedContextResolvedR holder oldScId st with
+              | .error es => .error es
+              | .ok st' => .ok (none, st')
+        | _, _ => .error (.invalidArgument 0, st)
+    | none =>
+        match popUnheldReplyHeadR rid target (determineTargetCore st target) st with
+        | .error es => .error es
+        | .ok st' => .ok (none, st')
+
+theorem replyRecvPopDonationR_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st : SystemState) :
+    (replyRecvPopDonationR rid target st).mapError Prod.fst = replyRecvPopDonation rid target st := by
+  unfold replyRecvPopDonationR replyRecvPopDonation
+  simp only [← returnDonatedSchedContextResolvedR_eq, ← keepDonatedSchedContextResolvedR_eq,
+    ← popUnheldReplyHeadR_eq]
+  repeat' (first | rfl | (split <;> (try (rename_i h; simp only [h, refusalCarrying_mapError_error,
+      refusalCarrying_mapError_ok]))))
 
 /-- **Whether the donation pop commits, read on the state it runs on**
 (seL4-MCS's `reply_pop`, decided before any write): a frame heading a context
@@ -411,6 +450,52 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- `recordedServer`, because that one keys on waiters.
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
               (descheduleAtPlacement st holder) recordedServer serverCore).1)
+
+/-- **The post-receive donation, each refusal carrying the state it stopped
+in** (WS-SX SX34): `replyRecvPostReceiveDonation` with the dequeued caller's
+donation in its refusal-carrying form (`applyRendezvousCallDonationR`), so a
+refusal carries the state the donation stopped in (after the holder's
+deschedule where the pop handed a context back) and nothing reads the state
+handed in once the donation has written.  It is the post-receive donation with
+the refusal's state forgotten, with no assumption
+(`replyRecvPostReceiveDonationR_eq`). -/
+def replyRecvPostReceiveDonationR (tid recordedServer : SeLe4n.ThreadId)
+    (nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) : RefusalCarrying Unit :=
+  fun st =>
+    match returned? with
+    | none =>
+        if rendezvousDequeuedCall st nextThread then
+            match applyRendezvousCallDonationR tid nextThread st with
+            | .error es => .error es
+            | .ok st2 =>
+                .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer
+                  serverCore).1)
+        else
+            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer
+              serverCore).1)
+    | some (_, holder) =>
+        if rendezvousDequeuedCall st nextThread then
+            match applyRendezvousCallDonationR tid nextThread
+                (replyRecvHolderDeschedule tid holder st) with
+            | .error es => .error es
+            | .ok st2 =>
+                .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer
+                  serverCore).1)
+        else
+            .ok ((), (PriorityInheritance.propagatePipChainCrossCore
+              (descheduleAtPlacement st holder) recordedServer serverCore).1)
+
+theorem replyRecvPostReceiveDonationR_eq (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
+    (replyRecvPostReceiveDonationR tid recordedServer nextThread serverCore returned? st).mapError
+        Prod.fst =
+      replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st := by
+  unfold replyRecvPostReceiveDonationR replyRecvPostReceiveDonation
+  simp only [← applyRendezvousCallDonationR_eq]
+  repeat' (first | rfl | (split <;> (try (rename_i h; simp only [h, refusalCarrying_mapError_error,
+      refusalCarrying_mapError_ok]))))
 
 /-- **The reply step's outcome where nothing was received** (D53): the
 recorded server's priority-inheritance reversion, after the holder's deschedule
