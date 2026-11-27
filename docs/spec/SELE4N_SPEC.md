@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX40.1.
+    resumes is WS-SX SX41.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
@@ -5980,7 +5980,7 @@ refused reply's receive still running and a refused receive keeping the reply,
 are SX33.  A refused receive capability does not keep the reply yet: the
 receive capability is resolved on the entry state, before the reply, and a
 bad one faults the whole syscall there, where seL4's `handleRecv` resolves it
-after the reply (D63); SX35 moves the lookup after the reply.  SchedContext_Bind binds a context heading a reply stack, as seL4's
+after the reply (D63); SX36 moves the lookup after the reply.  SchedContext_Bind binds a context heading a reply stack, as seL4's
 `decodeSchedContext_Bind` does, under the static form of decision D25 (D27):
 the checked dispatch admits it only where the context's label flows to the
 bound thread (`schedContextBindLabelGate`, refusing `flowDenied` before the
