@@ -1690,6 +1690,185 @@ theorem replyRecvAnsweringOnCore_unlinked_inPlace
       Option.bind_some, hS, replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
     simp [applyReceiveLegPipHandoff, replyRecvStageLast]
 
+/-! ### The pop's admission, from each arm's in-place guard
+
+WS-SX SX33.  The reply-receive reads its pop's admission
+(`replyRecvPopAdmits`) on the entry state, before the reply leg writes.  Each
+arm's in-place guard already reads the pop it commits, so it implies the
+admission, with no invariant: the fast forms keep their unconditional
+equalities. -/
+
+
+/-- The caller's frame test, where its reply link is the frame. -/
+theorem replyRecvCallerFrameIs_of_link {st : SystemState} {c : SeLe4n.ThreadId} {ct : TCB}
+    {rid : SeLe4n.ReplyId} (hT : st.getTcb? c = some ct) (hRO : ct.replyObject = some rid) :
+    replyRecvCallerFrameIs st c rid = true := by
+  unfold replyRecvCallerFrameIs lookupTcb
+  split
+  · next t ht =>
+    split at ht
+    · cases ht
+    · rw [hT] at ht; cases ht; simp [hRO]
+  · rfl
+
+/-- **A reply whose frame links to nothing admits its pop**: it pops nothing. -/
+theorem replyRecvPopAdmits_of_wakes {st : SystemState} {c : SeLe4n.ThreadId} {ct : TCB}
+    {rid : SeLe4n.ReplyId} (hT : st.getTcb? c = some ct) (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true) : replyRecvPopAdmits st rid c = true := by
+  have hH : replyFrameHeadContext? st rid = none := by
+    unfold replyWakesInPlace at hG
+    simp only [Bool.and_eq_true] at hG
+    have hM := hG.2
+    unfold replyFrameHeadContext?
+    cases hR : st.getReply? rid with
+    | none => rfl
+    | some rp =>
+      rw [hR] at hM
+      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hM
+      simp [hM.1]
+  unfold replyRecvPopAdmits replyRecvPopAdmitsCore
+  rw [replyRecvCallerFrameIs_of_link hT hRO, replyFrameHeadHolder?_of_no_head _ _ hH]
+  simp [hH]
+
+theorem threadId_toValid?_isSome {t : SeLe4n.ThreadId} (h : t.isReserved = false) :
+    t.toValid?.isSome = true := by
+  unfold SeLe4n.ThreadId.toValid?
+  split
+  · next e => subst e; simp [SeLe4n.ThreadId.isReserved, SeLe4n.ThreadId.sentinel] at h
+  · rfl
+
+/-- **A reply returning the caller's lent context admits its pop**
+(`replyPopsInPlace`, read on the entry state). -/
+theorem replyRecvPopAdmits_of_pops {st : SystemState} {c server : SeLe4n.ThreadId} {ct : TCB}
+    {rid : SeLe4n.ReplyId} (hT : st.getTcb? c = some ct) (hRO : ct.replyObject = some rid)
+    (hSRes : server.isReserved = false)
+    (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true) :
+    replyRecvPopAdmits st rid c = true := by
+  have hCRes : c.isReserved = false := by
+    unfold replyPopsInPlace at hG; simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+    exact hG.1.1.1.1.1.1.1.1.1
+  obtain ⟨scId, _, hHH, hDC, _⟩ := replyPopsInPlace_pop st c server rid ct hT hSRes hG
+  unfold replyRecvPopAdmits replyRecvPopAdmitsCore
+  rw [replyRecvCallerFrameIs_of_link hT hRO, hHH]
+  simp only [threadId_toValid?_isSome hSRes, threadId_toValid?_isSome hCRes,
+    donatedReturnCommits_recipientAcceptable hDC, ↓reduceIte, hDC, Bool.and_self]
+
+/-- **A reply whose server keeps the context admits its pop**
+(`replyHeldPopsInPlace`, read on the entry state). -/
+theorem replyRecvPopAdmits_of_heldPops {st : SystemState} {c server : SeLe4n.ThreadId}
+    {ct : TCB} {rid : SeLe4n.ReplyId} (hT : st.getTcb? c = some ct)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyHeldPopsInPlace st c ct.scBindingScCode server rid = true) :
+    replyRecvPopAdmits st rid c = true := by
+  unfold replyHeldPopsInPlace at hG
+  simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hG
+  obtain ⟨⟨⟨⟨⟨⟨⟨hCRes, _⟩, hCB⟩, _⟩, _⟩, _⟩, _⟩, hM⟩ := hG
+  cases hR : st.getReply? rid with
+  | none => rw [hR] at hM; cases hM
+  | some rp =>
+  rw [hR] at hM
+  simp only [] at hM
+  cases hN : rp.next with
+  | none => rw [hN] at hM; cases hM
+  | some l =>
+  cases l with
+  | frame _ => rw [hN] at hM; cases hM
+  | head scId =>
+  rw [hN] at hM
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hM
+  obtain ⟨⟨hScM, hOutC⟩, hKept⟩ := hM
+  obtain ⟨hKC, _⟩ := keptPopsInPlace_pop st server scId hKept
+  obtain ⟨sc, rid0, rp0, ht, hSc, hB, hSR, hR0, hN0, hBelow, _, hSRes, hHt, _⟩ :=
+    keptPopsInPlace_spec st server scId hKept
+  rw [hSc] at hScM
+  simp only [hSR, beq_iff_eq] at hScM
+  have hRid : rid0 = rid := by cases rid0; cases rid; simp_all
+  subst hRid
+  rw [hR] at hR0; cases hR0
+  have hHC : replyFrameHeadContext? st rid0 = some scId := by
+    unfold replyFrameHeadContext?; rw [hR]; simp [hN, hSc, hSR]
+  have hHH := replyFrameHeadHolder?_of_head st rid0 scId server hHC (by rw [hSc]; exact hB)
+  have hRes := (replyStackOuterCaller?_of_head st scId sc rid0 rp hSc hSR hR hN
+    (fun b hb => (hBelow b hb).2.1)).2
+  have hAcc : donationRecipientAcceptable st c = false := by
+    rw [donationRecipientAcceptable_eq_of_some st c ct
+      (by unfold lookupTcb; rw [if_neg (by simp [hCRes]), hT])]
+    unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+    cases h0 : ct.scBindingScCode with
+    | zero => exact absurd h0 hCB
+    | succ k => cases ct.scBindingOwnerCode <;> rfl
+  have hNot : keptPopOuterIsNot st server scId c = true := by
+    unfold keptPopOuterIsNot
+    rw [hRes]
+    simp only [bne_iff_ne, ne_eq]
+    rw [heldPopOuter?_of_getTcb hHt]
+    unfold heldPopOwner?
+    split
+    · intro e
+      apply hOutC
+      unfold SeLe4n.ThreadId.ofOptCode at e
+      split at e
+      · cases e
+      · next k hk => cases e; exact hk
+    · simp
+  unfold replyRecvPopAdmits replyRecvPopAdmitsCore
+  rw [replyRecvCallerFrameIs_of_link hT hRO, hHH]
+  simp only [threadId_toValid?_isSome hSRes, threadId_toValid?_isSome hCRes, hAcc, hKC, hNot,
+    Bool.false_eq_true, ↓reduceIte, Bool.and_self]
+
+/-- **A reply whose frame heads an unheld context admits its pop**
+(`replyUnheldPopsInPlace`, read on the entry state). -/
+theorem replyRecvPopAdmits_of_unheldPops {st : SystemState} {c : SeLe4n.ThreadId}
+    {ct : TCB} {rid : SeLe4n.ReplyId} (hT : st.getTcb? c = some ct)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnheldPopsInPlace st c rid = true) :
+    replyRecvPopAdmits st rid c = true := by
+  unfold replyUnheldPopsInPlace at hG
+  simp only [Bool.and_eq_true] at hG
+  obtain ⟨_, hM⟩ := hG
+  cases hR : st.getReply? rid with
+  | none => rw [hR] at hM; cases hM
+  | some rp =>
+  rw [hR] at hM
+  simp only [] at hM
+  cases hN : rp.next with
+  | none => rw [hN] at hM; cases hM
+  | some l =>
+  cases l with
+  | frame _ => rw [hN] at hM; cases hM
+  | head s =>
+  rw [hN] at hM
+  simp only [Bool.and_eq_true] at hM
+  obtain ⟨hScM, hU⟩ := hM
+  cases hSc : st.getSchedContext? s with
+  | none => rw [hSc] at hScM; cases hScM
+  | some sc =>
+  rw [hSc] at hScM
+  simp only [] at hScM
+  have hSR : sc.scReply = some rid := by
+    cases h0 : sc.scReply with
+    | none => rw [h0] at hScM; cases hScM
+    | some h =>
+      rw [h0] at hScM
+      have : h.val = rid.val := by simpa using hScM
+      cases h; cases rid; simp_all
+  have hHC : replyFrameHeadContext? st rid = some s := by
+    unfold replyFrameHeadContext?; rw [hR]; simp [hN, hSc, hSR]
+  have hBT : sc.boundThreadCode = 0 := by
+    have h := hU
+    unfold unheldPopsInPlace at h
+    simp only [Bool.and_eq_true, hSc, beq_iff_eq] at h
+    exact h.2.1
+  have hHH : replyFrameHeadHolder? st rid = none := by
+    unfold replyFrameHeadHolder?; rw [hHC]
+    simp [hSc, SchedContext.boundThread, hBT, SeLe4n.ThreadId.ofOptCode]
+  have hRC := (unheldPopsInPlace_pop st s c hU).1
+  unfold replyRecvPopAdmits replyRecvPopAdmitsCore
+  rw [replyRecvCallerFrameIs_of_link hT hRO, hHH, hHC]
+  unfold unheldPopCommits
+  simp only [donationRecipientAcceptable_of_unheldReturnCommits hRC, hRC, ↓reduceIte,
+    Bool.and_self]
+
 /-- **The reply arm of a reply-receive**: what the reply leg pops, read on the
 pre-state.  An enumeration, so choosing an arm allocates nothing: the context
 the donated and unheld arms return and the held arm keeps, and the caller's
@@ -1999,6 +2178,21 @@ theorem Admits.facts {arm : ReplyRecvArm}
   | unlinked =>
     have hW : replyWakesInPlace st c ct rid = true := h.2.1
     exact ⟨h.2.2.1, replyWakesInPlace_noResizeDue hW⟩
+
+/-- **Every arm's guard admits the pop**: the reply-receive's pop admission,
+read before the reply leg, holds wherever the arm's in-place guard does. -/
+theorem Admits.popAdmits {arm : ReplyRecvArm}
+    {scId : SeLe4n.SchedContextId} {home : CoreId} {st : SystemState} {tid c : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {ct rt : TCB} {rp : Reply} (h : arm.Admits scId home st tid c rid ct rt rp)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct)) (hRO : ct.replyObject = some rid) :
+    replyRecvPopAdmits st rid c = true := by
+  have hG : st.getTcb? c = some ct := by unfold SystemState.getTcb?; rw [hT]
+  cases arm with
+  | rendezvous => exact replyRecvPopAdmits_of_wakes hG hRO h.2.1
+  | donated => exact replyRecvPopAdmits_of_pops hG hRO h.2.1 h.2.2.1
+  | held => exact replyRecvPopAdmits_of_heldPops hG hRO h.2.2.1
+  | unheld => exact replyRecvPopAdmits_of_unheldPops hG hRO h.2.1
+  | unlinked => exact replyRecvPopAdmits_of_wakes (ct := ct) hG hRO h.2.1
 
 end ReplyRecvArm
 
@@ -2396,7 +2590,8 @@ theorem replyRecvTransferOnCore_arm_fault_inPlace (arm : ReplyRecvArm)
   rw [hFF] at hEq hX
   rw [hSL] at hEq
   refine ⟨?_, ?_⟩
-  · unfold replyRecvTransferOnCore performReplyRecvArmFaultAnswer
+  · rw [replyRecvTransferOnCore_of_admits (hAd.popAdmits hT hRO)]
+    unfold performReplyRecvArmFaultAnswer
     rw [hL, hEq, ReplyRecvArm.tailFast_eq]
   · obtain ⟨x', hX', e'⟩ := arm.tail_blocked _ tid rid epId ep.recvTailCode core hNoA hX
     unfold performReplyRecvArmFaultAnswer
@@ -2481,7 +2676,8 @@ theorem replyRecvTransferOnCore_arm_fault_inPlaceLong (arm : ReplyRecvArm)
   rw [hFF] at hEq hX
   rw [hSL] at hEq
   refine ⟨?_, ?_⟩
-  · unfold replyRecvTransferOnCore performReplyRecvArmFaultAnswerLong
+  · rw [replyRecvTransferOnCore_of_admits (hAd.popAdmits hT hRO)]
+    unfold performReplyRecvArmFaultAnswerLong
     rw [hL, hEq, ReplyRecvArm.tailFast_eq]
   · obtain ⟨x', hX', e'⟩ := arm.tail_blocked _ tid rid epId ep.recvTailCode core hNoA hX
     unfold performReplyRecvArmFaultAnswerLong

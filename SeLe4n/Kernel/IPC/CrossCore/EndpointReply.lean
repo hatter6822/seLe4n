@@ -188,6 +188,40 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                     | .error e => (st, .error e)
       | _ => (st, .error .replyCapInvalid)
 
+/-- **Whether the caller a reply answers is waiting for it** (seL4-MCS
+`doReplyTransfer`'s test that the reply's `replyTCB` is blocked on reply): the
+caller's TCB is found and its IPC state is `blockedOnReply`, the two checks the
+reply leg `endpointReplyOnCore` makes on its entry state.  Read-only. -/
+def replyRecvCallerAwaitsReply (st : SystemState) (prevCaller : SeLe4n.ThreadId) : Bool :=
+  match lookupTcb st prevCaller with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ _ => true
+      | _ => false
+  | none => false
+
+/-- Whether the caller waits for its reply reads only the objects. -/
+theorem replyRecvCallerAwaitsReply_congr_objects {st₁ st₂ : SystemState}
+    (h : st₁.objects = st₂.objects) (c : SeLe4n.ThreadId) :
+    replyRecvCallerAwaitsReply st₁ c = replyRecvCallerAwaitsReply st₂ c := by
+  simp only [replyRecvCallerAwaitsReply, lookupTcb, SystemState.getTcb?, h]
+
+/-- A reply leg that succeeds found its caller waiting for it
+(`replyRecvCallerAwaitsReply`): both are the leg's own entry checks. -/
+theorem replyRecvCallerAwaitsReply_of_endpointReplyOnCore_ok {replier target : SeLe4n.ThreadId}
+    {msg : IpcMessage} {c : CoreId} {st st1 : SystemState} {x : Option (CoreId × SgiKind)}
+    (h : endpointReplyOnCore replier target msg c st = (st1, .ok x)) :
+    replyRecvCallerAwaitsReply st target = true := by
+  unfold endpointReplyOnCore at h
+  unfold replyRecvCallerAwaitsReply
+  split at h
+  · cases h
+  · cases hT : lookupTcb st target with
+    | none => rw [hT] at h; cases h
+    | some tcb =>
+      rw [hT] at h
+      cases hS : tcb.ipcState <;> simp only [hS] at h ⊢ <;> first | rfl | (simp at h)
+
 /-- **The reply leg, checks first.**  Every refusal of `endpointReplyOnCore`
 is made on its entry state, before the first write: the message's length, the
 caller's lookup, and its `blockedOnReply` state.  What follows never refuses:

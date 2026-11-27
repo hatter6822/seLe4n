@@ -10621,6 +10621,14 @@ private def replyLegSkipState : SystemState :=
           (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode none }) }
     highCurrent #[SeLe4n.CPtr.ofNat 0x7FFFFFFF]
 
+/-- `replyLegSkipBusyState` with the recorded caller waiting for the reply
+(`.blockedOnReply`), so a reply-receive whose extra capabilities resolve
+answers it (`replyRecvCallerAwaitsReply`). -/
+private def replyLegAwaitingBusyState : SystemState :=
+  { replyLegSkipBusyState with
+      objects := replyLegSkipBusyState.objects.insert lowCurrent.toObjId
+        (.tcb (TCB.setIpcState (mkTcb 1010 40 none) (.blockedOnReply crossCoreEndpoint none))) }
+
 /-- The reply-receive whose extra capability does not look up: no reply leg,
 the receive's footprint, and the receive runs. -/
 private def runReplyRecvSkipChecks : IO Unit := do
@@ -10638,7 +10646,11 @@ private def runReplyRecvSkipChecks : IO Unit := do
     (decide (abiEntryFootprintId replyLegSkipDecoded highCurrent replyLegSkipBusyState
       = .receive))
   assertBool "NEGATIVE: a reply-receive whose extra capabilities resolve declares its own"
-    (decide (abiEntryFootprintId replyLegDecoded highCurrent replyLegSkipBusyState = .replyRecv))
+    (decide (abiEntryFootprintId replyLegDecoded highCurrent replyLegAwaitingBusyState = .replyRecv))
+  -- WS-SX SX33: a recorded caller that is not waiting for the reply refuses it,
+  -- so the receive runs alone under the receive's footprint
+  assertBool "a reply to a caller not waiting for it declares the receive's footprint"
+    (decide (abiEntryFootprintId replyLegDecoded highCurrent replyLegSkipBusyState = .receive))
   let out := dispatchSyscallChecked fineLockEntryLabeling replyLegSkipDecoded highCurrent c1
     replyLegSkipState
   assertBool "the skipped reply raises nothing: the receive runs"

@@ -533,7 +533,7 @@ theorem schedLockSet_replyRecvTransferOnCore_coversWrites (endpointId : SeLe4n.O
       executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _ grant
-    executingCore st st' summary S hObjInv hS hStep
+    executingCore st st' summary S hObjInv hS (replyRecvTransferOnCore_ok hStep).2
 
 /-- **Cut C6f (`v0.35.179`) / WS-LS LS2.3**: the live `.receive` ARM's coverage —
 the leg composed with the **whole hand-off**.

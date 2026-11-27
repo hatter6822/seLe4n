@@ -131,7 +131,7 @@ theorem replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     (hGate : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
       grant c st = .ok (summary, st')) : QueueLabelsStage ctx st st' := by
-  unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
+  replace h := (_root_.SeLe4n.Kernel.replyRecvTransferOnCore_ok h).2
   exact (QueueLabelsGrowFrame.endpointReplyRecvAnsweringOnCore hInv h).stage
     (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm
 

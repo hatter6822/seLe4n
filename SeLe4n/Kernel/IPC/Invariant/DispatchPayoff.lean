@@ -746,8 +746,9 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       caller's own resolution too (`replyRecvSkipsReply`, which names the
       caller's root and `replyRegister`), so the receive-stage fields above,
       keyed on `receivesWithoutReply`, cover the receive the arm then runs. -/
-  replyRecvSkipNamed : decoded.syscallId = .replyRecv →
-    resolveReplyRecvReply gate decoded st = .ok none → replyRecvSkipsReply decoded tid st = true
+  replyRecvSkipNamed : decoded.syscallId = .replyRecv → ∀ r,
+    resolveReplyRecvReply gate decoded st = .ok r →
+      resolveReplyRecvReply (callerReplyGate st tid decoded) decoded st = .ok r
 
 /-! ## §5  The flow-checked dispatch tier (WS-RR RR3.22, third item)
 
@@ -1396,13 +1397,27 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                 simp only [hRR] at hStep
                 exact receiveResolvedArm_cancelled_preserves_ipcInvariantFull ctx decoded tid
                   executingCore gate cap st st' epId hPack
-                  (Or.inr ⟨hSy, hPack.replyRecvSkipNamed hSy hRR⟩) hTgt hStep
+                  (Or.inr ⟨hSy, by simp [replyRecvSkipsReply, hPack.replyRecvSkipNamed hSy _ hRR]⟩)
+                  hTgt hStep
               | some triple =>
                 obtain ⟨rid, prevCaller, replyBadge, replyGrant⟩ := triple
                 simp only [hRR] at hStep
-                by_cases hRF : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true
-                case neg => rw [if_neg hRF] at hStep; cases hStep
-                rw [if_pos hRF] at hStep
+                by_cases hAns : replyRecvReplyAnswers ctx st tid prevCaller = true
+                case neg =>
+                  -- WS-SX SX33: a refused reply runs the receive alone
+                  rw [if_neg hAns] at hStep
+                  cases hAw : replyRecvCallerAwaitsReply st prevCaller
+                  · exact receiveResolvedArm_cancelled_preserves_ipcInvariantFull ctx decoded tid
+                      executingCore gate cap st st' epId hPack
+                      (Or.inr ⟨hSy, by
+                        simp [replyRecvSkipsReply, hPack.replyRecvSkipNamed hSy _ hRR, hAw]⟩)
+                      hTgt hStep
+                  · rw [receiveResolvedArm_error_of_replyFlowDenied hSy hRR
+                      (by simpa [replyRecvReplyAnswers, hAw] using hAns)] at hStep
+                    cases hStep
+                have hRF : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true :=
+                  ((Bool.and_eq_true _ _).mp hAns).1
+                rw [if_pos hAns] at hStep
                 by_cases hSigR : receiveCompletesSignal ctx st tid = true
                 · rw [if_pos hSigR] at hStep
                   obtain ⟨hFP, hRP, hB1⟩ :=
@@ -1429,7 +1444,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       hPack.reachable hNoEdge1 hHolderDon1 hStackValid1
                       hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1
                       hRetStage
-                      (by unfold replyRecvTransferOnCore at hBody; exact hBody)
+                      (replyRecvTransferOnCore_ok hBody).2
                     rw [← hStep]
                     exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _
                       hObjInvB hInvB

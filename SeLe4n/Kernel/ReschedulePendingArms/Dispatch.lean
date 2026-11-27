@@ -2183,12 +2183,13 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · cases h
     · exact receiveResolvedArm_cancelled_stepCovers e hInv hB.bidirectional h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact receiveResolvedArm_cancelled_stepCovers e hInv hB.bidirectional h) | skip
     · exact replyRecvCompletesSignalArm_stepCovers e hInv
         (schedContextBindingPair_of_consistent hB.2.binding hB.1.1.donationOwnerValid) h
     rename_i summ stR hRR
     cases h
-    obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
+    obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv (replyRecvTransferOnCore_ok hRR).2
     exact stepCoversInv_trans hS (stageDeliveredMessage_keyFrame _ tid _ hSInv).stepCoversInv
   case none.declassify.auditTrail code =>
     split at h

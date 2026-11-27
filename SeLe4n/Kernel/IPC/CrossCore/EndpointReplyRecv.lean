@@ -206,6 +206,67 @@ it in the pop's place. -/
 @[csimp] theorem replyRecvPopDonation_eq_checked :
     @replyRecvPopDonation = @replyRecvPopDonationChecked := rfl
 
+/-- **Whether the donation pop commits, read on the state it runs on**
+(seL4-MCS's `reply_pop`, decided before any write): a frame heading a context
+bound to a holder pops as the held-head pop does (`heldPopCommits`: the return
+to `target` where it holds no context, the held pop where it holds one), its
+holder and `target` both promotable to valid threads; a frame heading an unheld
+context pops as `unheldPopCommits` admits; a frame heading nothing pops
+nothing.  It is the whole refusal surface of `replyRecvPopDonation`
+(`replyRecvPopDonation_ok_iff_commits`). -/
+def replyRecvPopCommits (st : SystemState) (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
+    Bool :=
+  match replyFrameHeadHolder? st rid with
+  | some (scId, holder) =>
+      holder.toValid?.isSome && target.toValid?.isSome && heldPopCommits st holder scId target
+  | none =>
+      match replyFrameHeadContext? st rid with
+      | none => true
+      | some scId => unheldPopCommits st scId target
+
+/-- Whether the held pop's outer caller is a thread other than `c`. -/
+def keptPopOuterIsNot (st : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (c : SeLe4n.ThreadId) : Bool :=
+  match replyStackOuterCaller? st scId with
+  | .ok n => heldPopOuter? st holder n != some c
+  | .error _ => true
+
+/-- **The pop's commit test, read before the reply leg that precedes it.**
+The reply leg writes no context, no other frame and no binding, keeps a head
+frame's links, and makes the answered caller `c` ready; so every read of
+`replyRecvPopCommits` on the leg's state is the same read on the state before
+it, except the held pop's outer-caller test at `c` itself, which the leg's
+wake falsifies (`keptPopOuterIsNot`).  Equal to the pop's own test on the
+leg's state wherever the caller's reply link is the frame or nothing
+(`endpointReplyOnCore_popCommits`). -/
+def replyRecvPopAdmitsCore (st : SystemState) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) :
+    Bool :=
+  match replyFrameHeadHolder? st rid with
+  | some (scId, holder) =>
+      holder.toValid?.isSome && c.toValid?.isSome &&
+        (if donationRecipientAcceptable st c then donatedReturnCommits st holder scId c
+         else keptPopCommits st holder scId && keptPopOuterIsNot st holder scId c)
+  | none =>
+      match replyFrameHeadContext? st rid with
+      | none => true
+      | some scId => unheldPopCommits st scId c
+
+/-- Whether the answered caller's reply link is the frame `rid` or nothing: the
+reply leg's removal then touches no frame but `rid`. -/
+def replyRecvCallerFrameIs (st : SystemState) (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
+    Bool :=
+  match lookupTcb st c with
+  | some t => t.replyObject == none || t.replyObject == some rid
+  | none => true
+
+/-- **The reply-receive's pop admission, on its entry state** (seL4-MCS's order:
+`reply_pop` cannot refuse, so nothing a pop refusal would undo may be written
+before it is decided).  A caller whose reply link names another frame is
+refused here too: the leg's removal would then edit that frame's neighbours,
+which the admission cannot read ahead. -/
+def replyRecvPopAdmits (st : SystemState) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) : Bool :=
+  replyRecvCallerFrameIs st c rid && replyRecvPopAdmitsCore st rid c
+
 /-- The deschedule of the thread the pop unbound, on the Call arm of
 `replyRecvPostReceiveDonation`.
 
@@ -350,6 +411,34 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- `recordedServer`, because that one keys on waiters.
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
               (descheduleAtPlacement st holder) recordedServer serverCore).1)
+
+/-- **The reply step's outcome where nothing was received** (D53): the
+recorded server's priority-inheritance reversion, after the holder's deschedule
+where the pop handed a context back.  It is `replyRecvPostReceiveDonation`'s
+outcome on a receive that dequeued no `Call` (`replyRecvPostReceiveDonation_of_not_call`),
+and the state a refused receive reports (WS-SX SX33), on the state the receive
+returned. -/
+def replyRecvNothingReceived (recordedServer : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
+    SystemState :=
+  match returned? with
+  | none => (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1
+  | some (_, holder) =>
+      (PriorityInheritance.propagatePipChainCrossCore (descheduleAtPlacement st holder)
+        recordedServer serverCore).1
+
+/-- A post-receive donation after a receive that dequeued no `Call` is the
+nothing-received outcome. -/
+theorem replyRecvPostReceiveDonation_of_not_call (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState)
+    (h : rendezvousDequeuedCall st nextThread = false) :
+    replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st =
+      .ok ((), replyRecvNothingReceived recordedServer serverCore returned? st) := by
+  unfold replyRecvPostReceiveDonation replyRecvNothingReceived
+  cases returned? with
+  | none => simp only [h, Bool.false_eq_true, ↓reduceIte]
+  | some p => obtain ⟨_, _⟩ := p; simp only [h, Bool.false_eq_true, ↓reduceIte]
 
 /-- On a pop that handed nothing back, a post-receive donation the resolver
 declines (`callDonationSchedContext?` answering `none`: the receiver already holds
@@ -714,6 +803,76 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
                   executingCore)
 
+/-- **The composite after its entry-state reads** (WS-SX SX33, checks first): the
+reply-receive composite with the three values it reads off its entry state
+handed in -- the recorded server, the reply's capability request and the
+answered caller's receive target -- so that nothing reads the entry state once
+the reply leg has written.  Out of line, so its arguments are computed before
+the leg runs and the entry state is handed to the leg alone. -/
+@[noinline] def endpointReplyRecvAnsweringBody (answer : Option Architecture.FaultReplyOutcome)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : Concurrency.CoreId) (recordedServer : SeLe4n.ThreadId)
+    (req : Option (Capability × Array SeLe4n.CPtr)) (target : Option (TCB × Option CSpaceAddr))
+    (st : SystemState) : Except KernelError (CapTransferSummary × SystemState) :=
+    match endpointReplyOnCore tid prevCaller msg executingCore st with
+    | (_, .error e) => .error e
+    | (st1, .ok _replySgi) =>
+        match replyRecvPopDonation rid prevCaller st1 with
+        | .error e => .error e
+        | .ok (returnedSc?, st1q) =>
+        match receiveTransferCaps req none target st1q with
+        | .error e => .error e
+        | .ok (replySummary, st1p) =>
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+            (receiveReturnSchedContext true
+              (replyRecvAnswerCaller answer st1p prevCaller replySummary.capInfo) tid) with
+        | (_, .error e) => .error e
+        | (st2, .ok (nextThread, summary, _)) =>
+            match replyRecvPostReceiveDonation tid recordedServer nextThread executingCore
+                returnedSc? st2 with
+            | .error e => .error e
+            | .ok ((), st3) =>
+                .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
+                  executingCore)
+
+/-- The composite with its entry-state reads taken first, so the reply leg is
+handed the entry state alone (`endpointReplyRecvAnsweringOnCore_eq_checked`). -/
+def endpointReplyRecvAnsweringOnCoreChecked (answer : Option Architecture.FaultReplyOutcome)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    Except KernelError (CapTransferSummary × SystemState) :=
+  endpointReplyRecvAnsweringBody answer epId tid rid prevCaller msg executingCore
+    ((recordedReplyServer? st prevCaller).getD tid)
+    (if answer.isSome then none else replyCapRequest st tid grant)
+    (receiverCapTarget? st prevCaller) st
+
+/-- The reads-first composite is the composite, with no assumption; the compiler
+runs it in the composite's place. -/
+@[csimp] theorem endpointReplyRecvAnsweringOnCore_eq_checked :
+    @endpointReplyRecvAnsweringOnCore = @endpointReplyRecvAnsweringOnCoreChecked := by
+  funext answer epId tid rid prevCaller msg grant executingCore st
+  unfold endpointReplyRecvAnsweringOnCore endpointReplyRecvAnsweringOnCoreChecked
+    endpointReplyRecvAnsweringBody
+  simp only [replyRecvReplyTransfer_eq_receiveTransferCaps]
+
+/-- A reply-receive composite that succeeds found its caller waiting for the
+reply (`replyRecvCallerAwaitsReply`): its reply leg checks that first. -/
+theorem replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok
+    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st = .ok r) :
+    replyRecvCallerAwaitsReply st prevCaller = true := by
+  unfold endpointReplyRecvAnsweringOnCore at h
+  cases hR : endpointReplyOnCore tid prevCaller msg c st with
+  | mk s1 e =>
+    cases e with
+    | error e => rw [hR] at h; simp at h
+    | ok y => exact replyRecvCallerAwaitsReply_of_endpointReplyOnCore_ok hR
+
 /-- The `.replyRecv` composite for a caller carrying **no** fault: the reply leg
 delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore`
 at `none`).  Every in-place form of the arm is proven equal to this one. -/
@@ -738,27 +897,76 @@ server choose its program counter and stack pointer.
 
 `label` is the reply's `MessageInfo` label and `msg` its payload (MR1 onward, the
 reply capability's MR0 stripped); the decode reads `msg.registers` as the reply's
-words, exactly as the `.reply` arm's decode reads its MR0 onward. -/
+words, exactly as the `.reply` arm's decode reads its MR0 onward.
+
+**Checks first** (WS-SX SX33, seL4's `reply_pop`, which cannot refuse): the
+pop's admission (`replyRecvPopAdmits`) is read on the entry state, before the
+reply leg writes anything, so a pop the kernel refuses leaves the state as it
+found it.  It is exact against the pop on the leg's state
+(`replyRecvPopDonation_ok_of_admits`, `replyRecvPopAdmits_of_pop_ok`). -/
 def replyRecvTransferOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
     (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) : Except KernelError (CapTransferSummary × SystemState) :=
-    -- A faulted caller is handed the empty message, as `.reply`'s fault branch
-    -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
-    endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
-      epId tid rid prevCaller
-      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
-      executingCore st
+    if replyRecvPopAdmits st rid prevCaller then
+      -- A faulted caller is handed the empty message, as `.reply`'s fault branch
+      -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
+      endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        epId tid rid prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        executingCore st
+    else .error (.invalidArgument 0)
 
-/-- On a caller carrying no fault the arm's transition is the ordinary composite. -/
+/-- Where the pop is admitted, the arm's transition is the composite at the
+caller's answer. -/
+theorem replyRecvTransferOnCore_of_admits {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    (h : replyRecvPopAdmits st rid prevCaller = true) :
+    replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st =
+      endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        epId tid rid prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        c st := by
+  unfold replyRecvTransferOnCore; rw [if_pos h]
+
+/-- **What a successful transition is**: the pop admitted on the entry state,
+and the composite's own success. -/
+theorem replyRecvTransferOnCore_ok {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st = .ok r) :
+    replyRecvPopAdmits st rid prevCaller = true ∧
+      endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        epId tid rid prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        c st = .ok r := by
+  unfold replyRecvTransferOnCore at h
+  split at h
+  · next hA => exact ⟨hA, h⟩
+  · cases h
+
+/-- On a caller carrying no fault, its pop admitted, the arm's transition is the
+ordinary composite. -/
 theorem replyRecvTransferOnCore_of_no_fault (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
     (grant : Bool) (c : Concurrency.CoreId) (st : SystemState)
-    (h : threadHasPendingFault st prevCaller = false) :
+    (h : threadHasPendingFault st prevCaller = false)
+    (hA : replyRecvPopAdmits st rid prevCaller = true) :
     replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st =
       endpointReplyRecvOnCore epId tid rid prevCaller msg grant c st := by
-  unfold replyRecvTransferOnCore
-  rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
+  rw [replyRecvTransferOnCore_of_admits hA,
+    replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl
+
+/-- The arm's transition that succeeds found its caller waiting for the reply. -/
+theorem replyRecvCallerAwaitsReply_of_replyRecvTransferOnCore_ok {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st = .ok r) :
+    replyRecvCallerAwaitsReply st prevCaller = true :=
+  replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok (replyRecvTransferOnCore_ok h).2
 
 
 -- ============================================================================

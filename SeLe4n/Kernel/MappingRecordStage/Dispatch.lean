@@ -1020,11 +1020,13 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · cases h
     · exact hRecvLeg h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact hRecvLeg h) | skip
     · exact replyRecvCompletesSignalArm_mappingStage h
     rename_i summ stR hRR
     cases h
-    exact (endpointReplyRecvOnCore_mappingStage hRR).trans (stageDeliveredMessage_mappingStage _ _ _)
+    exact (endpointReplyRecvOnCore_mappingStage (replyRecvTransferOnCore_ok hRR).2).trans
+      (stageDeliveredMessage_mappingStage _ _ _)
   case none.declassify.auditTrail code =>
     split at h
     · cases h

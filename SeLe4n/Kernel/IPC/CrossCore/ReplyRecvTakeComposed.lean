@@ -134,6 +134,20 @@ def LegAdmits : ReplyRecvArm → SeLe4n.SchedContextId → CoreId → SystemStat
       (∃ ep0, ct.ipcState = .blockedOnReply ep0 none) ∧
       replyUnlinkedInPlace st c rid = true ∧ tid ≠ c
 
+/-- **Every arm's leg guard admits the pop**, read before the reply leg. -/
+theorem LegAdmits.popAdmits {arm : ReplyRecvArm}
+    {scId : SeLe4n.SchedContextId} {home : CoreId} {st : SystemState} {tid c : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {ct : TCB} (h : arm.LegAdmits scId home st tid c rid ct)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct)) (hRO : ct.replyObject = some rid) :
+    replyRecvPopAdmits st rid c = true := by
+  have hG : st.getTcb? c = some ct := by unfold SystemState.getTcb?; rw [hT]
+  cases arm with
+  | rendezvous => exact replyRecvPopAdmits_of_wakes hG hRO h.2.1
+  | donated => exact replyRecvPopAdmits_of_pops hG hRO h.2.1 h.2.2.1
+  | held => exact replyRecvPopAdmits_of_heldPops hG hRO h.2.1
+  | unheld => exact replyRecvPopAdmits_of_unheldPops hG hRO h.2.1
+  | unlinked => exact replyRecvPopAdmits_of_wakes (ct := ct) hG hRO h.2.1
+
 /-- **The arm's reply leg and pop are the specification's**, once per arm: the
 reply leg answers the arm's reply writes, the pop hands back the arm's
 `returned` on the arm's pop, and the recorded server the post-receive half
@@ -1560,7 +1574,7 @@ theorem replyRecvTransferOnCore_arm_faultTake (arm : ReplyRecvArm)
       { registers := Architecture.regMessageBody layout rf len, badge := badge }) Z c 0 = Z :=
     fun Z => by rw [hAns]; rfl
   rw [hFF] at hE2 hS2 hG2 hEq
-  unfold replyRecvTransferOnCore
+  rw [replyRecvTransferOnCore_of_admits (hAd.popAdmits hT hRO)]
   rw [hL, hEq]
   dsimp only
   rw [CapTransferSummary.capInfo_empty, hSL]
@@ -1692,7 +1706,7 @@ theorem replyRecvTransferOnCore_arm_faultTakeLong (arm : ReplyRecvArm)
   have hSL : ∀ Z, replyRecvStageLast (replyRecvCallerFaultAnswer? st c label msg) Z c 0 = Z :=
     fun Z => by rw [hAns]; rfl
   rw [hFF] at hE2 hS2 hG2 hEq
-  unfold replyRecvTransferOnCore
+  rw [replyRecvTransferOnCore_of_admits (hAd.popAdmits hT hRO)]
   rw [hL, hEq]
   dsimp only
   rw [CapTransferSummary.capInfo_empty, hSL]

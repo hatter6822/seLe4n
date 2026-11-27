@@ -3111,7 +3111,7 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     expect s!"replyRecv_reply_{what}_missing"
       (isMissing (resolveReplyRecvReply gate (received .replyRecv w) st) &&
        isMissing (resolveReplyRecvReplyR st caller (cptr w)) &&
-       kMissing (resolveReplyRecvK st caller (cptr w) some (fun _ => none)
+       kMissing (resolveReplyRecvK st caller (cptr w) (fun _ => true) some (fun _ => none)
          (fun _ _ _ _ _ => none)))
       "a reply-receive's reply capability is refused MissingCapability on the spec, R and K forms"
     expect s!"replyRecv_reply_{what}_dispatch_missing"

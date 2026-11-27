@@ -624,7 +624,13 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
           | .ok none => receiveLockOperands gate decoded tid epId s
-          | .ok (some (rid, _, replyBadge, replyGrant)) =>
+          | .ok (some (rid, prevCaller, replyBadge, replyGrant)) =>
+              -- WS-SX SX33: a reply whose caller is not waiting for it is
+              -- refused and the receive runs alone, so it declares the
+              -- receive's operands, as the skips above do
+              if !replyRecvCallerAwaitsReply s prevCaller then
+                receiveLockOperands gate decoded tid epId s
+              else
               some { caller := tid, targetObject := some epId, targetReply := some rid,
                      message := some
                        { registers := Architecture.RegisterDecode.extractMessageRegisters
@@ -1025,6 +1031,11 @@ theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
         | ok r =>
           cases r with
           | none => rw [hR] at h; exact hOps _ h
-          | some r => rw [hR] at hX; simp [hXc] at hX
+          | some r =>
+            obtain ⟨rid, c, b, g⟩ := r
+            rw [hR] at h hX
+            simp only [hXc, Bool.false_or] at hX
+            simp only [hX, ↓reduceIte] at h
+            exact hOps _ h
 
 end SeLe4n.Kernel

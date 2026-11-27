@@ -4551,7 +4551,15 @@ run_check "INVARIANT" rg -n '^theorem replyRecvBlockArmCode_spec($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvCallTakeArmCode($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '              if replyRecvArmCallCode \.rendezvous st epId tid c rid ct s sTcb 1 6 != 0 then\n                replyRecvArmCallCode \.rendezvous st epId tid c rid ct s sTcb 1 6\n              else if replyRecvArmCallCode \.donated st epId tid c rid ct s sTcb 2 0 != 0 then\n                replyRecvArmCallCode \.donated st epId tid c rid ct s sTcb 2 0\n              else if replyRecvArmCallCode \.held st epId tid c rid ct s sTcb 3 0 != 0 then\n                replyRecvArmCallCode \.held st epId tid c rid ct s sTcb 3 0\n              else if replyRecvArmCallCode \.unheld st epId tid c rid ct s sTcb 4 7 != 0 then\n                replyRecvArmCallCode \.unheld st epId tid c rid ct s sTcb 4 7\n              else if replyRecvArmCallCode \.unlinked st epId tid c rid ct s sTcb 5 8 != 0 then\n                replyRecvArmCallCode \.unlinked st epId tid c rid ct s sTcb 5 8\n              else 0' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmCode_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '      else replyRecvArmCallTakeR epId tid c rid badge grant layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '            match replyRecvAnsweredCaller\? st rid answers with\n            \| some c => onOk cap rid c cap\.badge \(cap\.rights\.mem \.grant\)\n            \| none => onNone \(\)\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# WS-SX SX33: a refused reply (the flow denied, or the caller not waiting) runs the receive alone,
+# one test deciding it, mirrored by the spec arm, its report and the lock footprint.
+run_check "INVARIANT" rg -n -U '^def replyRecvReplyAnswers \(ctx : LabelingContext\) \(st : SystemState\)\n    \(tid prevCaller : SeLe4n\.ThreadId\) : Bool :=\n  securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.threadLabelOf prevCaller\) &&\n    replyRecvCallerAwaitsReply st prevCaller' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '                \| \.error e => \.error e\n              else\n                receiveResolvedArm ctx decoded gate tid epId executingCore\n                  \(cancelRecvBusyReply ctx tid gate decoded executingCore st\)\n    \| _ => fun _ => \.error \(\.invalidCapability 0\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '    \| \.ok \(some \(_, prevCaller, _, _\)\) => !replyRecvCallerAwaitsReply st prevCaller\n    \| _ => false' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvRepliesToNoOne st tid replyAddr \|\| replyRecvReplyRefused ctx st tid replyAddr then\n      receiveArmReport ctx tid true replyAddr executingCore cap st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem receiveResolvedArm_error_of_replyFlowDenied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvCallerAwaitsReply_of_endpointReplyOnCore_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n -U '        replyRecvCallFaultArmR epId tid c rid badge grant layout rf len label executingCore st\n      else if decide' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvShortCallTakeAdmits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvLongCallTakeAdmits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -4626,7 +4634,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_inPlace($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n -U '        if replyRecvBlockArmCode st epId tid c rid != 0 then\n          \.ok \(\(\), performReplyRecvArmFaultAnswer\n            \(ReplyRecvArm\.ofCode \(replyRecvBlockArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        if replyRecvBlockArmCode st epId tid c rid != 0 then\n          \.ok \(\(\), performReplyRecvArmFaultAnswerLong\n            \(ReplyRecvArm\.ofCode \(replyRecvBlockArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '      else if replyRecvBlockArmCode st epId tid c rid != 0 && replyRecvReplyInertW st tid c grant\n          then\n        \.ok \(\(\), performReplyRecvArmDeliveredLong\n          \(ReplyRecvArm\.ofCode \(replyRecvBlockArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '      else replyRecvLongCapsR epId tid c rid badge grant rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def replyRecvAnsweredCaller\? [^\n]*(\n([ \t][^\n]*)?)*\n  let c\? := replyAnsweredCaller\? st rid\n  match c\? with\n  \| some c => if answers c then c\? else none\n  \| none => none\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '  grant && !threadHasPendingFault st c && replyRecvBlockArmCode st epId tid c rid != 0\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvArmCapsDeliveredLong\n                \(ReplyRecvArm\.ofCode \(replyRecvBlockArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvAnsweringOnCore_arm_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvBlockComposed.lean
@@ -4780,6 +4788,29 @@ run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_runQueueEntryStage($|[ 
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_readyKeptStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_savedRegsWrittenFree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_lendersStage($|[ ({:\[\]])' SeLe4n/Kernel/ContextLenders/ReplyRecv.lean
+# The pop's admission, read on the entry state before the reply leg writes (WS-SX SX33): the arm's
+# transition tests it ahead of the composite, it is the caller's frame test and the pop's commit test
+# read ahead, exact against the pop, and every arm's in-place guard implies it.
+run_check "INVARIANT" rg -n -U '^def replyRecvTransferOnCore [^\n]*(\n([ \t][^\n]*)?)*\n    if replyRecvPopAdmits st rid prevCaller then\n(      [^\n]*\n)*      endpointReplyRecvAnsweringOnCore \(replyRecvCallerFaultAnswer\? st prevCaller label msg\)\n(        [^\n]*\n){3}    else \.error \(\.invalidArgument 0\)\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^def replyRecvPopAdmits [^\n]*\n  replyRecvCallerFrameIs st c rid && replyRecvPopAdmitsCore st rid c\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopAdmits_of_pop_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem Admits\.popAdmits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvBlockComposed.lean
+run_check "INVARIANT" rg -n '^theorem LegAdmits\.popAdmits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean
+# The composite's entry-state reads taken before the reply leg (WS-SX SX33): the reads-first form
+# hands the out-of-line body the recorded server, the reply's request and the caller's receive
+# target, all read off the entry state, which goes to the leg alone; the body's transfer reads
+# those values, and the form is the composite with no assumption.
+run_check "INVARIANT" rg -n -U '^def endpointReplyRecvAnsweringOnCoreChecked [^\n]*(\n([ \t][^\n]*)?)*\n  endpointReplyRecvAnsweringBody answer epId tid rid prevCaller msg executingCore\n    \(\(recordedReplyServer\? st prevCaller\)\.getD tid\)\n    \(if answer\.isSome then none else replyCapRequest st tid grant\)\n    \(receiverCapTarget\? st prevCaller\) st\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def endpointReplyRecvAnsweringBody [^\n]*(\n([ \t][^\n]*)?)*\n    match endpointReplyOnCore tid prevCaller msg executingCore st with\n(\n|[ \t][^\n]*\n)*        match receiveTransferCaps req none target st1q with\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[csimp\] theorem endpointReplyRecvAnsweringOnCore_eq_checked :\n    @endpointReplyRecvAnsweringOnCore = @endpointReplyRecvAnsweringOnCoreChecked :=' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+# A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
+# the reply's resolution answers only a caller the reply answers, so each arm has one receive site
+# for both, and no arm tests the reply again after it.
+run_check "INVARIANT" rg -n -U '            resolveReplyRecvK st tid replyAddr \(fun c => replyRecvReplyAnswers ctx st tid c\)\n              \(fun e => \.error \(e, st\)\)\n              \(fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st\)\n              resolved\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '            resolveReplyRecvK st tid replyAddr \(fun c => replyRecvReplyAnswers ctx st tid c\)\n              \(fun e => \.error \(e, st\)\)\n              \(fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st\)\n              \(fun rcap rid c badge grant =>\n                replyRecvLongResolvedR ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        \| \.ok r =>\n          match replyRecvAnsweredReply\? ctx st tid r with\n          \| none => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_negative_check "INVARIANT" rg -n 'skipArm' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 run_check "INVARIANT" rg -n '^theorem ReplyRecvArm\.faultTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_arm_faultTake($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean

@@ -337,11 +337,12 @@ theorem dispatchWithCapChecked_queueLabelsStage (ctx : LabelingContext)
     · exact QueueLabelsStage.receiveResolvedArm decoded tid executingCore gate epId st st' hInv
         hGate h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact QueueLabelsStage.receiveResolvedArm decoded tid executingCore gate epId st st' hInv hGate h) | skip
     · exact (QueueLabelsGatedFrame.replyRecvCompletesSignalArm hInv h).stage
     rename_i hX
     cases h
-    unfold replyRecvTransferOnCore at hX
+    replace hX := (replyRecvTransferOnCore_ok hX).2
     exact (QueueLabelsGrowFrame.stage ((QueueLabelsGrowFrame.endpointReplyRecvAnsweringOnCore
       hInv hX).andThen fun hI => .of_frame (RecordsFrame.stageDeliveredMessage _ _ _ hI))
       (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm)

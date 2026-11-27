@@ -142,7 +142,7 @@ theorem replyRecvTransferOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   endpointReplyRecvOnCore_crossCoreNonInterference ctx observer endpointId receiver replyId
-    prevCaller _ grant executingCore st st' summary c hObjInv hStep
+    prevCaller _ grant executingCore st st' summary c hObjInv (replyRecvTransferOnCore_ok hStep).2
     hne hShared
 
 /-- SM8.B.2 (**the live `.tcbSuspend` non-interference**): the syscall arm the

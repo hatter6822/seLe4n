@@ -608,7 +608,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · cases h
     · exact hRecvArm epId h
     repeat' split at h
-    all_goals first | (cases h; done) | skip
+    -- WS-SX SX33: a refused reply runs the receive alone, as the skip does
+    all_goals first | (cases h; done) | (exact hRecvArm epId h) | skip
     · -- seL4-MCS `handleReplyRecv` whose receive completes the bound
       -- notification: the reply leg, the wait, then the caller's badge register.
       obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
@@ -629,6 +630,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
               hB.2.binding hB.1.1.donationOwnerValid) hR).1 hWt)).bankAgree hA
     rename_i summ stR hRR
     cases h
+    replace hRR := (replyRecvTransferOnCore_ok hRR).2
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e' hInv hRR
     obtain ⟨w, i⟩ := endpointReplyRecvOnCore_savedRegsWrittenFree P.dequeued P.queueHeads hRT
       hBNR hInv hRR

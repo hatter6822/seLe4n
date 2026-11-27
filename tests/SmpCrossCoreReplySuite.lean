@@ -579,6 +579,35 @@ private def runReplyRecvChecks : IO Unit := do
        | some t => decide (t.ipcState = .blockedOnReceive epId)
        | none => false)
 
+/-- `stReplyRecv` with the caller's reply link naming a frame other than the
+one answered: off the invariant (`replyCallerLinkageReciprocal`), and the one
+case the pop's admission refuses that the pop itself would not read. -/
+private def stReplyRecvCrossLinked : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
+    |>.withObject clientLocalTid.toObjId
+        (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                  replyObjectCode := SeLe4n.ReplyId.optCode (some replyId708) })
+    |>.withObject replyId709.toObjId
+        (.reply { replyId := replyId709, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid) })
+    |>.withRunnable [serverTid]
+    |>.build)
+
+private def runReplyRecvPopAdmissionChecks : IO Unit := do
+  IO.println "--- the reply-receive's pop admission, read before the reply leg ---"
+  assertBool "a caller linked to the answered frame admits the pop"
+    (replyRecvPopAdmits stReplyRecv replyId709 clientLocalTid)
+  assertBool "a caller linked to another frame does not"
+    (!replyRecvPopAdmits stReplyRecvCrossLinked replyId709 clientLocalTid)
+  -- The refusal is decided on the entry state, before the reply leg's first
+  -- write, so the syscall refuses with nothing written.
+  assertBool "the reply-receive then refuses before its reply leg"
+    (match replyRecvTransferOnCore epId serverTid replyId709 clientLocalTid 0 replyMsg false
+        bootCoreId stReplyRecvCrossLinked with
+     | .error (.invalidArgument 0) => true
+     | _ => false)
+
 private def runDonationChecks : IO Unit := do
   IO.println "--- §3.3' SM6.C.3 donation-chain lock-set extension ---"
   -- SM6.C.3: the donating reply lock-set = the non-donating one extended with the
@@ -973,6 +1002,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runConsumeChecks
   runFrameSpliceChecks
   runReplyRecvChecks
+  runReplyRecvPopAdmissionChecks
   runDonationChecks
   runUnheldOrphanChecks
   runUnheldOrphanSeverChecks

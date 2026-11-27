@@ -479,6 +479,45 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
             (by rw [receiveReplyAddr?_of_replyRecv' hRR]; rfl)]
           exact hK
     · exact Or.inl rfl
+  have hRefCase : ∀ cap : Capability,
+      replyRecvReplyRefused ctx st tid decoded.replyCPtr = true →
+      receiveArmReport ctx tid true decoded.replyCPtr executingCore cap st = st ∨
+        ∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
+          (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
+            recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
+          receiveArmReport ctx tid true decoded.replyCPtr executingCore cap st =
+            cancelReplyHolder st ⟨k⟩ executingCore := by
+    intro cap hRef
+    by_cases hD : replyRecvSkipsReply decoded tid st = true
+    · exact hRecvCase cap hD
+    left
+    unfold replyRecvReplyRefused at hRef
+    rw [resolveReplyRecvReplyR_eq st tid (callerReplyGate st tid decoded) decoded rfl rfl] at hRef
+    unfold replyRecvSkipsReply at hD
+    cases hRs : resolveReplyRecvReply (callerReplyGate st tid decoded) decoded st with
+    | error e => rw [hRs] at hRef; cases hRef
+    | ok r =>
+      cases r with
+      | none => rw [hRs] at hRef; cases hRef
+      | some r =>
+        obtain ⟨rid, c, b, g⟩ := r
+        rw [hRs] at hRef hD
+        have hAw : replyRecvCallerAwaitsReply st c = true := by
+          cases hN : replyRecvCallerAwaitsReply st c with
+          | true => rfl
+          | false => simp [hN] at hD
+        have hF : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) = false := by
+          simpa [replyRecvReplyAnswers, hAw] using hRef
+        have h0 := recvBusyReplyHolderCode_eq_zero_of_replyFlowDenied hRR hRs hF
+        unfold receiveArmReport
+        split
+        · split
+          · rfl
+          · unfold cancelReceiveArmBusyReply
+            rw [receiveArmHolderCode_eq ctx tid (callerCspaceRoot st tid)
+              (callerReplyGate st tid decoded) decoded true
+              decoded.replyCPtr st rfl (by rw [receiveReplyAddr?_of_replyRecv' hRR]; rfl), h0]
+        · rfl
   have hArm : ∀ cap? : Option Capability,
       replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
           decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv) cap? st = st ∨
@@ -502,7 +541,10 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
         exact hRecvCase _ (by simp [replyRecvSkipsReply, hXc])
       · split
         · rename_i hNo
-          exact hRecvCase _ (by simp [replyRecvSkipsReply, resolveReplyRecvReply_of_repliesToNoOne hNo])
+          rcases (Bool.or_eq_true _ _).mp hNo with hNo | hRef
+          · exact hRecvCase _
+              (by simp [replyRecvSkipsReply, resolveReplyRecvReply_of_repliesToNoOne hNo])
+          · exact hRefCase _ hRef
         · exact Or.inl rfl
     · exact Or.inl rfl
   unfold operandReport

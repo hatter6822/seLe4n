@@ -2159,4 +2159,720 @@ theorem endpointReplyRecvOnCore_observer_atomic
   exact lockSet_observer_atomic S executingCore action s _
 
 
+
+-- ============================================================================
+-- WS-SX SX33: the donation pop's admission, read before the reply leg
+-- ============================================================================
+--
+-- seL4-MCS's `reply_pop` cannot refuse, so the reply-receive decides every pop
+-- refusal before the reply leg's first write (`replyRecvPopAdmits`).  The
+-- four sub-pops' commit tests are exact (`*_of_ok` below with the existing
+-- `*_ok_of_commits`), and the leg keeps every read of the test but the answered
+-- caller's own state (`endpointReplyOnCore_popCommits`).
+
+/-- A context store over a stored context, then the head pop, looks every
+thread up as the state before them did. -/
+theorem lookupTcb_of_contextStore_headPop {st s1 s2 : SystemState}
+    {scId : SeLe4n.SchedContextId} {sc sc' : SchedContext}
+    {head? : Option (SeLe4n.ReplyId × Reply)} (hInv : st.objects.invExt)
+    (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (h1 : storeObject scId.toObjId (.schedContext sc') st = .ok ((), s1))
+    (h2 : storeDonationHeadPop scId head? s1 = .ok s2) (t : SeLe4n.ThreadId) :
+    lookupTcb s2 t = lookupTcb st t := by
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hInv h1
+  have hG := storeObject_schedContextAt_getTcb?_eq st s1 scId sc sc'
+    ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc) hInv h1 t
+  unfold lookupTcb
+  rw [storeDonationHeadPop_getTcb?_eq hInv1 h2 t, hG]
+
+/-- A TCB store keeps every thread stored. -/
+theorem lookupTcb_isSome_of_tcbStore {s s' : SystemState} {k : SeLe4n.ThreadId} {t0 : TCB}
+    (hInv : s.objects.invExt) (hk : (lookupTcb s k).isSome)
+    (hS : storeObject k.toObjId (.tcb t0) s = .ok ((), s')) (t : SeLe4n.ThreadId)
+    (h : (lookupTcb s' t).isSome) : (lookupTcb s t).isSome := by
+  by_cases e : t.toObjId = k.toObjId
+  · have : t = k := SeLe4n.ThreadId.toObjId_injective _ _ e
+    subst this; exact hk
+  · unfold lookupTcb at h ⊢
+    rw [storeObject_getTcb?_ne s s' _ _ t e hInv hS] at h
+    exact h
+
+/-- **A donation return that succeeds was admitted**: every check
+`donatedReturnCommits` makes is one the return made on its way to success. -/
+theorem donatedReturnCommits_of_ok {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st') :
+    donatedReturnCommits st serverTid scId originalOwner = true := by
+  obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+  obtain ⟨sc0, hSc0, hB⟩ := returnDonatedSchedContext_ok_implies_sc_bound _ _ _ _ _ _ hPop
+  obtain ⟨sc, head?, ct, svt, s1, s2, s3, s4, hSc, hOut, hRcp, _, h1, h2, hL2, h3, hL3, _, _⟩ :=
+    returnDonatedSchedContext_ok_storeChain _ _ _ _ _ _ hPop
+  have hScG : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  rw [hScG] at hSc0; cases hSc0
+  have hEq := lookupTcb_of_contextStore_headPop hInv hSc h1 h2
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt
+    (storeObject_preserves_objects_invExt st s1 _ _ hInv h1) h2
+  have hOw : (lookupTcb st originalOwner).isSome := by rw [← hEq, hL2]; rfl
+  have hSv : (lookupTcb st serverTid).isSome := by
+    rw [← hEq]
+    exact lookupTcb_isSome_of_tcbStore hInv2 (by rw [hL2]; rfl) h3 serverTid (by rw [hL3]; rfl)
+  unfold donatedReturnCommits
+  rw [hRes]; simp only []; rw [hScG]
+  simp only [hB, beq_self_eq_true, hOut, hRcp, hOw, hSv, Bool.and_self]
+
+/-- **A held pop that succeeds was admitted** (`keptPopCommits`). -/
+theorem keptPopCommits_of_ok {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') :
+    keptPopCommits st holder scId = true := by
+  obtain ⟨n, hRes, hPop⟩ := keepDonatedSchedContextResolved_ok_decompose h
+  obtain ⟨sc, head?, ht, s1, s2, hBind, hSc, hB, hOut, _, h1, h2, hL2, _⟩ :=
+    keepDonatedSchedContext_ok_storeChainGuarded hPop
+  have hScG : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  have hEq := lookupTcb_of_contextStore_headPop hInv hSc h1 h2 holder
+  unfold keptPopCommits
+  rw [hRes]; simp only []; rw [hScG]
+  simp only [hB, beq_self_eq_true, hOut, ← hEq, hL2, Option.bind_some, hBind, Bool.and_self]
+
+/-- **An unheld pop that succeeds was admitted** (`unheldReturnCommits`). -/
+theorem unheldReturnCommits_of_ok {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {owner : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : returnUnheldSchedContextResolved st scId owner = .ok st') :
+    unheldReturnCommits st scId owner = true := by
+  obtain ⟨n, hRes, hPop⟩ := returnUnheldSchedContextResolved_ok_decompose h
+  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, hB, hOut, hRcp, _, h1, h2, hL2, _⟩ :=
+    returnUnheldSchedContext_ok_storeChain _ _ _ _ _ hPop
+  have hScG : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  have hEq := lookupTcb_of_contextStore_headPop hInv hSc h1 h2 owner
+  unfold unheldReturnCommits
+  rw [hRes]; simp only []; rw [hScG]
+  simp only [hB, beq_self_eq_true, hOut, hRcp, ← hEq, hL2, Option.isSome_some, Bool.and_self]
+
+/-- **A sever that succeeds was admitted** (`unheldSeverCommits`). -/
+theorem unheldSeverCommits_of_ok {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    (h : severUnheldSchedContextResolved st scId = .ok st') :
+    unheldSeverCommits st scId = true := by
+  obtain ⟨n, hRes, hPop⟩ := severUnheldSchedContextResolved_ok_decompose h
+  obtain ⟨sc, _, _, hSc, hB, _⟩ := severUnheldSchedContext_ok_storeChain hPop
+  have hScG : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  unfold unheldSeverCommits
+  rw [hRes]; simp only []; rw [hScG]
+  simp only [hB, beq_self_eq_true]
+
+/-- **The donation pop commits exactly where `replyRecvPopCommits` admits.** -/
+theorem replyRecvPopDonation_ok_iff_commits {st : SystemState} {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} (hInv : st.objects.invExt) :
+    (∃ r, replyRecvPopDonation rid target st = .ok r) ↔
+      replyRecvPopCommits st rid target = true := by
+  unfold replyRecvPopDonation replyRecvPopCommits
+  cases hH : replyFrameHeadHolder? st rid with
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    simp only []
+    cases hV : holder.toValid? with
+    | none => simp
+    | some hv =>
+    cases hT : target.toValid? with
+    | none => simp
+    | some tv =>
+    simp only [Option.isSome_some, Bool.true_and]
+    cases hA : donationRecipientAcceptable st target with
+    | true =>
+      rw [heldPopCommits_of_acceptable hA]
+      simp only [↓reduceIte]
+      constructor
+      · rintro ⟨r, hr⟩
+        cases hR : returnDonatedSchedContextResolved st holder scId target with
+        | error e => rw [hR] at hr; cases hr
+        | ok s => exact donatedReturnCommits_of_ok hInv hR
+      · intro hc
+        obtain ⟨s, hs⟩ := returnDonatedSchedContextResolved_ok_of_commits hInv hc
+        exact ⟨_, by rw [hs]⟩
+    | false =>
+      rw [heldPopCommits_of_not_acceptable hA]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      constructor
+      · rintro ⟨r, hr⟩
+        cases hR : keepDonatedSchedContextResolved st holder scId with
+        | error e => rw [hR] at hr; cases hr
+        | ok s => exact keptPopCommits_of_ok hInv hR
+      · intro hc
+        obtain ⟨s, hs⟩ := keepDonatedSchedContextResolved_ok_of_commits hInv hc
+        exact ⟨_, by rw [hs]⟩
+  | none =>
+    simp only []
+    unfold popUnheldReplyHead
+    cases hC : replyFrameHeadContext? st rid with
+    | none => simp
+    | some scId =>
+      simp only []
+      unfold unheldPopCommits
+      cases hA : donationRecipientAcceptable st target with
+      | true =>
+        simp only [↓reduceIte]
+        constructor
+        · rintro ⟨r, hr⟩
+          cases hR : returnUnheldSchedContextResolved st scId target with
+          | error e => rw [hR] at hr; cases hr
+          | ok s => exact unheldReturnCommits_of_ok hInv hR
+        · intro hc
+          obtain ⟨s, hs⟩ := returnUnheldSchedContextResolved_ok_of_commits hInv hc
+          exact ⟨_, by rw [hs]⟩
+      | false =>
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        constructor
+        · rintro ⟨r, hr⟩
+          cases hR : severUnheldSchedContextResolved st scId with
+          | error e => rw [hR] at hr; cases hr
+          | ok s => exact unheldSeverCommits_of_ok hR
+        · intro hc
+          obtain ⟨s, hs⟩ := severUnheldSchedContextResolved_ok_of_commits hInv hc
+          exact ⟨_, by rw [hs]⟩
+
+/-- **What the reply leg keeps of the donation pop's reads**: every context,
+every frame but `rid`, `rid`'s links, every binding and every thread's IPC
+state but the answered caller's, which it leaves ready. -/
+structure ReplyPopReadsAgree (st st1 : SystemState) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) :
+    Prop where
+  sc : ∀ s, st1.getSchedContext? s = st.getSchedContext? s
+  reply : ∀ r, r ≠ rid → st1.getReply? r = st.getReply? r
+  links : (st1.getReply? rid).map (fun x => (x.next, x.prev)) =
+    (st.getReply? rid).map (fun x => (x.next, x.prev))
+  bind : ∀ t, (st1.getTcb? t).map TCB.schedContextBinding =
+    (st.getTcb? t).map TCB.schedContextBinding
+  ipc : ∀ t, t ≠ c → (st1.getTcb? t).map TCB.ipcState = (st.getTcb? t).map TCB.ipcState
+  ready : ∀ x, st1.getTcb? c = some x → x.ipcState = .ready
+
+namespace ReplyPopReadsAgree
+variable {st st1 : SystemState} {rid : SeLe4n.ReplyId} {c : SeLe4n.ThreadId}
+
+theorem headContext (h : ReplyPopReadsAgree st st1 rid c) :
+    replyFrameHeadContext? st1 rid = replyFrameHeadContext? st rid := by
+  have hL := h.links
+  unfold replyFrameHeadContext?
+  cases h1 : st1.getReply? rid with
+  | none =>
+    rw [h1] at hL
+    cases h0 : st.getReply? rid with
+    | none => rfl
+    | some _ => rw [h0] at hL; cases hL
+  | some r1 =>
+    rw [h1] at hL
+    cases h0 : st.getReply? rid with
+    | none => rw [h0] at hL; cases hL
+    | some r0 =>
+      rw [h0] at hL
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hL
+      simp only [hL.1, h.sc]
+
+theorem headHolder (h : ReplyPopReadsAgree st st1 rid c) :
+    replyFrameHeadHolder? st1 rid = replyFrameHeadHolder? st rid := by
+  unfold replyFrameHeadHolder?
+  rw [h.headContext]
+  split <;> simp only [h.sc]
+
+theorem lookupTcb_bind (h : ReplyPopReadsAgree st st1 rid c) (t : SeLe4n.ThreadId) :
+    (lookupTcb st1 t).map TCB.schedContextBinding = (lookupTcb st t).map TCB.schedContextBinding := by
+  unfold lookupTcb; split
+  · rfl
+  · exact h.bind t
+
+theorem lookupTcb_isSome (h : ReplyPopReadsAgree st st1 rid c) (t : SeLe4n.ThreadId) :
+    (lookupTcb st1 t).isSome = (lookupTcb st t).isSome := by
+  have := h.lookupTcb_bind t
+  cases a : lookupTcb st1 t <;> cases b : lookupTcb st t <;> simp_all
+
+theorem recipient (h : ReplyPopReadsAgree st st1 rid c) (t : SeLe4n.ThreadId) :
+    donationRecipientAcceptable st1 t = donationRecipientAcceptable st t := by
+  have := h.lookupTcb_bind t
+  unfold donationRecipientAcceptable
+  cases a : lookupTcb st1 t <;> cases b : lookupTcb st t <;> simp_all
+
+theorem heldOuter (h : ReplyPopReadsAgree st st1 rid c) (holder : SeLe4n.ThreadId)
+    (n : Option SeLe4n.ThreadId) : heldPopOuter? st1 holder n = heldPopOuter? st holder n := by
+  have := h.bind holder
+  unfold heldPopOuter?
+  cases a : st1.getTcb? holder <;> cases b : st.getTcb? holder <;> simp_all
+
+/-- Off the answered caller, the outer caller is read as before the leg. -/
+theorem outer_of_ne (h : ReplyPopReadsAgree st st1 rid c) (s o : SeLe4n.ThreadId)
+    (n : Option SeLe4n.ThreadId) (hn : n ≠ some c) :
+    outerCallerAcceptable st1 s o n = outerCallerAcceptable st s o n := by
+  cases n with
+  | none => rfl
+  | some x =>
+    have hx : x ≠ c := fun e => hn (by rw [e])
+    have hB := h.bind x
+    have hI := h.ipc x hx
+    unfold outerCallerAcceptable
+    cases a : st1.getTcb? x <;> cases b : st.getTcb? x <;> simp_all
+
+/-- On the answered caller, the leg made it ready, so it is no outer caller. -/
+theorem outer_caller (h : ReplyPopReadsAgree st st1 rid c) (s o : SeLe4n.ThreadId) :
+    outerCallerAcceptable st1 s o (some c) = false := by
+  unfold outerCallerAcceptable
+  cases a : st1.getTcb? c with
+  | none => simp [a]
+  | some x => simp [a, h.ready x a]
+
+/-- At the frame's own context, the reply-stack resolver reads as before the
+leg: the leg kept the frame's links and every other frame. -/
+theorem outerCaller (h : ReplyPopReadsAgree st st1 rid c) {scId : SeLe4n.SchedContextId}
+    (hH : replyFrameHeadContext? st rid = some scId) :
+    replyStackOuterCaller? st1 scId = replyStackOuterCaller? st scId := by
+  obtain ⟨r, sc, hR, hN, hSc, hSR⟩ := replyFrameHeadContext?_eq_some hH
+  have hL := h.links
+  rw [hR] at hL
+  cases h1 : st1.getReply? rid with
+  | none => rw [h1] at hL; cases hL
+  | some r1 =>
+  rw [h1] at hL
+  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hL
+  obtain ⟨hN1, hP1⟩ := hL
+  unfold replyStackOuterCaller? donationHeadOf?
+  rw [h.sc, hSc]
+  simp only [hSR, h1, hR, hN1, hN, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, hP1]
+  cases hPr : r.prev with
+  | none => rfl
+  | some below =>
+    simp only []
+    by_cases hb : below = rid
+    · subst hb
+      simp only [h1, hR, hN1, hN]
+      rfl
+    · rw [h.reply below hb]
+end ReplyPopReadsAgree
+
+namespace ReplyPopReadsAgree
+variable {st st1 : SystemState} {rid : SeLe4n.ReplyId} {c : SeLe4n.ThreadId}
+
+/-- The pop's commit test on the kept state is the admission on the first. -/
+theorem commits (h : ReplyPopReadsAgree st st1 rid c) :
+    replyRecvPopCommits st1 rid c = replyRecvPopAdmitsCore st rid c := by
+  unfold replyRecvPopCommits replyRecvPopAdmitsCore
+  rw [h.headHolder]
+  cases hH : replyFrameHeadHolder? st rid with
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    simp only []
+    have hHC : replyFrameHeadContext? st rid = some scId := by
+      unfold replyFrameHeadHolder? at hH
+      split at hH
+      · cases hH
+      · next s hs => split at hH; · cases hH
+                     · cases hH; exact hs
+    have hRes := h.outerCaller hHC
+    unfold heldPopCommits
+    rw [h.recipient c]
+    split
+    · unfold donatedReturnCommits
+      rw [hRes, h.sc]
+      split
+      · rfl
+      · next n _ =>
+        split
+        · rfl
+        · by_cases hn : n = some c
+          · subst hn
+            simp only [h.outer_caller, Bool.and_false, Bool.false_and]
+            unfold outerCallerAcceptable; simp
+          · rw [h.outer_of_ne _ _ _ hn, h.recipient c, h.lookupTcb_isSome, h.lookupTcb_isSome]
+    · unfold keptPopCommits keptPopOuterIsNot
+      rw [hRes, h.sc]
+      split
+      · rfl
+      · next n hN =>
+        rw [h.heldOuter]
+        simp only [hN]
+        have hbd : (lookupTcb st1 holder).bind (fun ht => ht.schedContextBinding.scId?) =
+            (lookupTcb st holder).bind (fun ht => ht.schedContextBinding.scId?) := by
+          have hb := h.lookupTcb_bind holder
+          cases a : lookupTcb st1 holder <;> cases b : lookupTcb st holder <;> simp_all
+        split
+        · simp
+        · by_cases hn : heldPopOuter? st holder n = some c
+          · rw [hn, h.outer_caller]; simp
+          · rw [h.outer_of_ne _ _ _ hn, hbd]
+            have hn' : (heldPopOuter? st holder n != some c) = true := by simpa using hn
+            rw [hn', Bool.and_true]
+  | none =>
+    simp only []
+    rw [h.headContext]
+    split
+    · rfl
+    · next scId hC =>
+      have hRes := h.outerCaller hC
+      unfold unheldPopCommits unheldReturnCommits unheldSeverCommits
+      rw [h.recipient c, hRes, h.sc]
+      split
+      · split
+        · rfl
+        · next n _ =>
+          split
+          · rfl
+          · by_cases hn : n = some c
+            · subst hn
+              simp only [h.outer_caller, Bool.and_false, Bool.false_and]
+              unfold outerCallerAcceptable; simp
+            · rw [h.outer_of_ne _ _ _ hn, h.lookupTcb_isSome]
+      · rfl
+end ReplyPopReadsAgree
+
+/-- The consume leaves a reply it does not find absent. -/
+theorem consumeCallerReply_getReply?_none {st st' : SystemState} {caller : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} (hObjInv : st.objects.invExt) (hGet : st.getReply? rid = none)
+    (h : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.getReply? rid = none := by
+  unfold SystemState.consumeCallerReply SystemState.consumeReply at h
+  rw [hGet] at h
+  simp only [] at h
+  cases hT : st.getTcb? caller with
+  | none => rw [hT] at h; cases h; exact hGet
+  | some t =>
+    rw [hT] at h
+    simp only [] at h
+    have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+    unfold SystemState.getReply? at hGet ⊢
+    by_cases e : rid.toObjId = caller.toObjId
+    · rw [e, storeObject_objects_eq st st' _ _ hObjInv h]
+    · rw [storeObject_objects_ne st st' _ _ _ e hObjInv h]; exact hGet
+
+/-- The frame cut leaves the cut frame's `next` as it was, or none. -/
+theorem cutReplyFrameOutOrSelf_next {st : SystemState} {rid : SeLe4n.ReplyId} {r : Reply}
+    (hObjInv : st.objects.invExt) (hR : st.getReply? rid = some r) :
+    ∃ x, (cutReplyFrameOutOrSelf st rid).getReply? rid = some x ∧
+      (x.next = r.next ∨ x.next = none) := by
+  unfold cutReplyFrameOutOrSelf
+  split
+  · next st' hC =>
+    revert hC
+    unfold cutReplyFrameOut
+    rw [hR]; simp only []
+    cases hN : r.next with
+    | none =>
+      simp only []
+      cases hP : r.prev with
+      | none => intro hC; cases hC; exact ⟨r, hR, .inl hN⟩
+      | some below =>
+        simp only []
+        cases hB : st.getReply? below with
+        | none => intro hC; cases hC; exact ⟨r, hR, .inl hN⟩
+        | some b =>
+          simp only []
+          split
+          · intro hC; cases hC; exact ⟨r, hR, .inl hN⟩
+          · next hBn =>
+            intro hC
+            have hBn' : b.next = some (.frame rid) := by simpa using hBn
+            exact ⟨_, (severReplyFrameBelowStores_values hObjInv hR hN hB hBn' hC).2.1,
+              .inr (by simp [hN])⟩
+    | some link =>
+      cases link with
+      | head s => intro hC; cases hC; exact ⟨r, hR, .inl hN⟩
+      | frame above =>
+        simp only []
+        cases hA : st.getReply? above with
+        | none => intro hC; cases hC
+        | some a =>
+          simp only []
+          split
+          · intro hC; cases hC
+          · next hAp =>
+            intro hC
+            have hAp' : a.prev = some rid := by simpa using hAp
+            exact ⟨_, cutReplyFrameStores_getReply?_cut hObjInv hR hN hA hAp' hC, .inr rfl⟩
+  · exact ⟨r, hR, .inl rfl⟩
+
+/-- **The removal makes no frame a head**: a frame heading a context after it
+headed that context before it. -/
+theorem removeCallerReplyFrame_head_backward {st st' : SystemState} {caller : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} (hObjInv : st.objects.invExt)
+    (h : removeCallerReplyFrame caller rid st = .ok ((), st')) {r1 : Reply}
+    {s : SeLe4n.SchedContextId} (h1 : st'.getReply? rid = some r1)
+    (hN1 : r1.next = some (.head s)) :
+    ∃ r, st.getReply? rid = some r ∧ r.next = some (.head s) := by
+  rw [removeCallerReplyFrame_eq] at h
+  have hInvX := cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
+  cases hR : st.getReply? rid with
+  | none =>
+    have hX : (cutReplyFrameOutOrSelf st rid).getReply? rid = none := by
+      unfold cutReplyFrameOutOrSelf cutReplyFrameOut; rw [hR]; exact hR
+    rw [consumeCallerReply_getReply?_none hInvX hX h] at h1; cases h1
+  | some r =>
+    obtain ⟨x, hX, hXn⟩ := cutReplyFrameOutOrSelf_next hObjInv hR
+    have := SystemState.consumeCallerReply_getReply?_caller_none _ caller rid x hInvX hX st' h
+    rw [this] at h1; cases h1
+    refine ⟨r, rfl, ?_⟩
+    unfold Reply.consumed at hN1
+    cases hx : x.next with
+    | none => rw [hx] at hN1; cases hN1
+    | some l =>
+      cases l with
+      | frame _ => rw [hx] at hN1; cases hN1
+      | head s' =>
+        rw [hx] at hN1; simp only [] at hN1; cases hN1
+        rcases hXn with e | e
+        · rw [← e, hx]
+        · rw [hx] at e; cases e
+
+/-- A store of a TCB over a TCB keeps every context and every reply. -/
+theorem storeObject_tcbOverTcb_getters {st st' : SystemState} {k : SeLe4n.ObjId} {t0 t1 : TCB}
+    (hInv : st.objects.invExt) (hK : st.objects[k]? = some (.tcb t0))
+    (h : storeObject k (.tcb t1) st = .ok ((), st')) :
+    (∀ s, st'.getSchedContext? s = st.getSchedContext? s) ∧
+      (∀ r, st'.getReply? r = st.getReply? r) := by
+  have hEq := storeObject_objects_eq st st' _ _ hInv h
+  refine ⟨fun s => ?_, fun r => ?_⟩
+  · unfold SystemState.getSchedContext?
+    by_cases e : s.toObjId = k
+    · rw [e, hEq, hK]
+    · rw [storeObject_objects_ne st st' _ _ _ e hInv h]
+  · unfold SystemState.getReply?
+    by_cases e : r.toObjId = k
+    · rw [e, hEq, hK]
+    · rw [storeObject_objects_ne st st' _ _ _ e hInv h]
+
+/-- Two stores agreeing off the reply-waiter links read every context and every
+reply alike. -/
+theorem objectsAgreeOffReplyLinks_getters {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffReplyLinks st' st) :
+    (∀ s, st'.getSchedContext? s = st.getSchedContext? s) ∧
+      (∀ r, st'.getReply? r = st.getReply? r) := by
+  refine ⟨fun s => Option.ext fun sc => ?_, fun r => Option.ext fun rr => ?_⟩
+  · rw [SystemState.getSchedContext?_eq_some_iff, SystemState.getSchedContext?_eq_some_iff]
+    exact ⟨h.get_of_not_tcb' (by intro t e; cases e), h.get_of_not_tcb (by intro t e; cases e)⟩
+  · rw [SystemState.getReply?_eq_some_iff, SystemState.getReply?_eq_some_iff]
+    exact ⟨h.get_of_not_tcb' (by intro t e; cases e), h.get_of_not_tcb (by intro t e; cases e)⟩
+
+/-- The consume keeps every other reply. -/
+theorem consumeCallerReply_getReply?_ne {st st' : SystemState} {caller : SeLe4n.ThreadId}
+    {rid r : SeLe4n.ReplyId} (hObjInv : st.objects.invExt) (hne : r ≠ rid)
+    (h : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.getReply? r = st.getReply? r := by
+  have hK : r.toObjId ≠ rid.toObjId := fun e => hne (SeLe4n.ReplyId.toObjId_injective _ _ e)
+  unfold SystemState.consumeCallerReply at h
+  cases hC : SystemState.consumeReply rid st with
+  | error e => rw [hC] at h; cases h
+  | ok p =>
+    obtain ⟨_, s1⟩ := p
+    rw [hC] at h
+    simp only [] at h
+    have h1 : s1.getReply? r = st.getReply? r := by
+      unfold SystemState.consumeReply at hC
+      cases hG : st.getReply? rid with
+      | none => rw [hG] at hC; cases hC; rfl
+      | some x =>
+        rw [hG] at hC
+        unfold SystemState.getReply?
+        rw [storeObject_objects_ne st s1 _ _ _ hK hObjInv hC]
+    have hInv1 : s1.objects.invExt := by
+      unfold SystemState.consumeReply at hC
+      cases hG : st.getReply? rid with
+      | none => rw [hG] at hC; cases hC; exact hObjInv
+      | some x => rw [hG] at hC; exact storeObject_preserves_objects_invExt st s1 _ _ hObjInv hC
+    cases hT : s1.getTcb? caller with
+    | none => rw [hT] at h; cases h; exact h1
+    | some t =>
+      rw [hT] at h
+      simp only [] at h
+      rw [← h1]
+      exact (storeObject_tcbOverTcb_getters hInv1
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) h).2 r
+
+/-- **The reply leg, as the donation pop reads it** (a caller whose reply link
+is the frame `rid` or nothing): it writes no context, it makes no frame a head,
+and where `rid` heads a context it keeps every other reply and `rid`'s links. -/
+theorem endpointReplyOnCore_popFrame {replier c : SeLe4n.ThreadId} {msg : IpcMessage}
+    {core : Concurrency.CoreId} {st : SystemState} {rid : SeLe4n.ReplyId}
+    (hInv : st.objects.invExt)
+    (hFrame : ∀ t, lookupTcb st c = some t → t.replyObject = none ∨ t.replyObject = some rid) :
+    (∀ s, (endpointReplyOnCore replier c msg core st).1.getSchedContext? s =
+      st.getSchedContext? s) ∧
+    (∀ r1 s, (endpointReplyOnCore replier c msg core st).1.getReply? rid = some r1 →
+      r1.next = some (.head s) → ∃ r, st.getReply? rid = some r ∧ r.next = some (.head s)) ∧
+    (∀ s, replyFrameHeadContext? st rid = some s →
+      (∀ r, r ≠ rid → (endpointReplyOnCore replier c msg core st).1.getReply? r =
+        st.getReply? r) ∧
+      ((endpointReplyOnCore replier c msg core st).1.getReply? rid).map
+          (fun y => (y.next, y.prev)) = (st.getReply? rid).map (fun y => (y.next, y.prev))) := by
+  rcases endpointReplyOnCore_state_eq replier c msg core st with hEq |
+    ⟨tcb, st', server, pre, hLk, hStore, hPost, hTail⟩
+  · rw [hEq]
+    exact ⟨fun _ => rfl, fun r1 s h1 hN => ⟨r1, h1, hN⟩, fun _ _ => ⟨fun _ _ => rfl, rfl⟩⟩
+  rw [hPost]
+  -- the caller's own write
+  have hS1 : storeObject c.toObjId
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)) st = .ok ((), st') := by
+    unfold storeTcbIpcStateAndMessage_fromTcb at hStore
+    split at hStore
+    · cases hStore
+    · next hS => cases hStore; exact hS
+  have hT0 : st.objects[c.toObjId]? = some (.tcb tcb) := by
+    unfold lookupTcb at hLk; split at hLk; · cases hLk
+    exact (SystemState.getTcb?_eq_some_iff _ _ _).mp hLk
+  obtain ⟨g1s, g1r⟩ := storeObject_tcbOverTcb_getters hInv hT0 hS1
+  have hInv1 := storeObject_preserves_objects_invExt st st' _ _ hInv hS1
+  -- the wake
+  have hTc1 : st'.getTcb? c = some (TCB.setIpcState { tcb with pendingMessage := some msg } .ready) :=
+    (SystemState.getTcb?_eq_some_iff _ _ _).mpr (storeObject_objects_eq st st' _ _ hInv hS1)
+  have hW := wakeThread_objectsAgreeOffRunLinks_of_ready st' c core _ hTc1
+    (TCB.ipcState_setIpcState _ _) hInv1
+  have g2s := hW.getSchedContext?
+  have g2r := hW.getReply?
+  have hInvW := wakeThread_preserves_objects_invExt st' c core hInv1
+  -- the reply-waiter unlink
+  obtain ⟨g4s, g4r⟩ := objectsAgreeOffReplyLinks_getters
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks pre c server)
+  rcases hTail with ⟨_, hPre⟩ | ⟨rid', hRO, hRm⟩
+  · subst hPre
+    have gs : ∀ s, ((wakeThread st' c core).1.unlinkReplyWaiterOpt c server).getSchedContext? s =
+        st.getSchedContext? s := fun s => by rw [g4s, g2s, g1s]
+    have gr : ∀ r, ((wakeThread st' c core).1.unlinkReplyWaiterOpt c server).getReply? r =
+        st.getReply? r := fun r => by rw [g4r, g2r, g1r]
+    exact ⟨gs, fun r1 s h1 hN => ⟨r1, by rw [← gr]; exact h1, hN⟩,
+      fun _ _ => ⟨fun r _ => gr r, by rw [gr]⟩⟩
+  have hR' : rid' = rid := by
+    rcases hFrame tcb hLk with e | e <;> rw [hRO] at e
+    · cases e
+    · cases e; rfl
+  subst hR'
+  have g3s := removeCallerReplyFrame_getSchedContext?_eq _ _ c rid' hInvW hRm
+  refine ⟨fun s => by rw [g4s, g3s, g2s, g1s], fun r1 s h1 hN => ?_, fun s hH => ?_⟩
+  · rw [g4r] at h1
+    obtain ⟨r, hr, hrN⟩ := removeCallerReplyFrame_head_backward hInvW hRm h1 hN
+    exact ⟨r, by rw [← g1r, ← g2r]; exact hr, hrN⟩
+  · have hHW : replyFrameHeadContext? (wakeThread st' c core).1 rid' = some s := by
+      exact (replyFrameHeadContext?_congr (s1 := st) (s2 := (wakeThread st' c core).1) rid'
+        (by rw [g2r, g1r]) (fun q => by rw [g2s, g1s])).trans hH
+    have hCut := cutReplyFrameOutOrSelf_eq_self_of_no_frame_above _ rid'
+      (replyFrameAbove?_of_headContext _ rid' s hHW) (replyFrameBelow?_of_headContext _ rid' s hHW)
+    have hRm' := hRm
+    rw [removeCallerReplyFrame_eq, hCut] at hRm'
+    refine ⟨fun r hne => by rw [g4r, consumeCallerReply_getReply?_ne hInvW hne hRm', g2r, g1r], ?_⟩
+    obtain ⟨rr, _, hRr, hNr, _, _⟩ := replyFrameHeadContext?_eq_some hHW
+    rw [g4r, SystemState.consumeCallerReply_getReply?_caller_none _ c rid' rr hInvW hRr pre hRm',
+      ← g1r, ← g2r, hRr]
+    simp only [Option.map_some, Reply.consumed, hNr]
+
+/-- **The reply leg, as the donation pop reads it**, at a frame heading a
+context: the pop reads the leg's state as it reads the state before it, the
+answered caller made ready. -/
+theorem endpointReplyOnCore_popReadsAgree {replier c : SeLe4n.ThreadId} {msg : IpcMessage}
+    {core : Concurrency.CoreId} {st : SystemState} {rid : SeLe4n.ReplyId}
+    {x : Option (Concurrency.CoreId × Concurrency.SgiKind)} {s : SeLe4n.SchedContextId}
+    (hInv : st.objects.invExt)
+    (hFrame : ∀ t, lookupTcb st c = some t → t.replyObject = none ∨ t.replyObject = some rid)
+    (hOk : (endpointReplyOnCore replier c msg core st).2 = .ok x)
+    (hH : replyFrameHeadContext? st rid = some s) :
+    ReplyPopReadsAgree st (endpointReplyOnCore replier c msg core st).1 rid c := by
+  obtain ⟨gs, _, gr⟩ := endpointReplyOnCore_popFrame (replier := replier) (msg := msg)
+    (core := core) hInv hFrame
+  obtain ⟨grr, gl⟩ := gr s hH
+  have hF := endpointReplyOnCore_donationOwnerFrameExcept replier c msg core st hInv
+  have hB := endpointReplyOnCore_sameSchedContextBindings replier c msg core st hInv
+  have hTcb : ∀ t, (∃ y, (endpointReplyOnCore replier c msg core st).1.getTcb? t = some y) ↔
+      ∃ y, st.getTcb? t = some y := fun t => by
+    simp only [SystemState.getTcb?_eq_some_iff]
+    constructor
+    · rintro ⟨y, hy⟩; obtain ⟨z, hz, _⟩ := hB t y hy; exact ⟨z, hz⟩
+    · rintro ⟨z, hz⟩; obtain ⟨y, hy, _⟩ := hF.tcbForward t z hz; exact ⟨y, hy⟩
+  refine ⟨gs, grr, gl, fun t => ?_, fun t hne => ?_, fun y hy =>
+    endpointReplyOnCore_ok_target_ready replier c msg core st hInv hOk hy⟩
+  · cases h0 : st.getTcb? t with
+    | none =>
+      cases h1 : (endpointReplyOnCore replier c msg core st).1.getTcb? t with
+      | none => rfl
+      | some y => obtain ⟨z, hz⟩ := (hTcb t).mp ⟨y, h1⟩; rw [h0] at hz; cases hz
+    | some z =>
+      obtain ⟨y, hy, hyb, _⟩ := hF.tcbForward t z ((SystemState.getTcb?_eq_some_iff _ _ _).mp h0)
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hy]; simp [hyb]
+  · cases h0 : st.getTcb? t with
+    | none =>
+      cases h1 : (endpointReplyOnCore replier c msg core st).1.getTcb? t with
+      | none => rfl
+      | some y => obtain ⟨z, hz⟩ := (hTcb t).mp ⟨y, h1⟩; rw [h0] at hz; cases hz
+    | some z =>
+      obtain ⟨y, hy, _, hyi⟩ := hF.tcbForward t z ((SystemState.getTcb?_eq_some_iff _ _ _).mp h0)
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hy]
+      rcases hyi with e | e
+      · exact absurd e hne
+      · simp [e]
+
+/-- **The pop's admission, read before the reply leg**: where the answered
+caller's reply link is the frame `rid` or nothing, the donation pop commits on
+the reply leg's state exactly where `replyRecvPopAdmitsCore` admits on the
+state before it. -/
+theorem endpointReplyOnCore_popCommits {replier c : SeLe4n.ThreadId} {msg : IpcMessage}
+    {core : Concurrency.CoreId} {st : SystemState} {rid : SeLe4n.ReplyId}
+    {x : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (hFrame : ∀ t, lookupTcb st c = some t → t.replyObject = none ∨ t.replyObject = some rid)
+    (hOk : (endpointReplyOnCore replier c msg core st).2 = .ok x) :
+    replyRecvPopCommits (endpointReplyOnCore replier c msg core st).1 rid c =
+      replyRecvPopAdmitsCore st rid c := by
+  cases hH : replyFrameHeadContext? st rid with
+  | some s => exact (endpointReplyOnCore_popReadsAgree hInv hFrame hOk hH).commits
+  | none =>
+    obtain ⟨gs, gb, _⟩ := endpointReplyOnCore_popFrame (replier := replier) (msg := msg)
+      (core := core) hInv hFrame
+    have hH1 : replyFrameHeadContext? (endpointReplyOnCore replier c msg core st).1 rid = none := by
+      cases e : replyFrameHeadContext? (endpointReplyOnCore replier c msg core st).1 rid with
+      | none => rfl
+      | some s =>
+        obtain ⟨r1, sc, h1, hN1, hS1, hSR⟩ := replyFrameHeadContext?_eq_some e
+        obtain ⟨r, hr, hrN⟩ := gb r1 s h1 hN1
+        rw [gs] at hS1
+        have : replyFrameHeadContext? st rid = some s := by
+          unfold replyFrameHeadContext?; rw [hr]; simp [hrN, hS1, hSR]
+        rw [hH] at this; cases this
+    unfold replyRecvPopCommits replyRecvPopAdmitsCore
+    rw [replyFrameHeadHolder?_of_no_head _ _ hH1, replyFrameHeadHolder?_of_no_head _ _ hH]
+    simp only [hH1, hH]
+
+/-- **An admitted pop commits after the reply leg** (checks first): where the
+reply-receive's admission passes on its entry state, the donation pop the
+composite runs on the reply leg's state cannot refuse. -/
+theorem replyRecvPopDonation_ok_of_admits {replier c : SeLe4n.ThreadId} {msg : IpcMessage}
+    {core : Concurrency.CoreId} {st : SystemState} {rid : SeLe4n.ReplyId}
+    {x : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (hOk : (endpointReplyOnCore replier c msg core st).2 = .ok x)
+    (hA : replyRecvPopAdmits st rid c = true) :
+    ∃ r, replyRecvPopDonation rid c (endpointReplyOnCore replier c msg core st).1 = .ok r := by
+  unfold replyRecvPopAdmits at hA
+  simp only [Bool.and_eq_true] at hA
+  have hFrame : ∀ t, lookupTcb st c = some t → t.replyObject = none ∨ t.replyObject = some rid :=
+    fun t ht => by
+      have h := hA.1
+      unfold replyRecvCallerFrameIs at h
+      rw [ht] at h
+      simpa using h
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier c msg core st hInv
+  exact (replyRecvPopDonation_ok_iff_commits hInv1).mpr
+    ((endpointReplyOnCore_popCommits hInv hFrame hOk).trans hA.2)
+
+/-- **The admission refuses no pop that commits** where the caller's reply link
+is the frame or nothing: it is exact there. -/
+theorem replyRecvPopAdmits_of_pop_ok {replier c : SeLe4n.ThreadId} {msg : IpcMessage}
+    {core : Concurrency.CoreId} {st : SystemState} {rid : SeLe4n.ReplyId}
+    {x : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) × SystemState}
+    (hInv : st.objects.invExt) (hFr : replyRecvCallerFrameIs st c rid = true)
+    (hOk : (endpointReplyOnCore replier c msg core st).2 = .ok x)
+    (hPop : replyRecvPopDonation rid c (endpointReplyOnCore replier c msg core st).1 = .ok r) :
+    replyRecvPopAdmits st rid c = true := by
+  have hFrame : ∀ t, lookupTcb st c = some t → t.replyObject = none ∨ t.replyObject = some rid :=
+    fun t ht => by
+      have h := hFr
+      unfold replyRecvCallerFrameIs at h
+      rw [ht] at h
+      simpa using h
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier c msg core st hInv
+  unfold replyRecvPopAdmits
+  rw [hFr, Bool.true_and, ← endpointReplyOnCore_popCommits hInv hFrame hOk]
+  exact (replyRecvPopDonation_ok_iff_commits hInv1).mp ⟨r, hPop⟩
+
 end SeLe4n.Kernel
