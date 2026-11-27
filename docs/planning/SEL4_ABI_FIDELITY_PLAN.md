@@ -1130,6 +1130,24 @@ A different answer changes only the rows that cite it.
     after the reply step, so a bad receive capability answers the caller and
     then delivers the capability fault on the post-reply state. The receive's
     flow gate still runs before anything the receive makes observable.
+  - **A flow-denied receive answers its caller first** (SX36's design,
+    accepted 2026-11-27). The receive's flow gate reads the endpoint, which
+    is resolved after the reply, so on a reply that answers a caller the
+    gate runs on the post-reply state. This follows the owner's rulings: a
+    refused receive keeps the completed reply, and a flow-denied leg counts
+    as refused. The reply's own flow gate (receiver to caller) still runs
+    before anything the reply makes observable, so no new flow opens. The
+    order changes only where the reply answers a caller; every other case
+    runs the receive alone on the state it was handed.
+  - **The lock set is covered, with no second acquisition** (SX36's
+    measurement). A `.replyRecv` declares a footprint only when the receive
+    capability resolves on entry, in one level of the caller's root CNode,
+    with the receive's kind and right. The reply writes CNodes only by its
+    capability transfer, which fills empty slots and sets an untyped
+    source's free index, so that resolution is the post-reply one
+    (`replyRecvReplyStep_cnodeSlotsKept`). A receive capability that does not
+    resolve on entry declares no footprint and keeps the coarse
+    serialisation.
   - **The passive server's current slot.** Once the fix lands, a passive
     server whose pop hands its context back (the holder is the caller of
     ReplyRecv) and whose receive capability is then refused is a reachable
