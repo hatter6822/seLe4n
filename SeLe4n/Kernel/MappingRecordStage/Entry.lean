@@ -321,14 +321,35 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
     ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 
+/-- **A refused reply-receive keeps the mappings recorded** (WS-SX SX34): every
+leg it ran before it stopped does. -/
+theorem replyRecvTransferStoppedState_mappingStage {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {core : CoreId} {st : SystemState} :
+    MappingStage st
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st) := fun hInv =>
+  replyRecvTransferStoppedState_induct MappingStage (fun s _ => MappingStage.refl s)
+    (fun _ _ _ _ h1 h2 => h1.trans h2)
+    (fun _ _ _ _ _ _ => endpointReplyOnCore_mappingStage)
+    (fun _ _ _ _ _ _ h => replyRecvPopDonation_mappingStage h)
+    (fun _ _ _ _ _ _ h => receiveTransferCaps_mappingStage h)
+    (fun a s t n _ => replyRecvAnswerCaller_mappingStage a s t n)
+    (fun s t _ => receiveReturnSchedContext_mappingStage true s t)
+    (fun _ _ => endpointReceiveDualWithCapsOnCore_mappingStage)
+    (fun s t _ => descheduleAtPlacement_mappingStage s t)
+    (fun _ _ _ _ => propagatePipChainCrossCore_mappingStage) hInv hInv
+
+
 /-- The state a refusal of the checked entry reports
-(`cancelReceiveBusyReply`) keeps the mappings recorded: the state itself, or
-its busy reply's holder cancelled. -/
+(`cancelReceiveBusyReply`) keeps the mappings recorded: the state itself, its
+busy reply's holder cancelled, or a reply-receive's stopped state. -/
 theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
     (st : SystemState) : MappingStage st (cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩ | hA
   · rw [h]; exact MappingStage.refl _
   · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
+  · obtain ⟨_, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
+    rw [h]; exact replyRecvTransferStoppedState_mappingStage
 
 /-- **The ABI dispatch keeps the mappings recorded**: the argument spill (a
 register write, which keeps the premises), then the checked entry, a

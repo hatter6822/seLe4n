@@ -1,3 +1,57 @@
+## v0.37.63 — A refused reply-receive reports where its receive stopped (WS-SX SX34)
+
+SX34 is on SX33.  It changes behaviour, on states off the invariant
+only.  It was wrapped under the owner's D32 rule (D64): the capability
+install checked first and the generated C's bound move to a new SX35,
+and SX35–SX47 become SX36–SX48.
+
+- **seL4 behaviour: a refused receive keeps the reply.**  seL4's
+  `case SysReplyRecv` keeps the completed reply when `handleRecv`
+  refuses.  A reply-receive whose receive leg, or post-receive
+  donation, refuses after the reply now reports the nothing-received
+  outcome (D53) on the state the refusing step stopped in
+  (`replyRecvTransferStoppedState`).  Before, it reported the entry
+  state, as though the reply had never run.  These refusals are
+  reachable only off the invariant (D60, D62).
+- **Refusal-carrying forms** of the pop, the post-receive donation and
+  the composite, down to their stores (`DonationRefusalCarrying.lean`,
+  `RefusalCarryingReplyRecvTransfer.lean`, `replyRecvTransferOnCoreR`).
+  A step that refuses before its first write returns its input, so
+  nothing is held; one that refuses after a write carries the state at
+  that point.  Each is equal to its specification with no invariant,
+  and every `@[csimp]` stays unconditional.
+- **The donation admitted before its first write (D62).**
+  `donationPushRefusal?` asks the three after-store checks the entry
+  state can answer before `donateSchedContext` writes, with the error
+  the later check gives (`donationPushRefusal?_some_exact`).
+- **The wiring.**  The general arm, both rendezvous arms and the 12
+  refusal-carrying wrappers carry their callee's state, and the entry's
+  report (`replyRecvAnsweringReport`) names the same state.  The
+  report's consumers take the third case (`ReplyRecvAnsweringEntry`)
+  through each family's stopped-state lemma: the run-queue entry,
+  kernel records, readiness, saved registers, bank match, queue and
+  lending labels, mapping stage, reschedule pendings and the seam's
+  footprint.  No consumer restates its current-thread fact: the
+  stopped state raises a capability fault only where it equals the
+  entry state (`ReplyRecvRefusalErrors.lean`, D63).  The non-interference
+  proofs hold over the new case unchanged.  The reachability census
+  no longer lists the nothing-received outcome, which the wiring reaches.
+- **D63 (found, scheduled).**  ReplyRecv's receive capability is still
+  resolved on the entry state, before the reply; seL4's `handleRecv`
+  resolves it after.  SX36 moves it.
+- **Measured.**  `RefusalCarryingReplyRecv.c` is 12,966,427 bytes
+  against its 12,941,835 bound (24,592 over, 6,989 over SX33), compiled
+  in 485 s: the new report function and two new match splitters.  On
+  the general path the own-context reply-receive reads 87 cells, 4,776
+  bytes, with no 1 MB cell (110 cells, one of them 1 MB, at SX29).  The
+  donating Call takes that install a capability each read one 1 MB
+  cell, from `ipcUnwrapCapsLoop`'s `.error` fallback holding the loop's
+  entry state across the install: a class (d) hold SX34 exposed and
+  did not add.  Both bounds move to SX35.  The IR measurement reads
+  1,494 holds against 1,498.  Every other heap reading is 0.
+- **Plans.**  D64 and the new SX35 (the install checked first, the
+  proofs module, the release); WS-CK's CK2 cites SX35.1 for the loop.
+
 ## v0.37.62 — A refused reply lets the reply-receive's receive run; the pop checked first (WS-SX SX33)
 
 SX33 is on SX32.  It changes behaviour, on states off the invariant

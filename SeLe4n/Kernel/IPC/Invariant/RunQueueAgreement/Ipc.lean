@@ -593,6 +593,19 @@ theorem replyRecvHolderDeschedule_runQueueStage (tid holder : SeLe4n.ThreadId)
   · exact RunQueueStage.refl _
   · exact descheduleAt_runQueueStage _ _ _
 
+/-- The nothing-received outcome is a run-queue stage: a placement deschedule
+where the pop handed a context back, then the priority-inheritance walk. -/
+theorem replyRecvNothingReceived_runQueueStage (rs : SeLe4n.ThreadId) (c : Concurrency.CoreId)
+    (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (s : SystemState) :
+    RunQueueStage s (replyRecvNothingReceived rs c ret? s) := by
+  unfold replyRecvNothingReceived
+  cases ret? with
+  | none => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _
+  | some p =>
+    obtain ⟨_, holder⟩ := p
+    exact (descheduleAt_runQueueStage _ _ _).trans
+      (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
+
 theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThread : SeLe4n.ThreadId}
     {c : Concurrency.CoreId} {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     {st st' : SystemState}

@@ -102,12 +102,17 @@
 > SX33 was wrapped at its validated pieces (D61): the refusal-carrying
 > composite and its wrappers became a new SX34, and SX34–SX45 became
 > SX35–SX46. SX33 landed at `v0.37.62`.
+> SX34 found ReplyRecv's receive capability resolved before the reply (D63):
+> its fix became a new SX35, and SX35–SX46 became SX36–SX47.
+> SX34 ran past its stop line, so it was wrapped at its validated point (D64):
+> the install checked first and the C bound became a new SX35, and SX35–SX47
+> became SX36–SX48. SX34 landed at `v0.37.63`.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
-> **Rows**: SX1–SX46, numbered in the order they are implemented, one PR each.
+> **Rows**: SX1–SX48, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32, D34, D36–D61 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D32, D34, D36–D64 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
 > D23–D32 during SX8; D34 when SX9 started; D36 and D37 during SX9; D38 during SX10; D39 when the binding-invariant row
@@ -120,11 +125,13 @@
 > wrap under the same rule, and the owner's ruling, 2026-11-26); D51 during
 > SX29 (the owner's rulings on its measurement, 2026-11-26); D52 during SX29
 > (SX29's wrap under the owner's D32 rule, 2026-11-26); D53–D60 during SX30–SX33;
-> D61 during SX33 (SX33's wrap under the owner's D32 rule, 2026-11-26).
+> D61 during SX33 (SX33's wrap under the owner's D32 rule, 2026-11-26); D62 and
+> D63 during SX34 (the coordinator's rulings, 2026-11-27); D64 during SX34
+> (SX34's wrap under the owner's D32 rule, 2026-11-27).
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
-> (SX5, SX2 and SX42). Neither was debt, and neither is now.
+> (SX5, SX2 and SX44). Neither was debt, and neither is now.
 
 ## 1. The problem
 
@@ -197,13 +204,13 @@ facts it rests on are restated here.
   - Today the label carries `errorLabelBase + code` so that a receive's fault tag
     (1–6) or delivered label is never read as an error
     (`ofErrorLabel?_none_of_lt_base`, `faultLabel_lt_errorLabelBase`).
-  - Once SX3, SX4, SX7 and SX41 make F1 true here, a receive never yields an error
+  - Once SX3, SX4, SX7 and SX43 make F1 true here, a receive never yields an error
     frame. seL4's codes 1–10 can then sit in the label with no receive-side collision.
   - One overlap remains, and it is seL4's own: a Call on an endpoint can answer
     `seL4_InvalidCapability` (a capability without the send right,
     `decodeInvocation`, `objecttype.c`) or the server's reply, whose label the
     server chooses.
-  - SX43 makes the switch and proves the receive half as a theorem.
+  - SX45 makes the switch and proves the receive half as a theorem.
 - **F3. Extra capabilities need an IPC buffer.** `lookupExtraCaps` with no
   buffer finds none (`tcb.c:392`). So the exerciser's boot-time invocations
   must be gone (SX5) before invocations take extra capabilities (SX6).
@@ -220,7 +227,7 @@ D1–D17 are each **default taken; owner card open**; D18–D32, D34 and D36–D
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
-  label** (SX43), and the payload in seL4's MR layout (SX1).
+  label** (SX45), and the payload in seL4's MR layout (SX1).
   - Every model-only code maps to the seL4 code that shares its meaning, by
     `KernelError.sel4Error`:
     - `objectStoreCapacityExceeded` and `resourceExhausted` map to NotEnoughMemory;
@@ -297,8 +304,8 @@ A different answer changes only the rows that cite it.
 - **D20. SX7's remainder.** *Decided by the owner (2026-11-19, "Close and
   split"):* SX7 closes at `v0.37.33` and adds no further behaviour; context
   donation through a notification (SX8), PageTable_Unmap's teardown and
-  per-frame W^X (SX37), per-invocation rights (SX38), the Running state per
-  core (SX39) and the compound syscalls' invoke phase (SX40) are rows of
+  per-frame W^X (SX39), per-invocation rights (SX40), the Running state per
+  core (SX41) and the compound syscalls' invoke phase (SX42) are rows of
   their own.
 - **D21. The seL4 conformance table.** *Approved by the owner
   (2026-11-19):* one row per invocation label, sourced from the seL4 source,
@@ -311,14 +318,14 @@ A different answer changes only the rows that cite it.
   a donation chain may be cut (SX8.3).
 - **D23. The seL4 invocations seLe4n lacks.** *Decided by the owner
   (2026-11-20, "New row"):* every invocation label SX8.1's table marks absent
-  that no earlier row owns gets one new row, SX44, landed before the closure
-  (now SX46). `ARM_SMC_Call` stays absent, as in seL4's default build.
+  that no earlier row owns gets one new row, SX46, landed before the closure
+  (now SX48). `ARM_SMC_Call` stays absent, as in seL4's default build.
 - **D24. A thread with no scheduling context.** *Decided by the owner
-  (2026-11-20, "Match in SX11", the row now numbered SX39):* in SX39 a thread
+  (2026-11-20, "Match in SX11", the row now numbered SX41):* in SX41 a thread
   with no scheduling context (`.unbound`, including one whose context SX8.2's
   `maybeReturnSchedContext` returned) becomes unschedulable, as in seL4-MCS,
   which never runs a thread without one. SX8 leaves the scheduler's run rule
-  unchanged (SX39.1).
+  unchanged (SX41.1).
 - **D25. SchedContext_Bind of a context heading a reply stack.** *Decided by
   the owner during SX8 ("Flow-checked Bind"):* the two refusals seL4 does not
   make (a context heading a stack, a thread whose frame is on a live stack)
@@ -698,11 +705,18 @@ A different answer changes only the rows that cite it.
     `handleRecv(true, true)`, skipping the receive only on preemption.
     `handleInvocation` returns `EXCEPTION_NONE` on a syscall error, so a
     refused reply does not stop the receive; `handleRecv` undoes nothing
-    the reply committed. seLe4n follows both: a refused reply reports its
-    error and the receive still runs, and a refused receive reports the
-    state after the reply. seL4's receive-side refusals are capability
-    faults on the caller (`handleFault`) where seLe4n's are error returns;
-    that gap stays as it is, and SX29 does not change it.
+    the reply committed. A refused reply reports its error and the receive
+    still runs (SX33, D60). A receive the kernel refuses after the reply
+    step reports the state after the reply (SX34, D60's option (b)). A
+    refused receive capability does not yet follow the ruling, which this
+    record earlier stated it did. A capability that is not found, is of the
+    wrong kind or lacks the receive right is resolved on the entry state,
+    before the reply runs, and faults the whole syscall there. seL4's
+    `handleRecv` resolves it after the reply, so the deviation is D63's and
+    SX36 fixes it. seL4's receive-side capability refusals are capability
+    faults on the caller (`handleFault`), and so are seLe4n's since SX3
+    (`receiveGateRefuses`). The receive leg's other refusals, each off the
+    invariant, are error returns; seL4's `receiveIPC` has none of them.
   - *Checks first.* Each refusal after a write on the reply-receive path
     moves before the first write, as a read-only check on the leg's entry
     state, and each fast form keeps an unconditional equality to its
@@ -954,7 +968,7 @@ A different answer changes only the rows that cite it.
   clauses from a chain invariant over `Reply.caller`, and stating that nothing
   is stored at the reserved id, is registered debt ("The reply pop's
   outer-caller guard rests on a stated hypothesis" in
-  `docs/REGISTERED_DEBT.md`), owned by WS-SX with SX46 as its closure row.
+  `docs/REGISTERED_DEBT.md`), owned by WS-SX with SX48 as its closure row.
   *The check, placed (SX33's second piece).* The arm's transition
   (`replyRecvTransferOnCore`) reads the pop's admission (`replyRecvPopAdmits`)
   on its entry state and refuses `.invalidArgument 0` before the reply leg
@@ -993,8 +1007,13 @@ A different answer changes only the rows that cite it.
   pop returned a context, D53) on the state the receive returned. That state
   carries the receive's own context return (`receiveReturnSchedContext`),
   which seLe4n runs before the receive's checks and seL4 runs after
-  `handleRecv`'s lookup; that is the only difference from seL4, and every
-  receive refusal is off the invariant. Deciding the receive's refusals
+  `handleRecv`'s lookup. That is the only difference from seL4 for a receive
+  refused after the reply step, and each such refusal is off the invariant.
+  The receive capability's refusals (not found, wrong kind, no receive
+  right) are reachable on invariant states. They never reach this case
+  because the capability is checked on the entry state, before the reply
+  runs, and faults the whole syscall there. That is a deviation, recorded
+  in D63 and fixed by SX36. Deciding the receive's refusals
   first, before the context return (option (c)), needs frames across that
   return, each under `invExt`; it becomes cheap once `invExt` is in the
   table's type, and belongs to WS-CK's CK1 under the owner's ruling above. The post-receive donation refuses at its
@@ -1044,6 +1063,165 @@ A different answer changes only the rows that cite it.
   - The rows after SX33 are renumbered (SX34–SX45 became SX35–SX46): the
     gate is SX35, the QEMU scenarios SX36, the lock-set ceiling SX45 and the
     closure SX46.
+- **D62. SX34's donation is admitted before its first write.** *SX34's
+  measurement and the coordinator's ruling (2026-11-27), the owner's
+  checks-first ruling (as for the pop's admission, D60), so no new card.*
+  `donateSchedContext` refused at four points after a store: the pushed frame
+  named as its own predecessor, a frame below that does not resolve, and the
+  donor's and the server's thread lookups. A refusal-carrying form carries the
+  state at that point, a donation half done, and the report consumers' families
+  that take only `objects.invExt` cannot refute it. The ruling: an admission
+  (`donationPushRefusal?`) asks the three of those the state handed in can
+  answer, on that state, before the first store, with the error the later check
+  gives. The donor's lookup needs no admission: its key holds a thread, and no
+  store before it writes a thread.
+  - **The pair, under `objects.invExt`.** An admitted donation refuses only on
+    the state handed in (`donateSchedContextR_stops_at_entry`, lifted to the
+    rendezvous donation as `applyRendezvousCallDonationR_stops_at_entry`), and
+    a donation that succeeds was admitted (`donationPushRefusal?_eq_none_of_ok`).
+  - **The fast forms.** The in-place donation's guard implies the admission
+    with no invariant (`donateSchedContext_eq_inPlace` discharges it from its
+    own hypotheses), so every `@[csimp]` stays unconditional.
+  - **The defensive checks.** The four checks after the stores stay. They run
+    only off `objects.invExt`, and WS-CK's CK1 retires them.
+  - **Scope.** The admission is in the shared `donateSchedContext`, so the
+    `.call` and `.receive` donations are checked first too. On a state with a
+    well-formed object table their results are unchanged. The admission refuses
+    exactly where a later check would have, with the same error, because the
+    stores before those checks write a context, Replies and the donor's thread
+    at keys that hold no Reply the admission reads and no thread but the donor.
+    That is a theorem (`donationPushRefusal?_some_exact`): on an
+    `objects.invExt` state whose earlier checks pass and whose admission
+    refuses, the donation as it stood before the admission (the context's
+    store, the frame push, the donor's lookup and store, the server's lookup,
+    then any continuation) refuses with the admission's error.
+- **D63. ReplyRecv's receive capability is resolved after the reply, as
+  seL4's `handleRecv` resolves it; the passive server stays current until
+  the scheduling point.** *SX34's sixth session's finding and the
+  coordinator's decision (2026-11-27), under the owner's standing rules (an
+  seL4 deviation is fixed; rows stay bounded under D32). The current slot
+  follows the owner card's recommended option; the card is still pending.*
+  - **The finding.** A ReplyRecv whose reply is valid and whose receive
+    capability is not found, of the wrong kind or lacks the receive right
+    faults the whole syscall on the entry state. The reply never runs, and
+    the caller stays blocked on it. The receive capability is resolved before
+    the arm: the operand lookup and the receive gate in
+    `dispatchOperandCheckedKW` (`RoutedArms/Report.lean`, `receiveRefusedAt`),
+    the arm's slot checks in `replyRecvOperandArmThenTaintR`
+    (`RefusalCarryingReplyRecv.lean`), and the fault delivered on the state
+    the lookup was handed (`FFI.lean`, the lookup arm of the syscall
+    dispatch). These refusals are reachable on invariant-holding states.
+  - **seL4's order.** seL4-MCS's `case SysReplyRecv` (`src/api/syscall.c`)
+    runs `handleInvocation` on the reply capability first and then
+    `handleRecv(true, true)`. `handleRecv` looks the receive capability up on
+    the state after the reply, and a failed lookup, a capability of the wrong
+    kind or one without the receive right raises
+    `seL4_Fault_CapFault(epCPtr, true)` through `handleFault` on the current
+    thread. The caller has its answer by then.
+  - **Corrections.** D51's record of the ruling said a refused receive
+    reports the state after the reply. That is true of the refusals after
+    the reply step (D60's option (b)), not of the receive capability's, and
+    D51's text now says so. Its sentence that seLe4n's receive-side refusals
+    are error returns predates SX3: the capability refusals are capability
+    faults, and only the receive leg's off-invariant refusals are errors.
+    D60's "every receive refusal is off the invariant" holds only because
+    the capability check runs before the reply; D60 now gives that reason.
+  - **The fix is SX36.** ReplyRecv's receive-capability lookup and gate move
+    after the reply step, so a bad receive capability answers the caller and
+    then delivers the capability fault on the post-reply state. The receive's
+    flow gate still runs before anything the receive makes observable.
+  - **The passive server's current slot.** Once the fix lands, a passive
+    server whose pop hands its context back (the holder is the caller of
+    ReplyRecv) and whose receive capability is then refused is a reachable
+    case on invariant states. seL4's `schedContext_donate` leaves
+    `ksCurThread` on the server and calls `rescheduleRequired`, and
+    `handleRecv`'s fault runs on that thread. seLe4n's holder deschedule
+    (`replyRecvNothingReceived`, `descheduleAtPlacement`) clears the core's
+    current slot at once. SX36 keeps the server current until the scheduling
+    point, as `rescheduleRequired` leaves it. The scheduling point then takes
+    a current thread with no context off the core without re-enqueueing it.
+    No invariant requires a current thread to hold a context, so the interim
+    state is on the invariant. SX34's measurement of that cost is the basis
+    of SX36's estimate.
+  - **SX34 needed no interim form** (SX34's seventh session's finding, the
+    coordinator's ruling of 2026-11-27). Until SX36, the third case of the
+    report's consumers (a refused receive after a pop that returned a
+    context) is reachable only off the invariant. Its holder states are not
+    refuted from the run-queue and kernel-records consumers' premises, and
+    they need not be: those consumers read the current thread, the endpoint
+    heads and the caller's readiness only to deliver a capability fault, and
+    the third case raises one only where the transition stopped in the state
+    it was handed, where the consumers' first case applies
+    (`ReplyRecvAnsweringEntry.capFault_none`: the reply's lookup faults only
+    on a lookup's refusal, and the transition's refusals are lookups' only
+    there, `replyRecvTransferOnCore_refusal_notLookup`). Every other branch
+    takes the family's stage of the stopped state. No consumer restates its
+    current-thread fact. SX36 still decides the current slot once a bad
+    receive capability reaches the post-reply state, since that case is then
+    reachable on the invariant.
+  - **The lock set.** The receive capability's walk on the post-reply state
+    can differ from the entry state's: the reply's capability transfer can
+    install a capability in a slot that walk passes through, where the
+    caller and the server share a CNode. The declared lock set must cover
+    the post-reply walk. SX36 measures it, and it stops and reports if the
+    entry footprint cannot cover the walk without a second lock acquisition.
+  - **SX42.1's share.** SX42.1 runs ReplyRecv's receive on the state after
+    its invoke phase. For a reply capability, that part is SX36's, and both
+    rows say so. SX42.1 keeps the invoke phase on any other capability
+    (the full `decodeInvocation` on `dest`), and NBSendRecv and NBSendWait.
+- **D64. SX34 wrapped at its validated point; the install checked first and
+  the C bound are SX35.** *SX34's measurement, under the owner's D32 rule
+  (2026-11-27).* SX34 ran about nine sessions against its 4.5–5.5, past its
+  stop line, so it lands where its validation is complete: SX34.1 (the pop's
+  and the post-receive donation's refusal-carrying forms), SX34.2 (the
+  composite and the 12 wrappers carrying their callee's state, the refused
+  receive's report, the consumers' third case, the non-interference proofs
+  re-checked over it with their statements unchanged) and SX34.3's readings. Two of its bounds are not met, and both
+  move to SX35.
+  - **The C bound.** `RefusalCarryingReplyRecv.c` is 12,966,427 bytes
+    against 12,941,835: 24,592 over, 6,989 over SX33's 12,959,438 and
+    21,953 over SX29's 12,944,474. It compiles in 485 s against about 480.
+    Against SX33, per function: the arm's new report function
+    (`replyRecvAnsweringReport`, 5,337 bytes, its boxed form 465 and its
+    match splitter 1,029) adds 6,831; a new match splitter for
+    `replyRecvReplyRefused`, compiled from a proof's split, adds 2,357. The
+    operand and arm reports lose their reduced-arity copies as their
+    parameters grow (702 and 467 bytes net), the general arm loses one match
+    splitter (1,051), and each rendezvous wrapper shrinks by 344. The general
+    path's arm (943,247 bytes) and the other arms keep their size: removing
+    the holds does not shrink the C.
+  - **The 1 MB cell.** On the general path the own-context reply-receive
+    reads 87 cells, 4,776 bytes, with no 1 MB cell (110 cells, one of them
+    1 MB, at SX29). The donating Call takes read no 1 MB cell, except the
+    four forms that install a capability (short and long, unlinked and
+    queued caller): each reads one 1 MB cell (1,052,672 bytes, the object
+    table's copy), on both lanes, on the first call and in the steady state,
+    at lr `0x40311910` (virt) and `0x311c78` (rpi5). The copy is the CNode
+    store under `ipcTransferSingleCap`, called from `ipcUnwrapCapsLoop`
+    under `receiveTransferCaps` in the reply-receive's receive body. It
+    comes from `ipcUnwrapCapsLoop`'s `.error` fallback, which returns the
+    loop's entry state after a refused install and so holds that state
+    across the install. That is a class (d) hold in a specification body.
+    SX34 exposed it and did not add it: before SX34 the composite's own
+    copy of the state came first and masked it.
+  - **The IR measurement** reads 1,494 holds against 1,498. The class (b)
+    holds of `endpointReplyRecvAnsweringOnCore`, `replyRecvRendezvousR`,
+    `replyRecvLongRendezvousR` (one each) and `replyRecvPopDonation` (two)
+    are gone. The class (b) holds left are over the signal arm's reply legs
+    (WS-CK CK2) and the receive-alone arm (class (a), WS-CK).
+    `donateSchedContext` reads five against four: a class (e) read of the
+    state after its stores, in the specification body, which SX34 did not
+    change.
+  - **Every other reading met.** Every heap reading is 0 on both lanes
+    (4,490 per lane, the 312 retype readings aside); `test_full.sh`,
+    `test_rust.sh`, the archive build and `test_qemu.sh` in both modes pass
+    at the wrapped tree.
+  - **The remainder** is a new row, SX35: the install checked first, so the
+    loop holds nothing across it; `RefusalCarryingReplyRecv.c` brought under
+    its bound by the Operations/Invariant split; and the release with both
+    readings taken again. The rows after SX34 are renumbered (SX35–SX47
+    became SX36–SX48): D63's receive capability is SX36, the gate SX37, the
+    lock-set ceiling SX47 and the closure SX48.
 
 ## 4. Rows
 
@@ -1068,13 +1246,13 @@ declassification ledger's records branch. The QEMU exerciser also runs
 `failed-lookup-guard-mismatch`, which checks x1–x5; its MR4 (`bitsFound`) goes to the
 buffer's `msg[4]`, which the scenario does not read.
 
-The label is unchanged until SX43.
+The label is unchanged until SX45.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX1.1 | `LookupFault` (`invalidRoot`, `missingCapability bitsLeft`, `depthMismatch bitsLeft bitsFound`, `guardMismatch bitsLeft guardFound bitsFound`, seL4's `lookup_fault`). The D2 payload fields; `depthMismatch` retires into `failedLookup`. Every site sets its number: `invalidCapability` is `0` for the invoked capability and `i + 1` for argument capability `i`, and every argument capability (a receive's or reply-receive's reply capability included) is resolved through one boundary that applies it (`syscallLookupArgumentCap`, and `KernelError.argumentCapRefusal` in the compiled forms). The CNode-op refusals take seL4's: an empty source is `failedLookup true (missingCapability srcDepth)` (`cnode.c:111`). | The discriminant round trip over codes (`toDiscriminant`, `ofDiscriminant?`), the payload ignored; every `cases e <;> decide` restated per code. | `main_trace_smoke.expected` (error `Repr`); Tier 3 `KernelError` anchors; the `rust/sele4n-types/src/error.rs` mirror; `test_rust_conformance.sh` |
 | SX1.2 | `errorFrame` carries the payload in seL4's MR order (x2–x5), with MR4 written to the caller's buffer `msg[4]` (D3) and the length as `setMR` returns it. Compiled refusal arms pass the payload unboxed (D2b). `syscallAbiVersion` 4 → 5. | `errorFrame_payload_roundtrip`. The error path's frame theorem restated: it changes only the caller's `msg[4]`, on a 5-word payload with a buffer. `errorFrame_x1_decodes` gains the length. | `syscall_return_abi.expected`; `abi_layout.expected` (version, payload offsets); `rust/sele4n-abi` frame decode |
-| SX1.3 | **LANDED at `v0.37.21`.** A user word at or above `2^63` stays a word on the entry path. `RegValue` is a `UInt64` (`RegValue.word`, `.val` its `toNat`); the syscall number, the message info and the capability address are decoded from the word (`@[csimp]` `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word` and the router's `registerRoutedSyscallOf_eq_word`; `decodeCapPtr` reads the word as the address, and the `invalidCapPtr` refusal of a value past `2^64` it can no longer meet is deleted, its code 35 retired beside 37, no other code renumbered). The routed decodes test a range on the word before making a `Nat` (`wordLtNat`): the VSpace map and unmap's ASID and address and a map's permissions (`pagePermissionsOfWord?`), and an affinity (`SetAffinityArgs.affinityRaw : UInt64`, `decodeAffinity` on the word). A mint's badge is tested on its word (`badge.word = 0`). The fault and overflow words are read as words (`pairAddrIs`, `syncedWordFromW`, `@[csimp] syncedWordFrom_eq_w`). A configure refuses a budget or period above seL4-MCS's `MAX_PERIOD` (`UINT64_MAX / 8` ticks) with `rangeError`, as `decodeSchedContextConfigureArgsChecked` and `validateSchedContextParams` now do, and a deadline word above it with `invalidArgument 4`, so no stored budget, period or deadline reaches `2^63`. The raw-slot decodes that SX6.3, SX6.6 and SX42.1 re-decode, and the model-only calls SX7.1 re-encodes, keep their conversion; they are a registered row. | The register round trips restated on the word (`regMessageBody_word`, `regReplyRecvBody_word`, `regMessageRegs_word`); `setAffinityArgs` round trip without its word hypothesis; `decodeSchedContextConfigureArgsChecked_invariants` and `validateSchedContextParams_implies_wellFormed` gain the bound; `cspaceMintPerformAt_eq_impl` on the badge word; the routed receive and reply-receive decode theorems on `replyAddr.word`. | QEMU: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`, `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`, `mint-wide-badged-notification` (now measured), `configure-wide-budget-and-period`, `configure-wide-deadline`; `configure-zero-budget-max-period` and `configure-budget-over-wide-period` now expect the `MAX_PERIOD` refusal |
+| SX1.3 | **LANDED at `v0.37.21`.** A user word at or above `2^63` stays a word on the entry path. `RegValue` is a `UInt64` (`RegValue.word`, `.val` its `toNat`); the syscall number, the message info and the capability address are decoded from the word (`@[csimp]` `decodeSyscallId_eq_word`, `decodeMsgInfo_eq_word` and the router's `registerRoutedSyscallOf_eq_word`; `decodeCapPtr` reads the word as the address, and the `invalidCapPtr` refusal of a value past `2^64` it can no longer meet is deleted, its code 35 retired beside 37, no other code renumbered). The routed decodes test a range on the word before making a `Nat` (`wordLtNat`): the VSpace map and unmap's ASID and address and a map's permissions (`pagePermissionsOfWord?`), and an affinity (`SetAffinityArgs.affinityRaw : UInt64`, `decodeAffinity` on the word). A mint's badge is tested on its word (`badge.word = 0`). The fault and overflow words are read as words (`pairAddrIs`, `syncedWordFromW`, `@[csimp] syncedWordFrom_eq_w`). A configure refuses a budget or period above seL4-MCS's `MAX_PERIOD` (`UINT64_MAX / 8` ticks) with `rangeError`, as `decodeSchedContextConfigureArgsChecked` and `validateSchedContextParams` now do, and a deadline word above it with `invalidArgument 4`, so no stored budget, period or deadline reaches `2^63`. The raw-slot decodes that SX6.3, SX6.6 and SX44.1 re-decode, and the model-only calls SX7.1 re-encodes, keep their conversion; they are a registered row. | The register round trips restated on the word (`regMessageBody_word`, `regReplyRecvBody_word`, `regMessageRegs_word`); `setAffinityArgs` round trip without its word hypothesis; `decodeSchedContextConfigureArgsChecked_invariants` and `validateSchedContextParams_implies_wellFormed` gain the bound; `cspaceMintPerformAt_eq_impl` on the badge word; the routed receive and reply-receive decode theorems on `replyAddr.word`. | QEMU: `vspace-map-wide-asid`, `vspace-map-wide-vaddr`, `vspace-map-wide-perms`, `vspace-unmap-wide-vaddr`, `tcb-set-affinity-wide`, `mint-wide-badged-notification` (now measured), `configure-wide-budget-and-period`, `configure-wide-deadline`; `configure-zero-budget-max-period` and `configure-budget-over-wide-period` now expect the `MAX_PERIOD` refusal |
 
 **Acceptance (QEMU):**
 - `range-error-payload`: Copy with depth 65 returns MR0 = 1, MR1 = 64.
@@ -1111,7 +1289,7 @@ heap gate also runs the five second-capability guard-mismatch refusals
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX3.1 | **LANDED at `v0.37.24`.** The wrong-kind and missing-right faults were already the lookup's (`receiveGateRefuses`, scenarios `receive-wrong-type-cap-fault`, `wait-wrong-type-cap-fault`, `reply-recv-wrong-type-cap-fault`, `receive-no-right-cap-fault`); a notification bound to another thread now joins them (`receiveBoundRefuses`, `notificationBoundElsewhere`), checked in the lookup gate and again in the wait arm after the flow check. Recv and Wait answer `CapFault(cptr, inRecv)` with `missingCapability 0` for each of: a capability of the wrong kind, a missing receive right, or a notification bound to another thread (`syscall.c:470`–`:513`). | `capFaultReceivePhase?` partition restated. Every receive arm returns no error frame but the two that SX4 and SX41 retire. | `fault_handling_4core.expected`; `main_trace_smoke.expected` |
+| SX3.1 | **LANDED at `v0.37.24`.** The wrong-kind and missing-right faults were already the lookup's (`receiveGateRefuses`, scenarios `receive-wrong-type-cap-fault`, `wait-wrong-type-cap-fault`, `reply-recv-wrong-type-cap-fault`, `receive-no-right-cap-fault`); a notification bound to another thread now joins them (`receiveBoundRefuses`, `notificationBoundElsewhere`), checked in the lookup gate and again in the wait arm after the flow check. Recv and Wait answer `CapFault(cptr, inRecv)` with `missingCapability 0` for each of: a capability of the wrong kind, a missing receive right, or a notification bound to another thread (`syscall.c:470`–`:513`). | `capFaultReceivePhase?` partition restated. Every receive arm returns no error frame but the two that SX4 and SX43 retire. | `fault_handling_4core.expected`; `main_trace_smoke.expected` |
 | SX3.2 | **LANDED at `v0.37.24`.** `lookupReplyCap` is seL4-MCS's `lookupReply`: a failed lookup is its own lookup fault, a slot that holds no usable reply capability `missingCapability 0`, and the receive and reply-receive refuse with `failedLookup` carrying it. `syscallCapFaultOf` raises it as `CapFault(replyCPtr, true)` when the reply capability's lookup, re-run on the refusal's state, fails with that fault (`receiveReplyFaults`); the compiled entry re-runs the same lookup in place (`lookupReplyCapK`, `replyLookupRefusalW`) and reports the fault under report kind 3. The argument-number refusals of the reply capability are deleted. A reply object that is not free (SX4) and a reply-receive with no caller (SX7.2) keep their error frames until their rows. A failed reply-capability lookup on a receive faults, as `lookupReply` does (`syscall.c:387`). This closes the note at `SeLe4n/Platform/FFI.lean:3073`. | `syscallCapFaultOf` covers the reply lookup. | the same |
 
 **Acceptance:** `recv-wrong-kind-faults`, `recv-no-read-right-faults`,
@@ -1207,7 +1385,7 @@ has no TCB is refused `objectNotFound` on every arm; SchedContext_Bind takes a
 notification capability (`schedContext_bindNtfn`), SchedContext_Unbind refuses
 the executing core's current thread's context and unbinds the notification
 (D18), finalisation clears the link at both ends, and the retire guards read
-it. The rest of the piece moved to SX8 and SX37–SX40 (D20).
+it. The rest of the piece moved to SX8 and SX39–SX42 (D20).
 
 **Acceptance:**
 - The whole exerciser suite re-encoded, at its current heap pins.
@@ -1675,7 +1853,7 @@ is 21,021,237 bytes and compiles in 769 s.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX28.1 | **LANDED at `v0.37.57`** (`ReplyRecvCallTakeComposed.lean`: `ReplyRecvArm.CallAdmitsOwn`, `ReplyRecvArm.CallAdmitsAt`, `ReplyRecvArm.callTakeGuardOwn`, `ReplyRecvArm.callOwnGuard`, `ReplyRecvArm.donated_serverBound_head`; every Call-take performer takes `lends`; `RefusalCarryingReplyRecv.lean`: own-context codes 6 to 8 through `replyRecvArmCallCode`, `replyRecvCallLendsOfCode`; `RefusalCarryingReplyRecv.c` 12,941,835 bytes, standalone compile took 479 s and 476 s on two quiet runs (SX27: 480 s and 477 s); `own-context-reply-recv-takes-call` reads 0 on both lanes, the other the long form at 120 words, the granting forms at one and 120 words and the fault answer at one and 120 words on the rendezvous arm, and all six shapes on the unheld and unlinked arms (17 shapes) left to SX36). **The Call take for a server bound to its own scheduling context, on the rendezvous, unlinked and unheld arms** (the donated arm never meets one, D50): seL4-MCS's `receiveIPC` with `reply_push (canDonate)` and a server that has a context, so nothing is lent and the caller stays bound to its own. It extends the held arm's no-lend shape (`callLends = false`) to the server that holds its own context on the other arms, for every answer and both lengths; the selector and the four Call-take arms of `RefusalCarryingReplyRecv.lean` route it ahead of the specification's general path, in the word form (no register file passed out of line). | The no-lend Call take's equality over the arm to `endpointReplyRecvAnsweringOnCore`; the selector's guard and the four Call-take arms restated over it. | QEMU: the measurement scenario (`own-context-reply-recv-takes-call`) a step, 0 on both lanes, and the other answers and lengths where they build on it, each 0 |
+| SX28.1 | **LANDED at `v0.37.57`** (`ReplyRecvCallTakeComposed.lean`: `ReplyRecvArm.CallAdmitsOwn`, `ReplyRecvArm.CallAdmitsAt`, `ReplyRecvArm.callTakeGuardOwn`, `ReplyRecvArm.callOwnGuard`, `ReplyRecvArm.donated_serverBound_head`; every Call-take performer takes `lends`; `RefusalCarryingReplyRecv.lean`: own-context codes 6 to 8 through `replyRecvArmCallCode`, `replyRecvCallLendsOfCode`; `RefusalCarryingReplyRecv.c` 12,941,835 bytes, standalone compile took 479 s and 476 s on two quiet runs (SX27: 480 s and 477 s); `own-context-reply-recv-takes-call` reads 0 on both lanes, the other the long form at 120 words, the granting forms at one and 120 words and the fault answer at one and 120 words on the rendezvous arm, and all six shapes on the unheld and unlinked arms (17 shapes) left to SX38). **The Call take for a server bound to its own scheduling context, on the rendezvous, unlinked and unheld arms** (the donated arm never meets one, D50): seL4-MCS's `receiveIPC` with `reply_push (canDonate)` and a server that has a context, so nothing is lent and the caller stays bound to its own. It extends the held arm's no-lend shape (`callLends = false`) to the server that holds its own context on the other arms, for every answer and both lengths; the selector and the four Call-take arms of `RefusalCarryingReplyRecv.lean` route it ahead of the specification's general path, in the word form (no register file passed out of line). | The no-lend Call take's equality over the arm to `endpointReplyRecvAnsweringOnCore`; the selector's guard and the four Call-take arms restated over it. | QEMU: the measurement scenario (`own-context-reply-recv-takes-call`) a step, 0 on both lanes, and the other answers and lengths where they build on it, each 0 |
 
 **Acceptance:**
 - a server bound to its own context taking a capability-free `Call` on the rendezvous, unlinked and unheld arms answered in place, under one proof with the Call take's; the guard also requires no bound notification (a server with one stays on the specification's path, not refused);
@@ -1752,80 +1930,111 @@ is 21,021,237 bytes and compiles in 769 s.
 - `RefusalCarryingReplyRecv.c` no larger than SX29's (12,944,474 bytes) (**not met**: 12,959,438 bytes, 14,964 bytes (0.12%) over, compiled in 427 s; the bound moves to SX34 with the general path's 1 MB cell);
 - every heap reading 0; the IR measurement run again and its count reported against 1,498 (**met**: 1,498, the same lines as SX32's).
 
-### SX34 — ReplyRecv's refused receive, and its wrappers carrying their callee's state (D53, D60, D61)
+### SX34 — ReplyRecv's refused receive, and its wrappers carrying their callee's state (D53, D60, D61, D62, D63, D64)
+
+**LANDED at `v0.37.63`, wrapped at its validated point (D64).** Its C bound and the 1 MB cell on the general path's capability installs moved to SX35.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX34.1 | Refusal-carrying forms of the reply-receive's pop and post-receive donation, down to their stores: where a refusal precedes the operation's first write the form returns its input, so nothing is held; where it follows one, the form carries the state at that point. Where this reaches code WS-CK's CK2 owns, it is done for the reply-receive path only. | Each form's unconditional equality to its specification. | Tier 3 anchors, relation-break-tested |
-| SX34.2 | The refusal-carrying composite and the arm's transition over it, each refusal carrying the state its step stopped in; a refused receive reports the nothing-received outcome (the priority-inheritance reversion, and the holder's deschedule where the pop returned a context, D53) on the state the receive returned (D60's option (b)); the 12 refusal-carrying reply-receive wrappers carry their callee's state, not the entry state. | The composite's and each wrapper's equality to its specification restated; the report's consumers gain the refused-receive case (the invariant families at the stopped states); the entry and cross-core non-interference proofs restated. | Tier 3 anchors; `RefusalCarryingReplyRecv.c` back to 12,941,835 bytes or less and its compile to about 480 s or less (SX28's), measured against a kept copy of SX29's generated C |
-| SX34.3 | QEMU: the own-context reply-receive on the general path (before the in-place take routes it), and a donating one. | none | the step reading no 1 MB cell on both lanes (110 cells, one of them 1 MB, at SX29, D52), then the legs measured again; every other heap reading 0 |
+| SX34.1 | **LANDED at `v0.37.63`.** Refusal-carrying forms of the reply-receive's pop and post-receive donation, down to their stores: where a refusal precedes the operation's first write the form returns its input, so nothing is held; where it follows one, the form carries the state at that point. Where this reaches code WS-CK's CK2 owns, it is done for the reply-receive path only. The donation is admitted before its first write (`donationPushRefusal?`, D62). | Each form's unconditional equality to its specification. | Tier 3 anchors, relation-break-tested |
+| SX34.2 | **LANDED at `v0.37.63`** (its C bound moved to SX35.2, D64). The refusal-carrying composite and the arm's transition over it, each refusal carrying the state its step stopped in; a refused receive reports the nothing-received outcome (the priority-inheritance reversion, and the holder's deschedule where the pop returned a context, D53) on the state the receive returned (D60's option (b)); the 12 refusal-carrying reply-receive wrappers carry their callee's state, not the entry state. | The composite's and each wrapper's equality to its specification restated; the report's consumers gain the refused-receive case (the invariant families at the stopped states; the capability-fault delivery on the two cases it always took, since the stopped state raises a fault only where it stopped where it started, so no consumer restates its current-thread fact, D63); the entry and cross-core non-interference proofs restated. | Tier 3 anchors; `RefusalCarryingReplyRecv.c` back to 12,941,835 bytes or less and its compile to about 480 s or less (SX28's), measured against a kept copy of SX29's generated C |
+| SX34.3 | **LANDED at `v0.37.63`** (the capability installs' 1 MB cell moved to SX35, D64). QEMU: the own-context reply-receive on the general path (before the in-place take routes it), and a donating one. | none | the step reading no 1 MB cell on both lanes (110 cells, one of them 1 MB, at SX29, D52), then the legs measured again; every other heap reading 0 |
 
 **Acceptance:**
-- no hold of the reply-receive chain's state across a writing call, by the IR measurement;
-- ReplyRecv in seL4's order both ways, its invariant and non-interference proofs restated;
-- `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less;
-- the general path's step reads no 1 MB cell; every other heap reading 0.
+- no hold of the reply-receive chain's state across a writing call, by the IR measurement (**met** for the chain's own holds: 1,494 against 1,498, the composite's, both rendezvous wrappers' and the pop's gone; `ipcUnwrapCapsLoop`'s class (d) hold, which SX34 exposed, moved to SX35.1, D64);
+- ReplyRecv in seL4's order both ways, its invariant and non-interference proofs restated (**met**; the receive capability's order is SX36, D63);
+- `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less (**not met**: 12,966,427 bytes, 24,592 over, compiled in 485 s; the bound moves to SX35.2, D64);
+- the general path's step reads no 1 MB cell (**met** for the own-context step, 87 cells and 4,776 bytes, and the donating Call takes; **not met** for the four that install a capability, one 1 MB cell each, moved to SX35, D64); every other heap reading 0 (**met**).
 
-### SX35 — The state-hold gate (D51)
+### SX35 — The install checked first, and the C bound (D64)
+
+SX34's remainder (D64): the general path's 1 MB cell on the capability
+installs, and `RefusalCarryingReplyRecv.c`'s size and compile bound.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX35.1 | A gate over the IR of the committing exports' closure that finds each call passing the state at a destructive position while the caller keeps it live, against a pinned list of the holds WS-CK has still to remove. The list may only shrink: a hold not on it fails, and an entry with no hold behind it fails. A closure call whose callee the gate cannot resolve fails closed. The closure does not reach a `@[csimp]` source through its replacement: a specification the compiler replaces keeps its own IR, and it is counted only where compiled code still calls it (a checked form's fallback does), since counting it otherwise would pin holds no list could shrink. | none | the gate, break-tested by restoring one ReplyRecv wrapper's pre-state hold |
+| SX35.1 | `ipcUnwrapCapsLoop` holds nothing across an install: it reads each install's admission (`ipcTransferSingleCap`'s CNode, revocability, derivation and insert checks) on the state before the install writes, or it calls a refusal-carrying install that hands back the state it stopped in, so the `.error` fallback no longer keeps the loop's entry state live. This covers the reply-receive path's capability transfer (`receiveTransferCaps` under `endpointReplyRecvAnsweringBodyR`); WS-CK's class (d) row (CK2) cites it and does not redo the loop. | The loop's (or the install's) unconditional equality to its specification; `ipcUnwrapCapsLoop_rel` and the capability-transfer consumers restated over it. | Tier 3 anchors, relation-break-tested; the IR measurement shows no hold in `ipcUnwrapCapsLoop` |
+| SX35.2 | `RefusalCarryingReplyRecv.lean`'s proofs move into a proofs module of their own, following the Operations/Invariant split, so their compiled match splitters leave `RefusalCarryingReplyRecv.c`. The two splits SX34 added (`replyRecvReplyRefused`'s and `replyRecvAnsweringReport`'s) are avoided where a proof can do without them. | The moved proofs unchanged in statement; every consumer's import updated. | `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less, measured against kept copies of SX29's and SX34's generated C |
+| SX35.3 | Release, with the debug QEMU run on the general path (the in-place takes unrouted, the patch never committed) over the own-context reply-receive and the donating Call takes that install a capability. | none | no 1 MB cell on either lane (one per installs-cap form at SX34, D64); every other heap reading 0 |
+
+**Acceptance:**
+- no hold of the loop's state across an install, by the IR measurement;
+- `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less;
+- the general path's own-context and installs-cap steps read no 1 MB cell; every other heap reading 0.
+
+### SX36 — ReplyRecv's receive capability resolved after the reply (D53, D60, D63)
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| SX36.1 | ReplyRecv's receive-capability lookup and receive gate move after the reply step, as seL4's `handleRecv` places them (D63). The entry resolves the reply capability and runs the reply step. It then resolves the receive capability on the post-reply state: the operand lookup, the slot checks, the kind and the receive right. A bad receive capability answers the caller, then delivers `CapFault(epCPtr, true)` on the post-reply state. The receive's flow gate still runs before anything the receive makes observable. This takes ReplyRecv's part of SX42.1 (the receive on the state after the invoke phase, for a reply capability), and SX42.1 says so. The declared lock set is measured against the post-reply walk; if the entry footprint cannot cover it, the row stops and reports (D63). | The arm's and the dispatch's equalities to their specifications restated; every family over the reply-receive's report (the run-queue, kernel-records, queue-label, lender, mapping and reschedule stages, the seam coverage and its refusal footprint, the lock bracket, `FaultEntry`) over a lookup on the post-reply state; the entry and cross-core non-interference proofs. | Tier 3 anchors, relation-break-tested; QEMU: a valid reply with a receive capability not found, of the wrong kind and without the receive right, each answering the caller and faulting, at 0 |
+| SX36.2 | The passive server stays current until the scheduling point, as seL4's `rescheduleRequired` leaves `ksCurThread` (D63). The holder's deschedule in the nothing-received outcome and on the reply-receive's success path keeps the current slot, in a holder-only form (`descheduleAtPlacement` itself is unchanged). The scheduling point's successor step also fires on a current thread that cannot be scheduled. It takes a current thread with no context off the core without re-enqueueing it, so no thread runs without a context. | Every success-path family over the holder's deschedule and the nothing-received outcome restated; the scheduling point's drop step with its invariant suite and seam coverage; the non-interference proofs of the reply-receive step and the scheduling point. The run-queue and kernel-records consumers' fault-delivery branch takes the post-reply case SX36.1 makes reachable (D63: SX34 needed no interim form). | Tier 3 anchors; QEMU: a passive server's ReplyRecv with a refused receive capability after its pop, at 0 |
+| SX36.3 | Release: the generated C's size and compile time, and the heap readings, measured again. | none | every heap reading 0 |
+
+**Acceptance:**
+- ReplyRecv in seL4's order for a refused receive capability: the caller answered, the fault on the post-reply state;
+- the passive server current until the scheduling point, and never run without a context;
+- every heap reading 0.
+
+### SX37 — The state-hold gate (D51)
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| SX37.1 | A gate over the IR of the committing exports' closure that finds each call passing the state at a destructive position while the caller keeps it live, against a pinned list of the holds WS-CK has still to remove. The list may only shrink: a hold not on it fails, and an entry with no hold behind it fails. A closure call whose callee the gate cannot resolve fails closed. The closure does not reach a `@[csimp]` source through its replacement: a specification the compiler replaces keeps its own IR, and it is counted only where compiled code still calls it (a checked form's fallback does), since counting it otherwise would pin holds no list could shrink. | none | the gate, break-tested by restoring one ReplyRecv wrapper's pre-state hold |
 
 **Acceptance:**
 - the gate runs in Tier 2 and passes on the tree, with SX29's, SX32's, SX33's and SX34's holds absent from the pinned list;
 - an unresolved closure call fails the gate.
 
-### SX36 — The composed path's remaining QEMU scenarios (D49, D50)
+### SX38 — The composed path's remaining QEMU scenarios (D49, D50)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX36.1 | QEMU scenarios for the Call takes with no scenario to build on at `v0.37.56`: the held and unheld arms' Call takes (12 shapes), the donated arm's Call takes (6 shapes, carried from SX27.1: no scenario runs the donated arm's Call take), and the rendezvous and unlinked arms' Call takes answering a fault at one and 120 words (4 shapes); every fault-answer shape needs a fault lane whose server holds no context; carried from SX26.1, the Send take's eight shapes (the donated arm at one and 120 words, inert, installing and answering a fault; the unheld arm answering a fault at one and 120 words); and the context-holding server's Call-take shapes SX28.1 leaves without a step. | none | QEMU: one step per shape, each 0 |
+| SX38.1 | QEMU scenarios for the Call takes with no scenario to build on at `v0.37.56`: the held and unheld arms' Call takes (12 shapes), the donated arm's Call takes (6 shapes, carried from SX27.1: no scenario runs the donated arm's Call take), and the rendezvous and unlinked arms' Call takes answering a fault at one and 120 words (4 shapes); every fault-answer shape needs a fault lane whose server holds no context; carried from SX26.1, the Send take's eight shapes (the donated arm at one and 120 words, inert, installing and answering a fault; the unheld arm answering a fault at one and 120 words); and the context-holding server's Call-take shapes SX28.1 leaves without a step. | none | QEMU: one step per shape, each 0 |
 
-### SX37 — Page-table teardown and per-frame W^X
-
-| Sub-task | Change | Proofs | Gates and fixtures |
-|---|---|---|---|
-| SX37.1 | PageTable_Unmap as seL4's `performPageTableInvocationUnmap`: the table is unmapped from its address space and cleared even while mappings pass through it, where the model refuses `revocationRequired`; every frame capability whose recorded mapping passed through the table has its mapping record cleared (seL4 leaves `capFMappedASID` stale; the model's record drives teardown, so it is cleared). | The mapping-record stage, `pageTableInstallLive` and the teardown theorems over the cleared table and records; the lock footprint names each cleared capability's CNode. | SX8.1's row; QEMU: unmap of a populated table, at 0 |
-| SX37.2 | Per-frame W^X as an invariant: no frame is mapped writable and executable at once, in one address space or across two, held in the proof-layer bundle rather than by the map's check alone. | Preservation over Page_Map, Page_Unmap, PageTable_Unmap and every teardown. | Tier 3 anchors |
-
-### SX38 — Per-invocation rights as `Option AccessRight`
+### SX39 — Page-table teardown and per-frame W^X
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX38.1 | Each invocation's required right becomes `Option AccessRight`, `none` where seL4 checks no right: SchedContext_Bind's `.write` and Page_Unmap's `.read` go; Untyped_Retype's rights and Page_Map's `maskVMRights` follow seL4 (consumes SX8.1's rows). The flow gates stay, before anything observable, with their non-interference proofs. | The gate theorems and the dispatch non-interference cases over the optional right. | SX8.1's rows; QEMU: each changed invocation through a capability without the old right, at 0 |
+| SX39.1 | PageTable_Unmap as seL4's `performPageTableInvocationUnmap`: the table is unmapped from its address space and cleared even while mappings pass through it, where the model refuses `revocationRequired`; every frame capability whose recorded mapping passed through the table has its mapping record cleared (seL4 leaves `capFMappedASID` stale; the model's record drives teardown, so it is cleared). | The mapping-record stage, `pageTableInstallLive` and the teardown theorems over the cleared table and records; the lock footprint names each cleared capability's CNode. | SX8.1's row; QEMU: unmap of a populated table, at 0 |
+| SX39.2 | Per-frame W^X as an invariant: no frame is mapped writable and executable at once, in one address space or across two, held in the proof-layer bundle rather than by the map's check alone. | Preservation over Page_Map, Page_Unmap, PageTable_Unmap and every teardown. | Tier 3 anchors |
 
-### SX39 — seL4's Running thread state per core
-
-| Sub-task | Change | Proofs | Gates and fixtures |
-|---|---|---|---|
-| SX39.1 | The thread state seL4 calls Running, held per core, including self-suspend by Call: seL4's `suspend` leaves the caller `Inactive`, so `handleInvocation` writes no reply and the restart PC stays at the `SVC`. The no-reply half landed with SX7 at `v0.37.33` (`syscallReturnOutcome` answers only a runnable caller); this row makes a thread stopped inside its own syscall (a self-suspend, a Call that links no reply) resume at its `SVC`, where it now resumes past it with its request registers. Gap closed here (D24, "Match in SX11", this row before D32 renumbered it): until this row, a thread whose context SX8.2 returned (`.unbound`) is still scheduled at its legacy priority, where seL4 never runs a thread with no scheduling context; this row makes a thread with no scheduling context unschedulable, as in seL4-MCS. The scheduler's run rule is not changed in SX8. The row also owns the boot's half: seL4-MCS's boot gives the root thread its initial scheduling context, bound (`create_initial_thread` binding the root server's context), so the root thread can run; the checked boot today binds no thread (`bootSafeTcbCheck`, SX10.1), so once a thread with no context is unschedulable the boot must create the initial threads' contexts and bind them. Each such binding is a binding pair, so it is created at equal labels (the thread's and its context's, D37), and the boot base case `bootFromPlatformCheckedStartedFor_bindingLabelsEqual` is restated over it. | The thread-state invariants and the scheduler's per-core current-thread theorems over the new state. | `smp_4core_scheduler.expected`; QEMU: `tcb-suspend-self-by-call` |
-
-### SX40 — The invoke phase of NBSendRecv, NBSendWait and ReplyRecv
+### SX40 — Per-invocation rights as `Option AccessRight`
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX40.1 | seL4 runs `handleInvocation(isCall = false, isBlocking = false, canDonate = true, firstPhase = true, dest)` and then `handleRecv`: `dest` is x8 for NBSendRecv and x6 for NBSendWait and ReplyRecv. A lookup fault is dropped and an error discarded, and the receive still runs; only preemption skips it. The invoke phase is a full `decodeInvocation` on `dest`'s capability (consumes SX8.1's rows and SX39.1's state). In `API.syscallEntryChecked`, before the receive decode, when x7 is one of the three words: select the operation on `dest`'s capability type and the label, decode with `capAddr := CPtr.ofWord dest`, dispatch, keep the handed state on an error and continue on the new state on success, then the receive on it. The frame is already in the TCB (`saveCapturedSyscallFrame`), and `captureEntryWords` captures the invoke phase's overflow words and extra capabilities for `dest`. | Every family over `syscallEntryChecked` takes the two-phase case: the compiled entry (`RefusalCarryingEntry`, `syscallEntryRoutedK`, which runs the routed dispatch twice), the seam and its refusal record (receive phase only), `FineLockFlow`, `SyscallLockBracket` (both phases' sets), the per-entry stage lemmas and `FaultEntry`. | `smp_ipc_4core.expected`; QEMU: each of the three with a send-phase fault, an error and a success, at 0 |
+| SX40.1 | Each invocation's required right becomes `Option AccessRight`, `none` where seL4 checks no right: SchedContext_Bind's `.write` and Page_Unmap's `.read` go; Untyped_Retype's rights and Page_Map's `maskVMRights` follow seL4 (consumes SX8.1's rows). The flow gates stay, before anything observable, with their non-interference proofs. | The gate theorems and the dispatch non-interference cases over the optional right. | SX8.1's rows; QEMU: each changed invocation through a capability without the old right, at 0 |
 
-### SX41 — Timeout faults and the MCS TCB calls
+### SX41 — seL4's Running thread state per core
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX41.1 | A TCB timeout-handler slot, and `SetTimeoutEndpoint` (extra capability 0). | The slot invariants. | `sele4n-abi` `args/tcb.rs` |
-| SX41.2 | `SetSchedParams`: the authority, scheduling context and fault endpoint as extra capabilities; MCP and priority as words. | The MCP authority and binding theorems. | the same |
-| SX41.3 | A running thread's budget overrun with a valid timeout handler raises `seL4_Fault_Timeout` (MCS tag 5, with the context's badge and consumed time). A blocked IPC is no longer timed out: `timeoutThread` and `ipcTimeout` retire, and the discriminant is reserved. | The budget and CBS theorems; the donation-chain (WS-OD, WS-HP) theorems that cited `timeoutThread`; `faultLabel_ne_timeout` retires into the timeout fault's label theorem. | `fault_handling_4core.expected`; `smp_4core_scheduler.expected` |
+| SX41.1 | The thread state seL4 calls Running, held per core, including self-suspend by Call: seL4's `suspend` leaves the caller `Inactive`, so `handleInvocation` writes no reply and the restart PC stays at the `SVC`. The no-reply half landed with SX7 at `v0.37.33` (`syscallReturnOutcome` answers only a runnable caller); this row makes a thread stopped inside its own syscall (a self-suspend, a Call that links no reply) resume at its `SVC`, where it now resumes past it with its request registers. Gap closed here (D24, "Match in SX11", this row before D32 renumbered it): until this row, a thread whose context SX8.2 returned (`.unbound`) is still scheduled at its legacy priority, where seL4 never runs a thread with no scheduling context; this row makes a thread with no scheduling context unschedulable, as in seL4-MCS. The scheduler's run rule is not changed in SX8. The row also owns the boot's half: seL4-MCS's boot gives the root thread its initial scheduling context, bound (`create_initial_thread` binding the root server's context), so the root thread can run; the checked boot today binds no thread (`bootSafeTcbCheck`, SX10.1), so once a thread with no context is unschedulable the boot must create the initial threads' contexts and bind them. Each such binding is a binding pair, so it is created at equal labels (the thread's and its context's, D37), and the boot base case `bootFromPlatformCheckedStartedFor_bindingLabelsEqual` is restated over it. | The thread-state invariants and the scheduler's per-core current-thread theorems over the new state. | `smp_4core_scheduler.expected`; QEMU: `tcb-suspend-self-by-call` |
+
+### SX42 — The invoke phase of NBSendRecv, NBSendWait and ReplyRecv
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| SX42.1 | seL4 runs `handleInvocation(isCall = false, isBlocking = false, canDonate = true, firstPhase = true, dest)` and then `handleRecv`: `dest` is x8 for NBSendRecv and x6 for NBSendWait and ReplyRecv. A lookup fault is dropped and an error discarded, and the receive still runs; only preemption skips it. The invoke phase is a full `decodeInvocation` on `dest`'s capability (consumes SX8.1's rows and SX41.1's state). In `API.syscallEntryChecked`, before the receive decode, when x7 is one of the three words: select the operation on `dest`'s capability type and the label, decode with `capAddr := CPtr.ofWord dest`, dispatch, keep the handed state on an error and continue on the new state on success, then the receive on it. The frame is already in the TCB (`saveCapturedSyscallFrame`), and `captureEntryWords` captures the invoke phase's overflow words and extra capabilities for `dest`. For ReplyRecv with a reply capability, the receive on the post-reply state (its capability lookup and gate after the reply) is SX36.1's (D63); this row keeps ReplyRecv's invoke phase on any other capability. | Every family over `syscallEntryChecked` takes the two-phase case: the compiled entry (`RefusalCarryingEntry`, `syscallEntryRoutedK`, which runs the routed dispatch twice), the seam and its refusal record (receive phase only), `FineLockFlow`, `SyscallLockBracket` (both phases' sets), the per-entry stage lemmas and `FaultEntry`. | `smp_ipc_4core.expected`; QEMU: each of the three with a send-phase fault, an error and a success, at 0 |
+
+### SX43 — Timeout faults and the MCS TCB calls
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| SX43.1 | A TCB timeout-handler slot, and `SetTimeoutEndpoint` (extra capability 0). | The slot invariants. | `sele4n-abi` `args/tcb.rs` |
+| SX43.2 | `SetSchedParams`: the authority, scheduling context and fault endpoint as extra capabilities; MCP and priority as words. | The MCP authority and binding theorems. | the same |
+| SX43.3 | A running thread's budget overrun with a valid timeout handler raises `seL4_Fault_Timeout` (MCS tag 5, with the context's badge and consumed time). A blocked IPC is no longer timed out: `timeoutThread` and `ipcTimeout` retire, and the discriminant is reserved. | The budget and CBS theorems; the donation-chain (WS-OD, WS-HP) theorems that cited `timeoutThread`; `faultLabel_ne_timeout` retires into the timeout fault's label theorem. | `fault_handling_4core.expected`; `smp_4core_scheduler.expected` |
 
 **Acceptance:** `timeout-fault-delivered`, `blocked-call-not-timed-out`,
 `set-sched-params`.
 
-### SX42 — seL4's CNode invocation set (D16, D17)
+### SX44 — seL4's CNode invocation set (D16, D17)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX42.1 | Delete and Revoke address their target by index and depth (`lookupTargetSlot`). | The two arms' decode and preservation. | `args/cspace.rs` |
-| SX42.2 | Mutate: a Move with `updateCapData` preserving. A null result is IllegalOperation. | `cspaceMove`'s CDT, link and occupancy theorems over a rewritten capability. | the same |
-| SX42.3 | Rotate, per `cnode.c:231`. | The CDT, `cdtLinksAgree` and `CapTreeShape` preservation for two moves; the footprint (3 slots, 2 roots). | the same |
-| SX42.4 | CancelBadgedSends: all four endpoint rights; the senders with the badge are removed and set to Restart; badge 0 does nothing (`endpoint.c:489`). | Endpoint queue well-formedness; run-queue insertion; non-interference for the arm. | `smp_ipc_4core.expected` |
+| SX44.1 | Delete and Revoke address their target by index and depth (`lookupTargetSlot`). | The two arms' decode and preservation. | `args/cspace.rs` |
+| SX44.2 | Mutate: a Move with `updateCapData` preserving. A null result is IllegalOperation. | `cspaceMove`'s CDT, link and occupancy theorems over a rewritten capability. | the same |
+| SX44.3 | Rotate, per `cnode.c:231`. | The CDT, `cdtLinksAgree` and `CapTreeShape` preservation for two moves; the footprint (3 slots, 2 roots). | the same |
+| SX44.4 | CancelBadgedSends: all four endpoint rights; the senders with the badge are removed and set to Restart; badge 0 does nothing (`endpoint.c:489`). | Endpoint queue well-formedness; run-queue insertion; non-interference for the arm. | `smp_ipc_4core.expected` |
 
 **Acceptance:**
 - `cnode-delete-index-depth` and `cnode-revoke-index-depth`.
@@ -1833,18 +2042,18 @@ is 21,021,237 bytes and compiles in 769 s.
 - `cnode-rotate` and `cnode-rotate-pivot-is-source-refused`.
 - `cnode-cancel-badged-sends`: only the matching senders restart.
 
-### SX43 — seL4's error codes in the label (D1)
+### SX45 — seL4's error codes in the label (D1)
 
-This row needs F1 to hold. SX3, SX4, SX7 and SX41 made it hold.
+This row needs F1 to hold. SX3, SX4, SX7 and SX43 made it hold.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX43.1 | `KernelError.sel4Error`, total (D1). The error frame's label is the seL4 code. `errorLabelBase` retires. | `receivePhase_noErrorFrame`: no receive-phase syscall returns an error frame. `sendInvocation_noErrorFrame`. The label round trip over seL4 codes with the payload. The `faultLabel_lt_errorLabelBase` family retires into these. | `abi_layout.expected` (`errorLabelBase` out); `syscall_return_abi.expected`; the `sele4n-types` error table; `test_rust_conformance.sh` |
+| SX45.1 | `KernelError.sel4Error`, total (D1). The error frame's label is the seL4 code. `errorLabelBase` retires. | `receivePhase_noErrorFrame`: no receive-phase syscall returns an error frame. `sendInvocation_noErrorFrame`. The label round trip over seL4 codes with the payload. The `faultLabel_lt_errorLabelBase` family retires into these. | `abi_layout.expected` (`errorLabelBase` out); `syscall_return_abi.expected`; the `sele4n-types` error table; `test_rust_conformance.sh` |
 
 **Acceptance:** every error scenario re-pinned to seL4's codes; a fault
 handler's receive reads fault tags only.
 
-### SX44 — seL4's remaining invocations (D23)
+### SX46 — seL4's remaining invocations (D23)
 
 SX8.1's conformance table marks every seL4 invocation label seLe4n does not
 implement as absent; the ones no earlier row owns are this row's. Each is
@@ -1856,31 +2065,31 @@ allocation per entry. `ARM_SMC_Call` stays absent, as in seL4's default build
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX44.1 | **The invocations no earlier row owns** (labels 2–5, 16, 17, 30–32, 39–41, 48–56 of SX8.1's table, and label 1's argument list). TCB: `ReadRegisters`, `WriteRegisters`, `CopyRegisters` (`tcb.c`, the suspend and resume flags and the arch register order), `Configure`, `SetTLSBase` and `SetFlags` (`UnbindNotification` is implemented already). Domain: `DomainSet_Set` and the domain schedule invocations `DomainSchedule_Configure` and `DomainSchedule_SetStart`. VSpace and page: `ARM_VSpace_Clean_Data`, `Invalidate_Data` and `CleanInvalidate_Data` (`Unify_Instruction` is implemented already), and the page's `Clean_Data`, `Invalidate_Data`, `CleanInvalidate_Data`, `Unify_Instruction` and `GetAddress`. ASID: `ARM_ASIDControl_MakePool` and `ARM_ASIDPool_Assign`. IRQ: `ARM_IRQ_IssueIRQHandlerTrigger` and, in the SMP build, `ARM_IRQ_IssueIRQHandlerTriggerCore`. `Untyped_Retype` drops the extra `childId` word to seL4's six-word argument list, the child placed at the untyped's free index as seL4 places it. Every absent conformance-table row this row owns becomes implemented, its decode, arity, return shape and errors checked by the suite. | Each invocation's preservation obligations (`ipcInvariantFull`, the scheduler bundle, the records and mapping stages, saved registers, slot confinement, cross-core NI) and its fast form's `_eq`; the retype's decode round trip without `childId`. | the conformance suite (every row implemented but `ARM_SMC_Call`); QEMU: each invocation's success and first refusal at 0; `abi_layout.expected` for the retype's arguments |
+| SX46.1 | **The invocations no earlier row owns** (labels 2–5, 16, 17, 30–32, 39–41, 48–56 of SX8.1's table, and label 1's argument list). TCB: `ReadRegisters`, `WriteRegisters`, `CopyRegisters` (`tcb.c`, the suspend and resume flags and the arch register order), `Configure`, `SetTLSBase` and `SetFlags` (`UnbindNotification` is implemented already). Domain: `DomainSet_Set` and the domain schedule invocations `DomainSchedule_Configure` and `DomainSchedule_SetStart`. VSpace and page: `ARM_VSpace_Clean_Data`, `Invalidate_Data` and `CleanInvalidate_Data` (`Unify_Instruction` is implemented already), and the page's `Clean_Data`, `Invalidate_Data`, `CleanInvalidate_Data`, `Unify_Instruction` and `GetAddress`. ASID: `ARM_ASIDControl_MakePool` and `ARM_ASIDPool_Assign`. IRQ: `ARM_IRQ_IssueIRQHandlerTrigger` and, in the SMP build, `ARM_IRQ_IssueIRQHandlerTriggerCore`. `Untyped_Retype` drops the extra `childId` word to seL4's six-word argument list, the child placed at the untyped's free index as seL4 places it. Every absent conformance-table row this row owns becomes implemented, its decode, arity, return shape and errors checked by the suite. | Each invocation's preservation obligations (`ipcInvariantFull`, the scheduler bundle, the records and mapping stages, saved registers, slot confinement, cross-core NI) and its fast form's `_eq`; the retype's decode round trip without `childId`. | the conformance suite (every row implemented but `ARM_SMC_Call`); QEMU: each invocation's success and first refusal at 0; `abi_layout.expected` for the retype's arguments |
 
 **Acceptance:** the conformance table has no absent row but `ARM_SMC_Call`;
 every new path measured at 0.
 
-### SX45 — The lock-set ceiling lowered to the kernel's largest footprint
+### SX47 — The lock-set ceiling lowered to the kernel's largest footprint
 
 The owner's request (2026-11-25): "Remember to reduce the max lock set from 32
 to what the max is after all the changes."  The row runs after every
 other WS-SX change has landed, so the footprints it measures are final, and
-before the closure (SX46).
+before the closure (SX48).
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX45.1 | **`Concurrency.maxLockSetSize` lowered from 32** (`SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`) to the largest lock-set footprint the kernel can request with every WS-SX change in place. The value is derived from the code's static size theorems, not estimated: the `_size_le_maxLockSetSize` family (the per-operation lock-set bounds in the IPC, scheduler, CBS, timer and choose-thread footprints) and the CSpace walk's refusal (`declaredLockSetForCSpaceWalk_some_size_le`, the walk refusing a footprint past the ceiling). The largest of them is the new value. `retypeFanOutLimit` is defined from the ceiling (`maxLockSetSize - retypeBaseLocks`), so the row states what the retype fan-out becomes and checks it against seL4's retype fan-out; if lowering the ceiling would refuse a retype seL4 performs, the row stops and reports rather than lowering past it. | Every bound in the family and every consumer of `boundedWait_under_2pl` (`Locks/Deadlock.lean`) and the WCRT results re-proved at the new value. | A Tier 3 anchor pins `maxLockSetSize`'s value; the existing footprint anchors re-read at it |
+| SX47.1 | **`Concurrency.maxLockSetSize` lowered from 32** (`SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`) to the largest lock-set footprint the kernel can request with every WS-SX change in place. The value is derived from the code's static size theorems, not estimated: the `_size_le_maxLockSetSize` family (the per-operation lock-set bounds in the IPC, scheduler, CBS, timer and choose-thread footprints) and the CSpace walk's refusal (`declaredLockSetForCSpaceWalk_some_size_le`, the walk refusing a footprint past the ceiling). The largest of them is the new value. `retypeFanOutLimit` is defined from the ceiling (`maxLockSetSize - retypeBaseLocks`), so the row states what the retype fan-out becomes and checks it against seL4's retype fan-out; if lowering the ceiling would refuse a retype seL4 performs, the row stops and reports rather than lowering past it. | Every bound in the family and every consumer of `boundedWait_under_2pl` (`Locks/Deadlock.lean`) and the WCRT results re-proved at the new value. | A Tier 3 anchor pins `maxLockSetSize`'s value; the existing footprint anchors re-read at it |
 
 **Acceptance:**
 - `maxLockSetSize` equals the largest footprint the size theorems bound, and every bound and bounded-wait consumer is proved at that value.
 
-### SX46 — Closure
+### SX48 — Closure
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX46.1 | WS-CV's CV1.2, folded into WS-SX (maintainer's decision; WS-CV closes alongside WS-SX at `v0.38.0`): the information-flow surface (`ObservableState.machineRegs`, the per-core fragments, `lowEquivalentSliceOnCoreCheckWithRegs`) moves to lawful equality, and `RegisterFile.beq_iff_eq'` / `beq_self` / `beq_symm` / `beq_trans` (`SeLe4n/Machine.lean:528-539`) retire with their last consumer. At `origin/main` that is 51 citing sites in 13 files; the build enumerates them when the lemmas are deleted. The spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations change in the same row. **Zero allocation**: proofs and the test-side `…CheckWithRegs` comparison only, no compiled entry. | The `machineRegs` unwinding relations re-proved on lawful equality; every `beq_*` citing site rewritten to `beq_iff_eq` / decidable equality before the lemmas are deleted. | Tier 3 anchor `machineRegs_beq_self` retires |
-| SX46.2 | `docs/CLAIM_EVIDENCE_INDEX.md` gets a row per seL4 behaviour this plan follows. The spec's syscall-boundary section is rewritten to the seL4 ABI. The workstream is closed in `docs/REGISTERED_DEBT.md` and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, and this plan moves to `docs/dev_history/planning/`. **Full documentation sweep against the final tree:** the spec, every GitBook chapter on the syscall ABI and CSpace, README metrics, `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the `docs/REGISTERED_DEBT.md` index row, and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-SX section moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`. **Refresh every not-yet-started plan** against WS-SX's final tree: the remaining WS-UC rows UC6–UC10, `CONTEXT_BY_VALUE_PLAN.md`, `HIERARCHICAL_CBS_PLAN.md`, `LOCK_STATE_SEPARATION_PLAN.md`, and every other plan under `docs/planning/` — file:line citations, names, rows the new ABI makes obsolete or newly needs, and the decisions it affects. If the refresh is too large for SX46, it is the very next PR, landed before any next-row code. **WS-CV's closure (its CV5.2), in the same row** (consumes SX46.1): the `v0.36.47` register-file debt row is deleted from `docs/REGISTERED_DEBT.md`; the WS-CV section of `docs/agent_guide/WORKSTREAM_CONTEXT.md` moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; `CONTEXT_BY_VALUE_PLAN.md` moves to `docs/dev_history/planning/`, every live link to it (a search for `CONTEXT_BY_VALUE_PLAN` outside `docs/dev_history/`) repointed to cite it by workstream ID; and `HIERARCHICAL_CBS_PLAN.md` is re-checked against it, which the plan refresh above covers. | none | `check_claim_evidence_citations.py` |
+| SX48.1 | WS-CV's CV1.2, folded into WS-SX (maintainer's decision; WS-CV closes alongside WS-SX at `v0.38.0`): the information-flow surface (`ObservableState.machineRegs`, the per-core fragments, `lowEquivalentSliceOnCoreCheckWithRegs`) moves to lawful equality, and `RegisterFile.beq_iff_eq'` / `beq_self` / `beq_symm` / `beq_trans` (`SeLe4n/Machine.lean:528-539`) retire with their last consumer. At `origin/main` that is 51 citing sites in 13 files; the build enumerates them when the lemmas are deleted. The spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations change in the same row. **Zero allocation**: proofs and the test-side `…CheckWithRegs` comparison only, no compiled entry. | The `machineRegs` unwinding relations re-proved on lawful equality; every `beq_*` citing site rewritten to `beq_iff_eq` / decidable equality before the lemmas are deleted. | Tier 3 anchor `machineRegs_beq_self` retires |
+| SX48.2 | `docs/CLAIM_EVIDENCE_INDEX.md` gets a row per seL4 behaviour this plan follows. The spec's syscall-boundary section is rewritten to the seL4 ABI. The workstream is closed in `docs/REGISTERED_DEBT.md` and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, and this plan moves to `docs/dev_history/planning/`. **Full documentation sweep against the final tree:** the spec, every GitBook chapter on the syscall ABI and CSpace, README metrics, `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the `docs/REGISTERED_DEBT.md` index row, and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-SX section moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`. **Refresh every not-yet-started plan** against WS-SX's final tree: the remaining WS-UC rows UC6–UC10, `CONTEXT_BY_VALUE_PLAN.md`, `HIERARCHICAL_CBS_PLAN.md`, `LOCK_STATE_SEPARATION_PLAN.md`, and every other plan under `docs/planning/` — file:line citations, names, rows the new ABI makes obsolete or newly needs, and the decisions it affects. If the refresh is too large for SX48, it is the very next PR, landed before any next-row code. **WS-CV's closure (its CV5.2), in the same row** (consumes SX48.1): the `v0.36.47` register-file debt row is deleted from `docs/REGISTERED_DEBT.md`; the WS-CV section of `docs/agent_guide/WORKSTREAM_CONTEXT.md` moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; `CONTEXT_BY_VALUE_PLAN.md` moves to `docs/dev_history/planning/`, every live link to it (a search for `CONTEXT_BY_VALUE_PLAN` outside `docs/dev_history/`) repointed to cite it by workstream ID; and `HIERARCHICAL_CBS_PLAN.md` is re-checked against it, which the plan refresh above covers. | none | `check_claim_evidence_citations.py` |
 
 ## 5. Estimate
 
@@ -1919,21 +2128,23 @@ before the closure (SX46).
 | SX31 | 3–4 (measured at SX30's third session, D55) |
 | SX32 | 2.5–3.5 (less where SX31's equality carries a theorem by rewriting) |
 | SX33 | 4–5 (wrapped at its validated pieces, ran about 4.5, D61) |
-| SX34 | 4.5–5.5 (measured at SX33, D61) |
-| SX35 | 1 |
-| SX36 | 2–3 |
-| SX37 | 2 |
-| SX38 | 1 |
-| SX39 | 1–2 |
-| SX40 | 2 |
-| SX41 | 2–3 |
+| SX34 | 4.5–5.5 (measured at SX33, D61; wrapped at its validated point, ran about 9, D64) |
+| SX35 | 3–4.5 (measured at SX34, D64: the install 1.5–2, the proofs module 1–1.5, the release 0.5–1) |
+| SX36 | 6.5–9 (measured at SX34, D63: the move 2.5–3.5, the current slot 3.5–4.5, the release 0.5–1) |
+| SX37 | 1 |
+| SX38 | 2–3 |
+| SX39 | 2 |
+| SX40 | 1 |
+| SX41 | 1–2 |
 | SX42 | 2 |
-| SX43 | 1 |
-| SX44 | 4–5 |
-| SX45 | 1–2 |
-| SX46 | 2 |
+| SX43 | 2–3 |
+| SX44 | 2 |
+| SX45 | 1 |
+| SX46 | 4–5 |
+| SX47 | 1–2 |
+| SX48 | 2 |
 
-About 111–136 sessions in all. The largest risks:
+About 121–150 sessions in all. The largest risks:
 - the boot base case (SX5.3);
 - the IPC-buffer read path (SX6.6);
 - keeping refusals at 0 heap cells (D2b).

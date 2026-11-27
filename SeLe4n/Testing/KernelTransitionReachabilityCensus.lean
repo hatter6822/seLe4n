@@ -1358,12 +1358,8 @@ def nonExecutedTransitionsPlain : List Name :=
   -- WS-SX SX32: the in-place theorems split the caller's answer into the fault
   -- answered before the tail and the message staged after it, and the reply
   -- step's state is the one a refused receive reports (SX34); the composite and
-  -- its fast forms run both halves inline.  WS-SX SX33: the nothing-received
-  -- outcome is the post-receive donation's on a receive that dequeued no
-  -- `Call` (`replyRecvPostReceiveDonation_of_not_call`), which the composite
-  -- runs inline; SX34's refused receive reports it.
+  -- its fast forms run both halves inline.
   , `SeLe4n.Kernel.replyRecvFaultFirst
-  , `SeLe4n.Kernel.replyRecvNothingReceived
   , `SeLe4n.Kernel.replyRecvReceiveLegState
   , `SeLe4n.Kernel.replyRecvReplyStepState
   , `SeLe4n.Kernel.replyRecvStageLast

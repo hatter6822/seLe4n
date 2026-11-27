@@ -703,6 +703,9 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
       | ok pr =>
         obtain ⟨pushRid, pushReply⟩ := pr
         simp only []
+        cases hAd : donationPushRefusal? st serverTid sc.scReply pushRid
+        case some => intro h; cases h
+        simp only []
         cases hS1 : storeObject clientScId.toObjId _ st with
         | error _ => intro h; cases h
         | ok p1 =>

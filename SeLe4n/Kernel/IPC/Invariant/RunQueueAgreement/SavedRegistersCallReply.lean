@@ -1052,4 +1052,88 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)
   exact ⟨hA.trans h4.writtenFree, h4.2⟩
 
+/-- The nothing-received outcome writes no saved register: a placement
+deschedule where the pop handed a context back, then the priority-inheritance
+walk. -/
+theorem replyRecvNothingReceived_savedRegsUnwritten (rs : SeLe4n.ThreadId) (c : CoreId)
+    (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (s : SystemState)
+    (hInv : s.objects.invExt) :
+    savedRegsUnwritten s (replyRecvNothingReceived rs c ret? s) := by
+  unfold replyRecvNothingReceived
+  cases ret? with
+  | none => exact savedRegsUnwritten.of_propagate _ _ _ _ hInv
+  | some p =>
+    obtain ⟨_, holder⟩ := p
+    have hP := savedRegsUnwritten.of_descheduleAt s holder (placedCoreOf? s holder) hInv
+    exact hP.trans (savedRegsUnwritten.of_propagate _ _ _ _ hP.2)
+
+/-- **A refused reply-receive writes only the answered caller's saved registers**
+(WS-SX SX34): the legs it ran before it stopped are the success path's prefix --
+the reply leg, the pop and the transfer write none, the answer writes the
+caller, which the reply leg found blocked on its reply, and the context return
+and the receive leg write none on either outcome -- and the nothing-received
+outcome, after the holder's deschedule where the post-receive donation refused,
+writes none. -/
+theorem replyRecvTransferStoppedState_savedRegsWrittenFree {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {ec e : CoreId} {st : SystemState}
+    (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hInv : st.objects.invExt) :
+    savedRegsWrittenFree e st st
+        (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant ec st) ∧
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant ec st).objects.invExt
+    := by
+  rcases replyRecvTransferStoppedState_cases epId tid rid prevCaller label msg grant ec st with
+    hE | ⟨hA, er, hB⟩
+  · rw [hE]; exact ⟨.refl _, hInv⟩
+  generalize replyRecvTransferStoppedState epId tid rid prevCaller label msg grant ec st = s at hB ⊢
+  revert hB
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = answer
+  generalize replyRecvLegMessage answer msg = m
+  generalize (if answer.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  intro hB
+  rcases endpointReplyRecvAnsweringBodyR_stopped hInv hA hB with
+    ⟨-, hS⟩ | ⟨sgi, ret?, popped, hR1, hPop1, hInvP, hTail⟩
+  · rw [hS]; exact ⟨.refl _, hInv⟩
+  have h0 := endpointReplyOnCore_savedRegsUnwritten tid prevCaller m ec hInv
+  generalize hRl : endpointReplyOnCore tid prevCaller m ec st = p at h0 hR1 hPop1 hTail
+  obtain ⟨st1, r⟩ := p
+  dsimp only at h0 hR1 hPop1 hTail
+  subst hR1
+  have hPC := endpointReplyOnCore_ok_target_notReady (sgi := sgi) (by rw [hRl])
+  have hX := receiveTransferCaps_eq_done req none target popped
+  generalize receiveTransferCapsDone req none target popped = Dn at hX hTail
+  obtain ⟨xs, st1p⟩ := Dn
+  dsimp only at hTail
+  have h1q := h0.trans (replyRecvPopDonation_savedRegsUnwritten h0.2 hPop1)
+  have h1 := h1q.trans (receiveTransferCaps_savedRegsUnwritten h1q.2 hX)
+  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer st1p prevCaller xs.capInfo h1.2
+  have hAw : savedRegsWrittenFree e st st (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) :=
+    h1.writtenFree.trans (.of_kept k5 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR hPC)
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hAw i5 hTail
+  have h1r := savedRegsUnwritten.receiveReturn true st1a tid i5
+  have h2 := h1r.trans (endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
+    ec h1r.2)
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+    (receiveReturnSchedContext true st1a tid) = q at h2 hTail
+  rcases hTail with hS | ⟨st2, next, summary, sgi', hV, hS⟩
+  · rw [hS]
+    have h3 := h2.trans (replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ h2.2)
+    exact ⟨hAw.trans h3.writtenFree, h3.2⟩
+  subst hV
+  rcases hS with hS | ⟨sc, holder, -, hS⟩
+  · rw [hS]
+    have h3 := h2.trans (replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ h2.2)
+    exact ⟨hAw.trans h3.writtenFree, h3.2⟩
+  rw [hS]
+  have hH : savedRegsUnwritten st2 (replyRecvHolderDeschedule tid holder st2) := by
+    unfold replyRecvHolderDeschedule
+    split
+    · exact .refl h2.2
+    · exact savedRegsUnwritten.of_descheduleAt _ _ _ h2.2
+  have h3 := (h2.trans hH).trans (replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ hH.2)
+  exact ⟨hAw.trans h3.writtenFree, h3.2⟩
+
 end SeLe4n.Kernel
