@@ -15,6 +15,7 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.CNodeSlotsKept
 import SeLe4n.Kernel.ReplyStepCNodeSlotsKept
 import SeLe4n.Kernel.ReplyRecvReceiveAfterReply
+import SeLe4n.Kernel.RefusalCarryingReplyRecvAfterReply
 -- WS-RR RR8.10: the cancellation's arm-complete IPC bundle and its cross-core
 -- lift.  Its three arm theorems live in three different modules, so the
 -- composite has no natural home among them; putting it in the production import

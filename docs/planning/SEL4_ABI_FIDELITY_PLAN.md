@@ -1148,6 +1148,26 @@ A different answer changes only the rows that cite it.
     (`replyRecvReplyStep_cnodeSlotsKept`). A receive capability that does not
     resolve on entry declares no footprint and keeps the coarse
     serialisation.
+  - **A receive refused after the reply has one outcome on both arms**
+    (SX36's third session). In seL4 the reply is complete
+    (`handleInvocation`) before `handleRecv` runs, and its signal path
+    (`receiveIPC` finding the bound notification active) does not differ, so
+    a later refusal leaves the reply's effects as they are. Both arms report
+    D53's nothing-received outcome: the holder's deschedule where the pop
+    handed a context back, then the recorded server's priority-inheritance
+    reversion. In the composite the pop defers the deschedule, so the refusal
+    reports `replyRecvNothingReceived` on the state the caller's answer left
+    (`endpointReplyRecvAnsweringBodyThenR`), as a refused receive leg does.
+    Where the receive completes a bound notification, the reply is the
+    `.reply` arm's transition, whose pop deschedules the holder
+    (`applyReplyDonationOnCore`) and whose tail reverts the recorded server's
+    priority inheritance (`endpointReplyCrossCoreDispatch`). Its state is
+    already that outcome, so the refusal carries it as it is
+    (`replyRecvCompletesSignalArmThenR`), and a second application would
+    repeat the reversion. The two arms cannot share one function, because the
+    `.reply` transition applies the outcome inside its own pop and tail.
+    `replyRecvNothingReceived` owns the composite's outcome and the `.reply`
+    transition owns the signal arm's.
   - **The passive server's current slot.** Once the fix lands, a passive
     server whose pop hands its context back (the holder is the caller of
     ReplyRecv) and whose receive capability is then refused is a reachable
