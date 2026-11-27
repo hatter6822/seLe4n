@@ -104,6 +104,11 @@ theorem LendersStep.replyRecvTransferStoppedState {ctx : LabelingContext}
     | none => exact LendersFrame.propagatePipChainCrossCore s rs core _ hS
     | some p =>
       obtain ⟨_, holder⟩ := p
+      try dsimp only
+      by_cases hK : s.scheduler.currentOnCore core = some holder
+      · rw [descheduleKeepingCurrentOnCore_of_current s holder core hK]
+        exact LendersFrame.propagatePipChainCrossCore s rs core _ hS
+      rw [descheduleKeepingCurrentOnCore_of_not_current s holder core hK]
       exact (LendersFrame.descheduleAtPlacement s holder hS).andThen fun h =>
         LendersFrame.propagatePipChainCrossCore _ rs core _ h
   rcases replyRecvTransferStoppedState_cases epId tid rid prevCaller label msg grant core st with

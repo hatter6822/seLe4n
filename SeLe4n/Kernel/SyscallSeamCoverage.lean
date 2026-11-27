@@ -264,6 +264,11 @@ theorem replyRecvNothingReceived_confinedToCores (rs : SeLe4n.ThreadId) (core : 
   | none => exact propagatePipChainCrossCore_confinedToCores core s.objects.size s rs
   | some p =>
     obtain ⟨_, holder⟩ := p
+    dsimp only
+    by_cases hK : s.scheduler.currentOnCore core = some holder
+    · rw [descheduleKeepingCurrentOnCore_of_current s holder core hK, if_pos hK]
+      exact propagatePipChainCrossCore_confinedToCores core s.objects.size s rs
+    rw [descheduleKeepingCurrentOnCore_of_not_current s holder core hK, if_neg hK]
     exact replyRecvDescheduleAndWalk_confinedToCores holder rs core s
 
 theorem replyRecvTransferStoppedState_confinedToCores (epId : SeLe4n.ObjId)
@@ -461,7 +466,13 @@ theorem replyRecvNothingReceived_replenishQueueOnCore (rs : SeLe4n.ThreadId) (co
       s.objects.size hInv).1 c
   | some p =>
     obtain ⟨_, holder⟩ := p
-    rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings _ rs core _
+    try dsimp only
+    by_cases hK : s.scheduler.currentOnCore core = some holder
+    · rw [descheduleKeepingCurrentOnCore_of_current s holder core hK]
+      exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings s rs core
+        s.objects.size hInv).1 c
+    rw [descheduleKeepingCurrentOnCore_of_not_current s holder core hK,
+      (PriorityInheritance.propagatePipChainCrossCore_replenish_readings _ rs core _
       (descheduleAtPlacement_preserves_objects_invExt s holder hInv)).1 c,
       descheduleAtPlacement_replenishQueueOnCore]
 

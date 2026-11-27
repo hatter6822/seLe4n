@@ -940,6 +940,11 @@ theorem replyRecvTransferStoppedState_induct {epId : SeLe4n.ObjId} {tid : SeLe4n
     | none => exact hPip s rs core hS
     | some p =>
       obtain ⟨_, holder⟩ := p
+      try dsimp only
+      by_cases hK : s.scheduler.currentOnCore core = some holder
+      · rw [descheduleKeepingCurrentOnCore_of_current s holder core hK]
+        exact hPip s rs core hS
+      rw [descheduleKeepingCurrentOnCore_of_not_current s holder core hK]
       exact hTrans _ _ _ hS (hDesched s holder hS)
         (hPip _ rs core (descheduleAtPlacement_preserves_objects_invExt s holder hS))
   rcases replyRecvTransferStoppedState_cases epId tid rid prevCaller label msg grant core st with

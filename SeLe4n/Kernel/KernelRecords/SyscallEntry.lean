@@ -154,6 +154,11 @@ theorem RecordsFrame.replyRecvNothingReceived (rs : SeLe4n.ThreadId) (c : CoreId
   | none => exact RecordsFrame.propagatePipChainCrossCore _ _ _ _ hInv
   | some p =>
     obtain ⟨_, holder⟩ := p
+    try dsimp only
+    by_cases hK : s.scheduler.currentOnCore c = some holder
+    · rw [descheduleKeepingCurrentOnCore_of_current s holder c hK]
+      exact RecordsFrame.propagatePipChainCrossCore _ _ _ _ hInv
+    rw [descheduleKeepingCurrentOnCore_of_not_current s holder c hK]
     have P := RecordsFrame.descheduleAtPlacement s holder hInv
     exact P.trans (RecordsFrame.propagatePipChainCrossCore _ _ _ _ P.invExt)
 

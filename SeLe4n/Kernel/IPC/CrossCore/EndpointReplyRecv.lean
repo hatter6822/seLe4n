@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.SchedContext.NotificationDonation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.Operations.DonationRefusalCarrying
+import SeLe4n.Kernel.Scheduler.ReturnedContextDrop
 
 /-!
 # The ReplyRecv transition, `endpointReplyRecvOnCore`
@@ -499,31 +500,29 @@ theorem replyRecvPostReceiveDonationR_eq (tid recordedServer nextThread : SeLe4n
 
 /-- **The reply step's outcome where nothing was received** (D53): the
 recorded server's priority-inheritance reversion, after the holder's deschedule
-where the pop handed a context back.  It is `replyRecvPostReceiveDonation`'s
-outcome on a receive that dequeued no `Call` (`replyRecvPostReceiveDonation_of_not_call`),
-and the state a refused receive reports (WS-SX SX33), on the state the receive
-returned. -/
+where the pop handed a context back, and the state a refused receive reports
+(WS-SX SX33), on the state the receive returned.
+
+**The holder keeps the core** (WS-SX SX36.2, the owner ruling "seL4 order",
+plan D63): the deschedule is the holder-only one
+(`descheduleKeepingCurrentOnCore` at `serverCore`, the executing core), so a
+passive server whose context the pop returned stays the core's current thread,
+as seL4's `rescheduleRequired` leaves `ksCurThread`.  A capability fault raised
+after the refusal then runs on that thread and blocks it, and a refusal that
+raises none leaves it to the scheduling point, which takes it off the core
+without re-enqueueing it (`dropReturnedContextCaller`).  A holder that is not
+current on `serverCore` is descheduled at its placement, as before.  On a
+receive that dequeued no `Call` this differs from `replyRecvPostReceiveDonation`
+only there: a successful receive is not followed by a fault, so that arm keeps
+its deschedule at the step. -/
 def replyRecvNothingReceived (recordedServer : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
     SystemState :=
   match returned? with
   | none => (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1
   | some (_, holder) =>
-      (PriorityInheritance.propagatePipChainCrossCore (descheduleAtPlacement st holder)
-        recordedServer serverCore).1
-
-/-- A post-receive donation after a receive that dequeued no `Call` is the
-nothing-received outcome. -/
-theorem replyRecvPostReceiveDonation_of_not_call (tid recordedServer nextThread : SeLe4n.ThreadId)
-    (serverCore : Concurrency.CoreId)
-    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState)
-    (h : rendezvousDequeuedCall st nextThread = false) :
-    replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st =
-      .ok ((), replyRecvNothingReceived recordedServer serverCore returned? st) := by
-  unfold replyRecvPostReceiveDonation replyRecvNothingReceived
-  cases returned? with
-  | none => simp only [h, Bool.false_eq_true, ↓reduceIte]
-  | some p => obtain ⟨_, _⟩ := p; simp only [h, Bool.false_eq_true, ↓reduceIte]
+      (PriorityInheritance.propagatePipChainCrossCore
+        (descheduleKeepingCurrentOnCore st holder serverCore) recordedServer serverCore).1
 
 /-- On a pop that handed nothing back, a post-receive donation the resolver
 declines (`callDonationSchedContext?` answering `none`: the receiver already holds
@@ -1112,7 +1111,12 @@ def replyRecvNothingReceivedWriteSet (recordedServer : SeLe4n.ThreadId)
     List Concurrency.CoreId :=
   match returned? with
   | none => pipChainWriteSet st recordedServer serverCore st.objects.size
-  | some (_, holder) => replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
+  | some (_, holder) =>
+      -- The holder-only deschedule (WS-SX SX36.2) writes no core where the
+      -- holder is `serverCore`'s current thread, so the walk runs on `st`.
+      if st.scheduler.currentOnCore serverCore = some holder then
+        pipChainWriteSet st recordedServer serverCore st.objects.size
+      else replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
 /-- The chain walk's cores after the post-receive half's `Call` donation: the
 walk from `recordedServer` on the donation's post-state.  On a refused donation
 the nothing-received outcome's cores on the state handed to the donation, which

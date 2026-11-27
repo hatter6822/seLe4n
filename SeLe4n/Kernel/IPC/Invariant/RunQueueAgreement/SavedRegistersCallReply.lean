@@ -1064,6 +1064,11 @@ theorem replyRecvNothingReceived_savedRegsUnwritten (rs : SeLe4n.ThreadId) (c : 
   | none => exact savedRegsUnwritten.of_propagate _ _ _ _ hInv
   | some p =>
     obtain ⟨_, holder⟩ := p
+    try dsimp only
+    by_cases hK : s.scheduler.currentOnCore c = some holder
+    · rw [descheduleKeepingCurrentOnCore_of_current s holder c hK]
+      exact savedRegsUnwritten.of_propagate _ _ _ _ hInv
+    rw [descheduleKeepingCurrentOnCore_of_not_current s holder c hK]
     have hP := savedRegsUnwritten.of_descheduleAt s holder (placedCoreOf? s holder) hInv
     exact hP.trans (savedRegsUnwritten.of_propagate _ _ _ _ hP.2)
 

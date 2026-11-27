@@ -603,7 +603,7 @@ theorem replyRecvNothingReceived_runQueueStage (rs : SeLe4n.ThreadId) (c : Concu
   | none => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _
   | some p =>
     obtain ⟨_, holder⟩ := p
-    exact (descheduleAt_runQueueStage _ _ _).trans
+    exact (descheduleKeepingCurrentOnCore_runQueueStage _ _ _).trans
       (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
 
 theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThread : SeLe4n.ThreadId}

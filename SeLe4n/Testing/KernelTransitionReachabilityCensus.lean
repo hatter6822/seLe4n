@@ -1386,11 +1386,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.replyRecvCompletesSignalArmThenR
   , `SeLe4n.Kernel.replyRecvTransferThen
   , `SeLe4n.Kernel.replyRecvTransferThenR
-  -- WS-SX SX36.2: the holder-only deschedule (`descheduleKeepingCurrentOnCore`)
-  -- and the scheduling point's drop of a caller whose lent context the reply
-  -- step returned (`dropReturnedContextCaller`), which the nothing-received
-  -- outcome and the syscall seam take in the same live cut as SX36.1.
-  , `SeLe4n.Kernel.descheduleKeepingCurrentOnCore
+  -- WS-SX SX36.2: the scheduling point's drop of a caller whose lent context
+  -- the reply step returned (`dropReturnedContextCaller`), which the syscall
+  -- seam takes in the same live cut as SX36.1.
   , `SeLe4n.Kernel.dropReturnedContextCaller
   , `SeLe4n.Kernel.replyRecvFaultFirst
   , `SeLe4n.Kernel.replyRecvReceiveLegState
