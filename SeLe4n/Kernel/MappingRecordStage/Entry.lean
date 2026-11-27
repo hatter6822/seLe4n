@@ -330,6 +330,24 @@ theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
   · rw [h]; exact MappingStage.refl _
   · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
 
+/-- **A refused reply-receive keeps the mappings recorded** (WS-SX SX34): every
+leg it ran before it stopped does. -/
+theorem replyRecvTransferStoppedState_mappingStage {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {core : CoreId} {st : SystemState} :
+    MappingStage st
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st) := fun hInv =>
+  replyRecvTransferStoppedState_induct MappingStage (fun s _ => MappingStage.refl s)
+    (fun _ _ _ _ h1 h2 => h1.trans h2)
+    (fun _ _ _ _ _ _ => endpointReplyOnCore_mappingStage)
+    (fun _ _ _ _ _ _ h => replyRecvPopDonation_mappingStage h)
+    (fun _ _ _ _ _ _ h => receiveTransferCaps_mappingStage h)
+    (fun a s t n _ => replyRecvAnswerCaller_mappingStage a s t n)
+    (fun s t _ => receiveReturnSchedContext_mappingStage true s t)
+    (fun _ _ _ _ _ _ => endpointReceiveDualWithCapsOnCore_mappingStage)
+    (fun s t _ => descheduleAtPlacement_mappingStage s t)
+    (fun _ _ _ _ => propagatePipChainCrossCore_mappingStage) hInv hInv
+
 /-- **The ABI dispatch keeps the mappings recorded**: the argument spill (a
 register write, which keeps the premises), then the checked entry, a
 capability-fault delivery, or a refusal record. -/

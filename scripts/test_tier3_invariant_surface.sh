@@ -4856,6 +4856,13 @@ run_check "INVARIANT" rg -n '^theorem donationPushRefusal\?_some_exact($|[ ({:\[
 # composite's stopped state, which is the reply leg's, or the nothing-received outcome on the receive's state.
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyR_stopped($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_cases($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+# A refused reply leg reports the state handed in, and the families compose their legs across the
+# stopped state (WS-SX SX34).
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_error_state($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -F "((∃ e', (endpointReplyOnCore tid prevCaller msg core st).2 = .error e') ∧ s = st) ∨" SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_induct($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Entry.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.

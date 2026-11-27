@@ -208,6 +208,35 @@ theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
   · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
   · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
 
+/-- **A refused reply-receive covers** (WS-SX SX34): every leg it ran before it
+stopped covers and keeps the object table well formed. -/
+theorem replyRecvTransferStoppedState_stepCovers (e : CoreId) {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {core : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    stepCovers e st (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st) ∧
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st).objects.invExt :=
+  replyRecvTransferStoppedState_induct (fun a b => stepCovers e a b ∧ b.objects.invExt)
+    (fun s h => ⟨stepCovers_refl e s, h⟩)
+    (fun _ _ _ _ h1 h2 => ⟨stepCovers_trans h1.1 h2.1, h2.2⟩)
+    (fun _ _ _ _ _ h => endpointReplyOnCore_stepCovers e h)
+    (fun _ _ _ _ _ h hP => replyRecvPopDonation_stepCovers e h hP)
+    (fun _ _ _ _ _ h hX =>
+      have hK := receiveTransferCaps_keyFrame h hX
+      ⟨hK.stepCovers (congrArg MachineState.residentCode (receiveTransferCaps_preserves_machine hX))
+        (banksKeptOffCore_of_eq
+          (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hX))), hK.2.2⟩)
+    (fun a s t n h => by
+      cases a with
+      | none =>
+        have hK := stageDeliveredMessage_keyFrame s t n h
+        exact ⟨hK.stepCovers, hK.2.2⟩
+      | some o => exact faultReplyApplyOnCore_stepCovers e s t o h)
+    (fun s t h => receiveReturnSchedContext_stepCovers e true s t h)
+    (fun _ _ _ _ _ h => endpointReceiveDualWithCapsOnCore_stepCovers e h)
+    (fun s t h => descheduleAtPlacement_stepCovers e s t h)
+    (fun s t c h => propagatePipChainCrossCore_stepCovers e c _ s t h) hInv
+
 /-- **The ABI dispatch covers** on the executing core: the argument spill moves
 no key, the checked entry covers, a capability fault is a covered delivery, and
 a refusal record touches the refusal ledger alone. -/
