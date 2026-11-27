@@ -33,14 +33,14 @@ SX34–SX45 become SX35–SX46.
   and the answered caller's receive target off the entry state and hands
   them to an out-of-line body, so nothing reads the entry state after
   the reply leg writes.
-- **The skipped reply's receive half, out of line.**  A reply-receive
-  whose reply half is skipped (an extra capability that does not look
-  up, a reply with no caller, a refused reply) calls one copy of the
-  receive arm (`replyRecvReceiveAloneR`) instead of inlining one at
-  every skip.  The refused-reply skip had doubled those copies
-  (`RefusalCarryingReplyRecv.c` 20,113,679 bytes); it is now 6,839,669
-  bytes (SX29's 12,944,474), compiled in 131 s, and the IR measurement
-  reads 1,373 holds against 1,498.
+- **A refused reply takes the no-caller receive.**  The reply test
+  filters the caller where it is looked up (`replyRecvAnsweredReply?` on
+  the general path, `replyRecvAnsweredCaller?` in the arms), so a refused
+  reply runs the same receive site as a reply with no caller and no
+  further copy of the receive arm is compiled.
+  `RefusalCarryingReplyRecv.c` is 12,959,438 bytes, 14,964 bytes (0.12%)
+  over SX29's 12,944,474, compiled in 427 s; SX34 holds the bound
+  again.  The IR measurement reads 1,498 holds, the same lines as SX32's.
 - **The nothing-received outcome** (`replyRecvNothingReceived`, D53),
   which SX34's refused receive reports.
 - **Plans.**  D60 and D61; WS-CK's first row, CK1, carries
