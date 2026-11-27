@@ -1365,6 +1365,16 @@ def nonExecutedTransitionsPlain : List Name :=
   -- answered before the tail and the message staged after it, and the reply
   -- step's state is the one a refused receive reports (SX34); the composite and
   -- its fast forms run both halves inline.
+  -- WS-SX SX36: the `.replyRecv` syscall in seL4's order, its receive
+  -- capability read after the reply (`dispatchReplyRecvAfterReply`), proven
+  -- equal to the entry's order where the entry resolves the capability
+  -- (`dispatchReplyRecvAfterReply_eq_of_entryResolved`); the dispatch takes it
+  -- in place of its `.replyRecv` gate in the next cut of the same row.
+  , `SeLe4n.Kernel.dispatchReplyRecvAfterReply
+  , `SeLe4n.Kernel.endpointReplyRecvAnsweringBodyThen
+  , `SeLe4n.Kernel.replyRecvAnsweringThen
+  , `SeLe4n.Kernel.replyRecvCompletesSignalArmThen
+  , `SeLe4n.Kernel.replyRecvTransferThen
   , `SeLe4n.Kernel.replyRecvFaultFirst
   , `SeLe4n.Kernel.replyRecvReceiveLegState
   , `SeLe4n.Kernel.replyRecvReplyStepState

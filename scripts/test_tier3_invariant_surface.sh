@@ -4890,6 +4890,19 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_error_no
 # step stopped in: the refusal-carrying arms pass the transition's reported state through, and the
 # reply-receive's refusal report names the same stopped state (WS-SX SX34, D60 option (b)).
 run_check "INVARIANT" rg -n -U '^theorem replyRecvTransferOnCoreR_eq_match [^\n]*\n(    [^\n]*\n)*      \| \.error e =>\n          \.error \(e, replyRecvTransferStoppedState epId tid rid prevCaller label msg grant\n            executingCore st\)\n      \| \.ok r => \.ok r := by' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+# WS-SX SX36.1: the reply step keeps every CNode, so the receive capability
+# resolves on the post-reply state as on entry; seL4's order (reply, then the
+# receive capability's lookup on the state the reply left) is the entry's order
+# wherever the entry resolves it.
+run_check "INVARIANT" rg -n '^theorem receiveTransferCaps_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCoreChecked_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
+run_check "INVARIANT" rg -n -U '^theorem replyRecvReplyStep_cnodeSlotsKept [^\n]*\n(    [^\n]*\n)*    CNodeSlotsKept st \(replyRecvAnswerCaller answer st1p prevCaller summary\.capInfo\) := by' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvReceiveCap_of_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyStepCNodeSlotsKept.lean
+run_check "INVARIANT" rg -n -U '        let stA := replyRecvAnswerCaller answer st1p prevCaller replySummary\.capInfo\n        match recvEp stA with\n        \| \.error e => \.error e\n        \| \.ok epId =>\n        match endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\n            \(receiveReturnSchedContext true stA tid\) with' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n -U '    \| some \(rid, prevCaller, replyBadge, replyGrant\) =>\n      replyRecvAnsweringThen ctx \(replyRecvReceiveEndpoint ctx gate tid\) decoded tid executingCore' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_of_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem dispatchReplyRecvAfterReply_eq_of_entryResolved($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
 run_check "INVARIANT" rg -n -U '^              match replyRecvTransferOnCoreR epId tid rid prevCaller mi\.label msg\n                  replyGrant executingCore st with\n              \| \.ok \(summary, st.\) =>\n                  \.ok \(\(\), Architecture\.stageDeliveredMessage st. tid summary\.capInfo\)\n              \| \.error es => \.error es\)$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^    match replyRecvTransferOnCoreR epId tid rid c label\n        \{ registers := Architecture\.regMessageBody layout rf len, badge := badge \}\n        grant executingCore st with\n    \| \.ok \(summary, st.\) =>\n        \.ok \(\(\), Architecture\.stageDeliveredMessage st. tid summary\.capInfo\)\n    \| \.error es => \.error es$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^    match replyRecvTransferOnCoreR epId tid rid c label\n        \{ registers := longReplyRecvRegs rf st tid len, badge := badge \}\n        grant executingCore st with\n    \| \.ok \(summary, st.\) =>\n        \.ok \(\(\), Architecture\.stageDeliveredMessage st. tid summary\.capInfo\)\n    \| \.error es => \.error es$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
