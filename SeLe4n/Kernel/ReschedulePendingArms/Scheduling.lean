@@ -589,11 +589,6 @@ theorem tcbsKept_enqueueRunnableOnCore (st : SystemState) (c : CoreId) (tid : Se
   obtain ⟨y, hy⟩ := enqueueRunnableOnCore_getTcb?_isSome st c tid t x hInv hx
   rw [hy]; rfl
 
-/-- A queue removal keeps every TCB a TCB. -/
-theorem tcbsKept_removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
-    tcbsKept st (removeRunnableOnCore st tid c) :=
-  tcbsKept.of_runLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
-
 /-- WS-ZA ZA6.4: **the configure's resume tail covers**: it writes run-queue
 links alone of the objects, so it moves no key input; a removal only shrinks a
 queue, and a placement or a reschedule flag lands on the thread's home with that

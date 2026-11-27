@@ -235,6 +235,28 @@ theorem scheduleLocalSuccessorFrom_preserves_contextMatchesCurrentOnCore {e : Co
     · exact h
   · exact h
 
+/-- **The scheduling point's drop keeps the executing core's bank match**
+(WS-SX SX36.2): it passes the state through, or vacates the core's current
+slot, after which the core matches vacuously. -/
+theorem dropReturnedContextCaller_preserves_contextMatchesCurrentOnCore {e : CoreId}
+    (returnable : Bool) (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (h : contextMatchesCurrentOnCore post e) :
+    contextMatchesCurrentOnCore (dropReturnedContextCaller returnable caller? post e) e := by
+  unfold dropReturnedContextCaller
+  by_cases hR : returnable = true
+  · rw [if_pos hR]
+    cases caller? with
+    | none => exact h
+    | some t =>
+      dsimp only
+      by_cases hC : post.scheduler.currentOnCore e = some t ∧ threadUnboundAt post t = true
+      · rw [if_pos hC]
+        apply contextMatchesCurrentOnCore_of_none
+        rw [removeRunnableOnCore_scheduler]
+        simp [hC.1]
+      · rw [if_neg hC]; exact h
+  · rw [if_neg hR]; exact h
+
 section
 /- As in `OffCoreContextMatches`: the composites read the bank match only
 through the lemmas above. -/
@@ -243,7 +265,7 @@ attribute [local irreducible] contextMatchesCurrentOnCore
 /-- WS-ZA ZA6.28: **the syscall seam keeps the executing core's bank match**,
 from a match before the dispatch and after the argument spill: the dispatch and
 the commit's staging keep it (`syscallDispatchFromAbi_stagedContextMatches`),
-and the local scheduling point, the residency settle, the activation and the
+and the drop of a caller whose lent context went back, the local scheduling point, the residency settle, the activation and the
 ledger clears keep it. -/
 theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : LabelingContext}
     {e : CoreId} {syscallId : UInt32}
@@ -264,10 +286,16 @@ theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : Labeling
     hAwayCur hM hSpill hD
   have iStage := (stageCallerReturnFor_stepCovers e (S.scheduler.currentOnCore e) st' outcome
     hDInv).2
+  have hDrop := dropReturnedContextCaller_preserves_contextMatchesCurrentOnCore
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) S (S.scheduler.currentOnCore e))
+    (S.scheduler.currentOnCore e) _ hStage
+  have iDrop := dropReturnedContextCaller_objects_invExt
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) S (S.scheduler.currentOnCore e))
+    (S.scheduler.currentOnCore e) _ e iStage
   have hSucc := scheduleLocalSuccessorFrom_preserves_contextMatchesCurrentOnCore
-    (S.scheduler.currentOnCore e) _ iStage hStage
+    (S.scheduler.currentOnCore e) _ iDrop hDrop
   have iSucc := scheduleLocalSuccessorFrom_preserves_objects_invExt e
-    (S.scheduler.currentOnCore e) _ iStage
+    (S.scheduler.currentOnCore e) _ iDrop
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact contextMatchesCurrentOnCore_clearLedgers'
     (activateThreadOnCore_preserves_contextMatchesCurrentOnCore _ e

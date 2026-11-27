@@ -371,6 +371,14 @@ theorem removeRunnableOnCore (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreI
     (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.removeRunnableOnCore st t c) :=
   runDescheduleOnCore st c t hInv
 
+/-- The scheduling point's drop of a caller whose lent context went back
+(WS-SX SX36.2): a run-queue removal, or nothing. -/
+theorem dropReturnedContextCaller (returnable : Bool) (caller? : Option SeLe4n.ThreadId)
+    (st : SystemState) (c : CoreId) (hInv : st.objects.invExt) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.dropReturnedContextCaller returnable caller? st c) :=
+  dropReturnedContextCaller_induct (fun a b => RecordsFrame a b) returnable caller? st c
+    (refl hInv) (fun t => removeRunnableOnCore st t c hInv)
+
 theorem recordSendCap (st : SystemState) (t : SeLe4n.ThreadId) (b : Option SeLe4n.Badge)
     (g gr : Bool) (hInv : st.objects.invExt) :
     RecordsFrame st (_root_.SeLe4n.Kernel.recordSendCap st t b g gr) :=

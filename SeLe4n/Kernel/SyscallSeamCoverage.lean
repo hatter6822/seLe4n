@@ -104,6 +104,19 @@ theorem scheduleLocalSuccessorFrom_coversWrites (S : LockSet) (e : CoreId)
     · exact footprintCoversWrites_refl S post
   · exact footprintCoversWrites_refl S post
 
+/-- The scheduling point's drop of a caller whose lent context went back
+(WS-SX SX36.2) writes the executing core alone, and no replenish queue. -/
+theorem dropReturnedContextCaller_coversWrites (S : LockSet) (e : CoreId) (returnable : Bool)
+    (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
+    (hRun : (LockKey.runQueue e, AccessMode.write) ∈ S.pairs) :
+    footprintCoversWrites S post (dropReturnedContextCaller returnable caller? post e) :=
+  dropReturnedContextCaller_induct (fun a b => footprintCoversWrites S a b) returnable caller?
+    post e (footprintCoversWrites_refl S post) (fun t =>
+      footprintCoversWrites_of_confinedToCore S e hTable hRun
+        (removeRunnableOnCore_confinedToCores post t e)
+        (fun d => removeRunnableOnCore_replenishQueueOnCore post t e d))
+
 theorem dispatchVacatedCore_coversWrites (S : LockSet) (e : CoreId) (st : SystemState)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
     (hRun : (LockKey.runQueue e, AccessMode.write) ∈ S.pairs) :
@@ -185,7 +198,7 @@ and the residency settling (the executing core's own scheduling points), the
 activation of the thread the core resumes (under the table lock,
 `activateThreadOnCore_coversWrites`), and the two hardware-ledger clears
 (scheduler- and store-inert). -/
-theorem syscallCommitTail_coversWrites (S : LockSet) (e : CoreId)
+theorem syscallCommitTail_coversWrites (S : LockSet) (e : CoreId) (returnable : Bool)
     (caller? : Option SeLe4n.ThreadId) (post : SystemState) (o : Architecture.SyscallOutcome)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
     (hRun : (LockKey.runQueue e, AccessMode.write) ∈ S.pairs) :
@@ -193,11 +206,14 @@ theorem syscallCommitTail_coversWrites (S : LockSet) (e : CoreId)
       (Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance
         (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessorFrom caller?
-            (Architecture.stageCallerReturnFor caller? post e o) e) e) e))) :=
+            (dropReturnedContextCaller returnable caller?
+              (Architecture.stageCallerReturnFor caller? post e o) e) e) e) e))) :=
   footprintCoversWrites_trans S
     (footprintCoversWrites_trans S
-      (footprintCoversWrites_of_scheduler_eq S hTable
-        (Architecture.stageCallerReturnFor_scheduler caller? post e o))
+      (footprintCoversWrites_trans S
+        (footprintCoversWrites_of_scheduler_eq S hTable
+          (Architecture.stageCallerReturnFor_scheduler caller? post e o))
+        (dropReturnedContextCaller_coversWrites S e returnable caller? _ hTable hRun))
       (footprintCoversWrites_trans S
         (footprintCoversWrites_trans S
           (scheduleLocalSuccessorFrom_coversWrites S e caller? _ hTable hRun)
@@ -2121,7 +2137,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     refine footprintCoversWrites_trans U (footprintCoversWrites_trans U
       (footprintCoversWrites_trans U (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch)
         (footprintCoversWrites_of_objects_scheduler_eq U hFillObj hFillSch)) ?_)
-      (syscallCommitTail_coversWrites U e _ st' _ hTable hRunE)
+      (syscallCommitTail_coversWrites U e _ _ st' _ hTable hRunE)
     exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U stSpilled st' hSched hU
       (dispatchSyscallChecked_coversWrites ctx decoded tid e stSpilled st' ops S hFillObjInv
         hFillHeads hOps hSched hDisp)
@@ -2228,7 +2244,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             (Architecture.recordErrorOverflow_scheduler _ tid ke)))
         (footprintCoversWrites_of_scheduler_eq U hTable
           (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e _ tid ke x0 _)))
-        (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)
+        (syscallCommitTail_coversWrites U e _ _ _ _ hTable hRunE)
     · rw [if_neg hC] at hD
       rw [syscallDispatchCrossCoreStep_of_ok hD]
       dsimp only
@@ -2237,7 +2253,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           (footprintCoversWrites_of_scheduler_eq U hTable hRegsSch) hCancel)
         (footprintCoversWrites_of_scheduler_eq U hTable
           (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e _ tid ke x0 _)))
-        (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)
+        (syscallCommitTail_coversWrites U e _ _ _ _ hTable hRunE)
 
 /-! ### The timer and reschedule entries' tails
 

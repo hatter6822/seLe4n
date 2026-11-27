@@ -277,11 +277,15 @@ theorem syscallDispatchCrossCoreStep_lendersStage {ctx : LabelingContext} {e : C
     x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   have hI := KernelRecords.objects_invExt (syscallDispatchFromAbi_recordsStage PR hR hD hK)
-  have F1 := RecordsFrame.stageCallerReturnFor (st.scheduler.currentOnCore e) _ e outcome hI
+  have F0 := RecordsFrame.stageCallerReturnFor (st.scheduler.currentOnCore e) _ e outcome hI
+  have F1 := F0.trans (RecordsFrame.dropReturnedContextCaller
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st (st.scheduler.currentOnCore e))
+    (st.scheduler.currentOnCore e) _ e F0.invExt)
   have F2 := F1.trans (RecordsFrame.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e) _ e F1.invExt)
   have F3 := F2.trans (RecordsFrame.settleResidencyOnCore _ e F2.invExt)
   exact (syscallDispatchFromAbi_lendersStage (KernelRecords.objects_invExt hK) P hR hW hA hD).trans
-    ((((LendersStage.of_kept (chainObjectsKept.stageCallerReturnFor _ _ e outcome hI)).trans
+    (((((LendersStage.of_kept (chainObjectsKept.stageCallerReturnFor _ _ e outcome hI)).trans
+      (LendersStage.of_kept (chainObjectsKept.dropReturnedContextCaller _ _ _ e))).trans
       (LendersStage.of_kept (chainObjectsKept.scheduleLocalSuccessorFrom _ _ e F1.invExt))).trans
       (LendersStage.of_kept (chainObjectsKept.settleResidencyOnCore _ e F2.invExt))).trans
       ((LendersStage.activateThreadOnCore _ e F3.invExt).trans

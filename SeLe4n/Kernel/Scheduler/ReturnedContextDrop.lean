@@ -93,6 +93,10 @@ of a ReplyRecv, before the reply step can return the context. -/
   | some tcb => tcb.scBindingScCode == 0
   | none => false
 
+/-- Is the syscall number the seam took ReplyRecv's (`Syscall.number`)? -/
+@[inline] def syscallNumberIsReplyRecv (n : UInt32) : Bool :=
+  n.toNat == SeLe4n.Model.Syscall.replyRecv.number
+
 /-- **The entry's gate for the drop**: the syscall is a ReplyRecv and its caller
 holds a context on loan.  The ReplyRecv's only step that can unbind its caller is
 the reply step's pop returning that loan (a receive that dequeues a `Call`

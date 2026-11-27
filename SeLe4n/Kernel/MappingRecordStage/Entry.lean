@@ -436,8 +436,16 @@ theorem stageCallerReturnFor_mappingStage (caller? : Option SeLe4n.ThreadId)
   | faulted => exact MappingStage.refl _
   | resumes => exact MappingStage.refl _
 
+/-- The scheduling point's drop of a caller whose lent context went back
+(WS-SX SX36.2) is a run-queue removal on the executing core. -/
+theorem dropReturnedContextCaller_mappingStage (returnable : Bool)
+    (caller? : Option SeLe4n.ThreadId) (post : SystemState) (c : CoreId) :
+    MappingStage post (dropReturnedContextCaller returnable caller? post c) :=
+  dropReturnedContextCaller_induct (fun a b => MappingStage a b) returnable caller? post c
+    (MappingStage.refl post) (fun t => removeRunnableOnCore_mappingStage post t c)
+
 /-- **The syscall step keeps the mappings recorded**: the ABI dispatch, the
-caller's return staging, the local scheduling point, the residency settlement
+caller's return staging, the scheduling point's drop, the local scheduling point, the residency settlement
 and the ledger drains. -/
 theorem syscallDispatchCrossCoreStep_mappingStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
@@ -448,7 +456,8 @@ theorem syscallDispatchCrossCoreStep_mappingStage {ctx : LabelingContext} {e : C
     x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_mappingStage P hD).trans
-    ((((stageCallerReturnFor_mappingStage _ _ e outcome).trans
+    (((((stageCallerReturnFor_mappingStage _ _ e outcome).trans
+    (dropReturnedContextCaller_mappingStage _ _ _ e)).trans
     (scheduleLocalSuccessorFrom_mappingStage _ _ e)).trans
     (settleResidencyOnCore_mappingStage _ e)).trans
     ((activateThreadOnCore_mappingStage _ e).trans (clearLedgers_mappingStage' _)))

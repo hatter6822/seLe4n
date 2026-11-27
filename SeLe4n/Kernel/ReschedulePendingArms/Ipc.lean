@@ -343,12 +343,7 @@ theorem wakeThread_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Thre
     residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
     (tcbsKept_enqueueRunnableOnCore _ _ _ hInv).residentTcbKept⟩
 
-theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
-  ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
-    removeRunnableOnCore_currentKept e st tid c,
-    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]),
-    (tcbsKept_removeRunnableOnCore st tid c).residentTcbKept⟩
+
 
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/

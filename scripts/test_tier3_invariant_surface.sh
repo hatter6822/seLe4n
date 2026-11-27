@@ -4918,6 +4918,7 @@ run_check "INVARIANT" rg -n '^theorem descheduleKeepingCurrentOnCore_induct($|[ 
 run_check "INVARIANT" rg -n '^theorem dropReturnedContextCaller_induct($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
 run_check "INVARIANT" rg -n -U '^theorem dropReturnedContextCaller_not_current_unbound [^\n]*\n(    [^\n]*\n)*    ¬ \(\(dropReturnedContextCaller true \(some caller\) post c\)\.scheduler\.currentOnCore c =\n        some caller ∧\n      threadUnboundAt \(dropReturnedContextCaller true \(some caller\) post c\) caller = true\) := by' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
 run_check "INVARIANT" rg -n '^theorem dropReturnedContextCaller_currentOnCore_none($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
+run_check "INVARIANT" rg -n -U '^theorem syscallDispatchCrossCoreStep_schedulingPoint_not_current_unbound\n(    [^\n]*\n)*    \(hGate : contextReturnableAtEntry \(syscallNumberIsReplyRecv syscallId\) st \(some caller\) = true\) :\n    ∃ X : SystemState,\n(      [^\n]*\n)*            \(PriorityInheritance\.scheduleLocalSuccessorFrom \(some caller\) X execCore\) execCore\)\n            execCore\)\) ∧\n      ¬ \(X\.scheduler\.currentOnCore execCore = some caller ∧ threadUnboundAt X caller = true\) := by' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '  \| some \(_, holder\) =>\n      \(PriorityInheritance\.propagatePipChainCrossCore\n        \(descheduleKeepingCurrentOnCore st holder serverCore\) recordedServer serverCore\)\.1\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -n -U '      match recvEp stA with\n      \| \.error e =>\n          \.error \(e, replyRecvNothingReceived recordedServer executingCore returnedSc\? stA\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '  \| \.ok \(\(\), st1\) =>\n      match recvEp st1 with\n      \| \.error e => \.error \(e, st1\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
@@ -6063,10 +6064,11 @@ run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\
 run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    crate::remote_stall::note_kernel_entry\(\);\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'switching away then saves every register the thread trapped with' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP7.4 (v0.36.17): the caller's result is staged where a switch saves
-# from, before the local reschedule; every entry hands the HAL the context the
+# from, before the local reschedule (WS-SX SX36.2: after the drop of a caller
+# whose lent context went back); every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := activateThreadOnCore \(PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchStep.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := activateThreadOnCore \(PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\?\n          \(dropReturnedContextCaller returnable caller\? stR execCore\) execCore\) execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance rest\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it

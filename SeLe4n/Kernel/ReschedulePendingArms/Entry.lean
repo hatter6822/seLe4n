@@ -356,7 +356,8 @@ theorem activateThreadOnCore_stepCovers (c : CoreId) (st : SystemState)
     (hBank := fun d hd => activateThreadOnCore_regsOnCore_ne st c d hd)
 
 /-- **The syscall seam covers** on the executing core: the ABI dispatch, the
-caller's return staging, the local scheduling point, the residency settlement
+caller's return staging, the drop of a caller whose lent context went back, the
+local scheduling point, the residency settlement
 and the activation.  (A refused dispatch fires no SGI, so it owes nothing.) -/
 theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
@@ -367,14 +368,23 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-      (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e) e) := by
+      (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e)
+        (dropReturnedContextCaller
+          (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+            (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e)
+          (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e)
+        e) e) e) := by
   obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced hAwayCur h
   have hSInv := settleResidencyOnCore_preserves_objects_invExt e _
     (scheduleLocalSuccessorFrom_preserves_objects_invExt e (st.scheduler.currentOnCore e) _
-      (stageCallerReturnFor_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv).2)
+      (dropReturnedContextCaller_stepCovers e
+        (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+          (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e) _
+        (stageCallerReturnFor_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv).2).2)
   exact stepCovers_trans (stepCovers_trans hD
-    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv))
+    (syscallCommitTail_stepCovers e
+      (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+        (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e) st' outcome hDInv))
     (activateThreadOnCore_stepCovers e _ hSInv)
 
 /-- WS-ZA ZA6.32: **the mask covers**: it writes the machine's mask and the
@@ -461,14 +471,22 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st'))
     (hId : ∀ oid (tcb : TCB), (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-      (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e) e).getObject? oid =
+      (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e)
+        (dropReturnedContextCaller
+          (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+            (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e)
+          (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e)
+        e) e) e).getObject? oid =
       some (.tcb tcb) → tcb.tid.toObjId = oid)
     {c : CoreId} {k : SgiKind}
     (hMem : (c, k) ∈ PriorityInheritance.computeCrossCoreSgis st
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessor st
-          (Architecture.stageCallerReturn st st' e outcome) e) e) e) e) :
+        (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e)
+          (dropReturnedContextCaller
+            (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+              (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e)
+            (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e)
+          e) e) e) e) :
     (c, SgiKind.reschedule) ∈ sgisOfRaised (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2
         x3 x4 x5 x6 elr spsr spEl0 x30 st).1.2.1 ∨
       st.scheduler.reschedulePendingOnCore c = true := by

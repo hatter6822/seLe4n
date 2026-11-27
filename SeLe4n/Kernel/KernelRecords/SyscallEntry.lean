@@ -386,7 +386,10 @@ theorem syscallDispatchCrossCoreStep_recordsStage {ctx : LabelingContext} {e : C
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_recordsStage P hR hD).trans
     (RecordsStage.of_frameK fun hI =>
-      let F1 := RecordsFrame.stageCallerReturnFor _ _ e outcome hI
+      let F0 := RecordsFrame.stageCallerReturnFor (st.scheduler.currentOnCore e) _ e outcome hI
+      let F1 := F0.trans (RecordsFrame.dropReturnedContextCaller
+        (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st (st.scheduler.currentOnCore e))
+        (st.scheduler.currentOnCore e) _ e F0.invExt)
       let F2 := F1.trans (RecordsFrame.scheduleLocalSuccessorFrom _ _ e F1.invExt)
       let F3 := F2.trans (RecordsFrame.settleResidencyOnCore _ e F2.invExt)
       let F4 := F3.trans (RecordsFrame.activateThreadOnCore _ e F3.invExt)

@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingCoverage
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
+import SeLe4n.Kernel.Scheduler.ReturnedContextDrop
 
 /-!
 # The executing core's own scheduling points cover
@@ -358,6 +359,28 @@ theorem stageCallerReturnFor_stepCovers (e : CoreId) (caller? : Option SeLe4n.Th
             (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine])),
           hWInv tid f⟩
 
+/-- A queue removal keeps every TCB a TCB. -/
+theorem tcbsKept_removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    tcbsKept st (removeRunnableOnCore st tid c) :=
+  tcbsKept.of_runLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
+
+theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
+  ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
+    removeRunnableOnCore_currentKept e st tid c,
+    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]),
+    (tcbsKept_removeRunnableOnCore st tid c).residentTcbKept⟩
+
+/-- The scheduling point's drop of a caller whose lent context went back
+(WS-SX SX36.2) is a run-queue removal on core `e`. -/
+theorem dropReturnedContextCaller_stepCovers (e : CoreId) (returnable : Bool)
+    (caller? : Option SeLe4n.ThreadId) (post : SystemState) (hInv : post.objects.invExt) :
+    stepCovers e post (dropReturnedContextCaller returnable caller? post e) ∧
+      (dropReturnedContextCaller returnable caller? post e).objects.invExt :=
+  ⟨dropReturnedContextCaller_induct (fun a b => stepCovers e a b) returnable caller? post e
+    (stepCovers_refl e post) (fun t => removeRunnableOnCore_stepCovers e post t e),
+   dropReturnedContextCaller_objects_invExt returnable caller? post e hInv⟩
+
 theorem scheduleLocalSuccessorFrom_preserves_objects_invExt (e : CoreId)
     (caller? : Option SeLe4n.ThreadId) (post : SystemState) (hInv : post.objects.invExt) :
     (PriorityInheritance.scheduleLocalSuccessorFrom caller? post e).objects.invExt := by
@@ -370,18 +393,22 @@ theorem scheduleLocalSuccessorFrom_preserves_objects_invExt (e : CoreId)
   · exact hInv
 
 /-- **The syscall commit's tail covers**: from the dispatched state, staging
-the caller's result, the local successor and the residency settling raise no
-remote staleness and drop no remote flag. -/
-theorem syscallCommitTail_stepCovers (e : CoreId) (caller? : Option SeLe4n.ThreadId)
+the caller's result, the drop of a caller whose lent context went back, the
+local successor and the residency settling raise no remote staleness and drop
+no remote flag. -/
+theorem syscallCommitTail_stepCovers (e : CoreId) (returnable : Bool)
+    (caller? : Option SeLe4n.ThreadId)
     (post : SystemState) (o : Architecture.SyscallOutcome) (hInv : post.objects.invExt) :
     stepCovers e post (settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessorFrom caller?
-        (Architecture.stageCallerReturnFor caller? post e o) e) e) := by
+        (dropReturnedContextCaller returnable caller?
+          (Architecture.stageCallerReturnFor caller? post e o) e) e) e) := by
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e caller? post o hInv
-  exact stepCovers_trans (stepCovers_trans hStage
-    (scheduleLocalSuccessorFrom_stepCovers e caller? _ hStageInv))
+  obtain ⟨hDrop, hDropInv⟩ := dropReturnedContextCaller_stepCovers e returnable caller? _ hStageInv
+  exact stepCovers_trans (stepCovers_trans (stepCovers_trans hStage hDrop)
+    (scheduleLocalSuccessorFrom_stepCovers e caller? _ hDropInv))
     (settleResidencyOnCore_stepCovers e _
-      (scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _ hStageInv))
+      (scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _ hDropInv))
 
 /-- Saving the outgoing thread's registers writes `registerContext`, which is
 no key input, and leaves the scheduler alone. -/

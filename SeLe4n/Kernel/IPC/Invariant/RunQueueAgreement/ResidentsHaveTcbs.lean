@@ -484,7 +484,17 @@ theorem syscallDispatchEntryState_preserves_residentsHaveTcbs (ctx : LabelingCon
   have B := (stageCallerReturnFor_runQueueStage ((Architecture.IpcBufferRead.syncUserWords
     (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
     st' e outcome)
-  have ABC := A.trans ((B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
+  have B2 := dropReturnedContextCaller_runQueueStage
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv trapped.syscallId) (Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+      ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e))
+    ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+    (Architecture.stageCallerReturnFor ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+      st' e outcome) e
+  have ABC := A.trans (((B.entry.trans B2.entry).trans (scheduleLocalSuccessorFrom_runQueueEntryStage
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
       bytes n).scheduler.currentOnCore e) _ e)).toOn _)
   have Full := (hS.entry.toOn _).trans (ABC.trans
@@ -494,10 +504,17 @@ theorem syscallDispatchEntryState_preserves_residentsHaveTcbs (ctx : LabelingCon
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
       bytes n).scheduler.currentOnCore e) st' outcome hDInv
-  have hCov := stepCovers_trans (stepCovers_trans hDc hStage)
+  obtain ⟨hDrop, hDropInv⟩ := dropReturnedContextCaller_stepCovers e
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv trapped.syscallId) (Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+      ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e))
+    ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e) _ hStageInv
+  have hCov := stepCovers_trans (stepCovers_trans (stepCovers_trans hDc hStage) hDrop)
     (scheduleLocalSuccessorFrom_stepCovers e
       ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
-        bytes n).scheduler.currentOnCore e) _ hStageInv)
+        bytes n).scheduler.currentOnCore e) _ hDropInv)
   have K := residentTcbKeptOffCore_of_save_stepCovers hM0 hT0 hCov
   exact ResidentsHaveTcbs.clearLedgers'
     (settleThenActivateOnCore_residentsHaveTcbs hT hInvM K.1 K.2

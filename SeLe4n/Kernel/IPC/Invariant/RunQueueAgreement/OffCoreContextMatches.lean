@@ -348,28 +348,32 @@ theorem contextMatchesCurrentOnCore_clearLedgers' {X : SystemState} {d : CoreId}
 
 /-- WS-ZA ZA6.28: **the syscall commit tail writes the saved registers of no
 thread current on another core**: the caller's return staging writes the caller,
-which no other core held at the entry's start (`base`); the local scheduling
+which no other core held at the entry's start (`base`); the drop of a caller
+whose lent context went back writes no saved register; the local scheduling
 point and the activation each write the executing core's current thread, current
 nowhere else; and the residency settle writes no saved register
 (`settleResidencyOnCore_savedRegs`). -/
 theorem syscallCommitTail_currentSavedRegsKeptOffCore {e : CoreId} {base post : SystemState}
-    (caller? : Option SeLe4n.ThreadId) (o : Architecture.SyscallOutcome)
+    (returnable : Bool) (caller? : Option SeLe4n.ThreadId) (o : Architecture.SyscallOutcome)
     (hInv : post.objects.invExt) (hRef : post.runQueueRefined)
     (hDU : post.currentDequeuedUnique)
     (hFree : ∀ tid, caller? = some tid → offCoreFree e base tid)
     (hK : currentKeptOffCore e base post) (hR : residentKeptOffCore e base post) :
     currentSavedRegsKeptOffCore e post (activateThreadOnCore (settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessorFrom caller?
-        (Architecture.stageCallerReturnFor caller? post e o) e) e) e) := by
+        (dropReturnedContextCaller returnable caller?
+          (Architecture.stageCallerReturnFor caller? post e o) e) e) e) e) := by
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e caller? post o hInv
-  have hSucc := scheduleLocalSuccessorFrom_stepCovers e caller? _ hStageInv
-  have hSuccInv := scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _ hStageInv
+  obtain ⟨hDrop, hDropInv⟩ := dropReturnedContextCaller_stepCovers e returnable caller? _ hStageInv
+  have hSucc := scheduleLocalSuccessorFrom_stepCovers e caller? _ hDropInv
+  have hSuccInv := scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _ hDropInv
   have hSettle := settleResidencyOnCore_stepCovers e _ hSuccInv
   have hSettleInv := settleResidencyOnCore_preserves_objects_invExt e _ hSuccInv
   have hAct := activateThreadOnCore_stepCovers e _ hSettleInv
   have uniq : ∀ {X : SystemState}, SystemState.RunQueueEntryStage post X → currentsUnique X :=
     fun St => currentsUnique_of_dequeuedUnique (St.2 hInv hRef (St.1.links hInv hRef).2 hDU)
-  have B := (stageCallerReturnFor_runQueueStage caller? post e o).entry
+  have B := (stageCallerReturnFor_runQueueStage caller? post e o).entry.trans
+    (dropReturnedContextCaller_runQueueStage returnable caller? _ e).entry
   have Full := (B.trans (scheduleLocalSuccessorFrom_runQueueEntryStage caller? _ e)).trans
     (settleThenActivateOnCore_runQueueEntryStage _ e)
   have c2 : currentSavedRegsKeptOffCore e post
@@ -378,9 +382,18 @@ theorem syscallCommitTail_currentSavedRegsKeptOffCore {e : CoreId} {base post : 
     cases caller? with
     | none => cases o <;> exact savedRegsKeptOffCore_refl e _
     | some tid => exact stageCallerReturnFor_savedRegsKeptOffCore o hInv (hFree tid rfl) hK hR
-  have c3 : currentSavedRegsKeptOffCore e (Architecture.stageCallerReturnFor caller? post e o)
+  have cD : currentSavedRegsKeptOffCore e (Architecture.stageCallerReturnFor caller? post e o)
+      (dropReturnedContextCaller returnable caller?
+        (Architecture.stageCallerReturnFor caller? post e o) e) :=
+    currentSavedRegsKeptOffCore_of_kept
+      (dropReturnedContextCaller_induct (fun a b => savedRegsUnwritten a b) returnable caller? _ e
+        (.refl hStageInv) (fun t => .of_removeRunnableOnCore _ t e hStageInv)).1
+      (fun _ h => h.elim)
+  have c3 : currentSavedRegsKeptOffCore e (dropReturnedContextCaller returnable caller?
+        (Architecture.stageCallerReturnFor caller? post e o) e)
       (PriorityInheritance.scheduleLocalSuccessorFrom caller?
-        (Architecture.stageCallerReturnFor caller? post e o) e) := by
+        (dropReturnedContextCaller returnable caller?
+          (Architecture.stageCallerReturnFor caller? post e o) e) e) := by
     refine currentSavedRegsKeptOffCore_of_current ?_ (uniq B) hSucc.currentKept
     unfold PriorityInheritance.scheduleLocalSuccessorFrom
     split
@@ -388,7 +401,7 @@ theorem syscallCommitTail_currentSavedRegsKeptOffCore {e : CoreId} {base post : 
       · rename_i st'' hRs
         rw [handleRescheduleSgiOnCore_eq_state] at hRs
         cases hRs
-        exact handleRescheduleOnCoreState_savedRegsKeptExcept _ e hStageInv
+        exact handleRescheduleOnCoreState_savedRegsKeptExcept _ e hDropInv
       · exact .refl _
     · exact .refl _
   have c4 := currentSavedRegsKeptOffCore_of_eq (e := e)
@@ -397,7 +410,8 @@ theorem syscallCommitTail_currentSavedRegsKeptOffCore {e : CoreId} {base post : 
     (activateThreadOnCore_savedRegsKeptExcept _ e hSettleInv)
     ((uniq Full).of_scheduler (activateThreadOnCore_scheduler _ e).symm) hAct.currentKept
   exact currentSavedRegsKeptOffCore_trans (currentSavedRegsKeptOffCore_trans
-    (currentSavedRegsKeptOffCore_trans c2 c3 hSucc.currentKept) c4 hSettle.currentKept)
+    (currentSavedRegsKeptOffCore_trans (currentSavedRegsKeptOffCore_trans c2 cD hDrop.currentKept)
+      c3 hSucc.currentKept) c4 hSettle.currentKept)
     c5 hAct.currentKept
 
 section
@@ -412,7 +426,7 @@ thread current on another core, writes no other core's bank, and writes the
 saved registers of no thread current on another core
 (`syscallCommitTail_currentSavedRegsKeptOffCore`). -/
 theorem syscallCommitTail_contextMatchesCurrentOffCore {e : CoreId} {base post : SystemState}
-    (caller? : Option SeLe4n.ThreadId) (o : Architecture.SyscallOutcome)
+    (returnable : Bool) (caller? : Option SeLe4n.ThreadId) (o : Architecture.SyscallOutcome)
     (hDc : stepCovers e base post) (hDS : savedRegsKeptOffCore e base post)
     (hInv : post.objects.invExt) (hRef : post.runQueueRefined)
     (hDU : post.currentDequeuedUnique)
@@ -421,15 +435,17 @@ theorem syscallCommitTail_contextMatchesCurrentOffCore {e : CoreId} {base post :
     contextMatchesCurrentOnCore (Architecture.clearPhysicalWrites
       (Architecture.clearIcacheMaintenance (activateThreadOnCore (settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom caller?
-          (Architecture.stageCallerReturnFor caller? post e o) e) e) e))) d := by
-  have hTail := stepCovers_trans (syscallCommitTail_stepCovers e caller? post o hInv)
+          (dropReturnedContextCaller returnable caller?
+            (Architecture.stageCallerReturnFor caller? post e o) e) e) e) e))) d := by
+  have hTail := stepCovers_trans (syscallCommitTail_stepCovers e returnable caller? post o hInv)
     (activateThreadOnCore_stepCovers e _ (settleResidencyOnCore_preserves_objects_invExt e _
       (scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _
-        (stageCallerReturnFor_stepCovers e caller? post o hInv).2)))
+        (dropReturnedContextCaller_stepCovers e returnable caller? _
+          (stageCallerReturnFor_stepCovers e caller? post o hInv).2).2)))
   have hCov := stepCovers_trans hDc hTail
   have hS := currentSavedRegsKeptOffCore_trans
     (currentSavedRegsKeptOffCore_of_savedRegsKeptOffCore hDS)
-    (syscallCommitTail_currentSavedRegsKeptOffCore caller? o hInv hRef hDU hFree
+    (syscallCommitTail_currentSavedRegsKeptOffCore returnable caller? o hInv hRef hDU hFree
       hDc.currentKept hDc.residentKept) hTail.currentKept
   exact contextMatchesCurrentOnCore_clearLedgers'
     (contextMatchesCurrentOnCore_offCore hCov.currentKept hCov.banksKept hS d hd h)
@@ -457,7 +473,7 @@ theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOffCore {ctx : Labelin
   have A := syscallDispatchFromAbi_runQueueEntryStage E hD
   have hL := A.1.links E.objInv E.refined
   rw [syscallDispatchCrossCoreStep_of_ok hD]
-  exact syscallCommitTail_contextMatchesCurrentOffCore _ outcome hDc
+  exact syscallCommitTail_contextMatchesCurrentOffCore _ _ outcome hDc
     (syscallDispatchFromAbi_savedRegsKeptOffCore E hRT hN hB hBNR hYA hYN hPlaced hAwayCur hD)
     hDInv hL.2 (A.2 E.objInv E.refined hL.2 E.dequeued)
     (fun _ hCur => offCoreFree_of_current hCur hU hN) d hd h

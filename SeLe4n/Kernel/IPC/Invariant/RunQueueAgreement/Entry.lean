@@ -734,7 +734,8 @@ theorem stageCallerReturnFor_runQueueStage (caller? : Option SeLe4n.ThreadId)
   | resumes => exact RunQueueStage.refl _
 
 /-- **The syscall step keeps the agreement**: the ABI dispatch, the caller's
-return staging, the local scheduling point, the residency settlement and the
+return staging, the drop of a caller whose lent context went back, the local
+scheduling point, the residency settlement and the
 ledger drains. -/
 theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
@@ -747,7 +748,10 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
     x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
-    (((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
+    ((((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
+    (dropReturnedContextCaller_runQueueStage
+      (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st (st.scheduler.currentOnCore e))
+      (st.scheduler.currentOnCore e) _ e).entry).trans
     (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
     (settleThenActivateOnCore_runQueueEntryStage _ e)).trans
     (clearLedgers_runQueueStage' _).entry).toOn _)
