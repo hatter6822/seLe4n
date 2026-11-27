@@ -1,3 +1,40 @@
+## v0.37.64 — The capability install checked first; the reply-receive proofs compile no splitter (WS-SX SX35)
+
+SX35 is on SX34 and closes what SX34 left under D64.  It changes no
+behaviour: each changed definition is equal to its specification
+unconditionally.
+
+- **The install checked first (SX35.1).**  `ipcUnwrapCapsLoop` reads
+  each install's admission — the source slot, the untyped derivation
+  rule and the destination checks of `ipcTransferSingleCap` — on the
+  turn's state (`transferInstallAdmitted`), then runs the install with
+  no refusal left (`transferInstallPerform`) or stops on that state.
+  The `.error` fallback no longer keeps the loop's entry state live
+  across the install, so the class (d) hold SX34 exposed is gone.
+  `ipcUnwrapCapsLoop_succ` is the specification's turn, unconditionally;
+  `ipcUnwrapCapsLoop_rel` and the five capability-transfer consumer
+  proofs are re-proved over it, their statements unchanged.  WS-CK's CK2 cites this for the loop.
+- **The proofs module (SX35.2).**  The reply-receive's equalities move
+  to `RefusalCarryingReplyRecvEquations.lean`, statements unchanged.
+  A match splitter is compiled code, generated in the module whose
+  proof first needs it, so the proofs no longer `split` a match or let
+  a `simp` meet one it cannot reduce: they case on the discriminant,
+  reduce with `dsimp`, and rewrite with `rw` or a `simp -iota`.
+  Neither module now compiles a splitter (51 before, the two SX34
+  added among them).
+- **Measured.**  `RefusalCarryingReplyRecv.c` is 12,888,652 bytes and
+  the equations module's C 1,261, 12,889,913 together against the
+  12,941,835 bound (51,922 under; 76,514 under SX34's pair).  The file
+  compiles in 496 s (SX34's 495 s, SX29's 517 s on the same machine):
+  the splitters were cheap to compile, so the size fell and the time
+  did not.  On the general path (the in-place takes unrouted) no
+  reply-receive reads a 1 MB cell on either lane: the four that install
+  a capability read 133 to 960 cells, 7,072 to 31,600 bytes (one 1 MB
+  cell each at SX34), the own-context step 87 cells, 4,776 bytes.  The
+  IR measurement reads 1,493 holds against 1,494, none in
+  `ipcUnwrapCapsLoop`.  Every other heap reading is 0.
+- **Plans.**  SX35 landed; the closing rows stay SX36–SX48.
+
 ## v0.37.63 — A refused reply-receive reports where its receive stopped (WS-SX SX34)
 
 SX34 is on SX33.  It changes behaviour, on states off the invariant
