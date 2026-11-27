@@ -7566,10 +7566,18 @@ def replyRecvAnsweringThen (ctx : LabelingContext)
 
 /-- **The `.replyRecv` syscall in seL4's order** (`SysReplyRecv`:
 `handleInvocation` on the reply capability, then `handleRecv`): where the reply
-answers a caller, the reply step, then the receive capability's lookup, kind,
-right and flow gate on the state it left (`replyRecvReceiveEndpoint`), then the
-receive; otherwise the receive alone, through the syscall gate on the state
-handed in, as before. -/
+answers a caller and the receive capability is refused on the state handed in,
+the reply step, then the receive capability's lookup, kind, right and flow gate
+on the state it left (`replyRecvReceiveEndpoint`), then the receive; otherwise
+the receive through the syscall gate on the state handed in, as before.
+
+Where the receive capability passes on the state handed in, the reply step
+keeps its resolution, its verdicts and so its endpoint, on every state whose
+object store is well formed (`replyRecvReplyStep_cnodeSlotsKept`), so the two
+orders are one there (`dispatchReplyRecvAfterReply_eq_sel4Order`): the entry's
+resolution is the one `handleRecv` reads after the reply.  Only a capability
+the entry refuses can read differently after the reply (an empty slot the
+reply's capability transfer filled), and that case is read after the reply. -/
 def dispatchReplyRecvAfterReply (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) :
     Kernel Unit :=
@@ -7579,8 +7587,13 @@ def dispatchReplyRecvAfterReply (ctx : LabelingContext) (decoded : SyscallDecode
       syscallInvokeTyped .replyRecv gate none
         (dispatchWithCapChecked ctx decoded tid executingCore gate) st
     | some (rid, prevCaller, replyBadge, replyGrant) =>
-      replyRecvAnsweringThen ctx (replyRecvReceiveEndpoint ctx gate tid) decoded tid executingCore
-        rid prevCaller replyBadge replyGrant st
+      match replyRecvReceiveEndpoint ctx gate tid st with
+      | .ok _ =>
+        syscallInvokeTyped .replyRecv gate none
+          (dispatchWithCapChecked ctx decoded tid executingCore gate) st
+      | .error _ =>
+        replyRecvAnsweringThen ctx (replyRecvReceiveEndpoint ctx gate tid) decoded tid
+          executingCore rid prevCaller replyBadge replyGrant st
 
 
 /-- **A checked syscall's arm, after the caller and its gate are known**: the
@@ -7796,6 +7809,14 @@ theorem dispatchReplyRecvAfterReply_ok {ctx : LabelingContext} {decoded : Syscal
   | some a =>
     obtain ⟨rid, prevCaller, replyBadge, replyGrant⟩ := a
     rw [hAns] at h
+    dsimp only at h
+    cases hEp0 : replyRecvReceiveEndpoint ctx gate tid st with
+    | ok _ =>
+      rw [hEp0] at h
+      obtain ⟨cap, hL, hA, hD⟩ := syscallInvokeTyped_ok _ _ _ st () st' h
+      exact ⟨st, cap, fun _ => rfl, hL, hA, hD⟩
+    | error _ =>
+    rw [hEp0] at h
     dsimp only at h
     obtain ⟨hX, hRr, hAw⟩ := replyRecvAnsweringReply?_some hAns
     dsimp only at hAw
