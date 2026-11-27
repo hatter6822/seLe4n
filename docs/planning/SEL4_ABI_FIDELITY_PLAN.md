@@ -1167,9 +1167,10 @@ A different answer changes only the rows that cite it.
     counterparts of the type and right orders are
     `dispatchReplyRecvAfterReply_type_after_reply` and
     `dispatchReplyRecvAfterReply_right_after_reply` (the reply step, then
-    the entry's verdict), the first for a capability naming no untyped
-    object, since the frame keeps an untyped capability only up to its free
-    index.
+    the entry's verdict), for any capability: the frame keeps every slot's
+    target, and changes an untyped capability's free index alone, while the
+    type verdict reads the target, so neither carries a hypothesis on the
+    kind of object the capability names.
   - **A receive refused after the reply has one outcome on both arms**
     (SX36's third session). In seL4 the reply is complete
     (`handleInvocation`) before `handleRecv` runs, and its signal path

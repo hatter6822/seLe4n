@@ -344,9 +344,10 @@ theorem replyRecvAnsweringThen_congr {ctx : LabelingContext}
 /-- **An answering reply-receive refuses a receive capability of the wrong type
 after the reply, whatever rights it carries** (seL4's `handleRecv`, run after
 `handleInvocation` on the reply capability): over a well-formed object store, a
-receive capability that resolves on entry to a capability naming no untyped
-object and is not of the receive's type makes the dispatch the reply step, then
-`.invalidCapability 0`.  The answering counterpart of
+receive capability that resolves on entry to a capability not of the receive's
+type makes the dispatch the reply step, then `.invalidCapability 0`.  The reply
+may rewrite an untyped capability's free index, never its target, and the type
+verdict reads the target alone.  The answering counterpart of
 `dispatchSyscallChecked_type_before_rights`; there is no `hasRight` hypothesis. -/
 theorem dispatchReplyRecvAfterReply_type_after_reply {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
@@ -355,7 +356,7 @@ theorem dispatchReplyRecvAfterReply_type_after_reply {ctx : LabelingContext}
     (hSid : decoded.syscallId = .replyRecv) (hInv : st.objects.invExt)
     (hAns : replyRecvAnsweringReply? ctx gate decoded tid st =
       some (rid, prevCaller, replyBadge, replyGrant))
-    (hR : syscallResolveCap gate st = .ok (cap, st)) (hU : ¬ capNamesUntyped st cap)
+    (hR : syscallResolveCap gate st = .ok (cap, st))
     (hType : syscallTargetAccepted .replyRecv st cap = false) :
     dispatchReplyRecvAfterReply ctx decoded tid executingCore gate st =
       replyRecvAnsweringThen ctx (fun _ => .error (.invalidCapability 0)) decoded tid
@@ -363,10 +364,12 @@ theorem dispatchReplyRecvAfterReply_type_after_reply {ctx : LabelingContext}
   rw [dispatchReplyRecvAfterReply_eq_sel4Order hSid hInv hAns]
   apply replyRecvAnsweringThen_congr hInv
   intro s hK
+  obtain ⟨c', hc', hT', -⟩ := syscallResolveCap_target_of_cnodeSlotsKept hK gate hR
   unfold replyRecvReceiveEndpoint
-  rw [syscallResolveCap_of_cnodeSlotsKept hK gate hR hU]
+  rw [hc']
   dsimp only
-  rw [syscallTargetAccepted_of_cnodeSlotsKept hK, hType]
+  rw [syscallTargetAccepted_congr_target .replyRecv s hT',
+    syscallTargetAccepted_of_cnodeSlotsKept hK, hType]
   rfl
 
 /-- **An answering reply-receive refuses a receive capability without the

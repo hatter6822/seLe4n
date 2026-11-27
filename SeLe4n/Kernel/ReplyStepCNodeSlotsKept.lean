@@ -82,16 +82,18 @@ theorem of_agreeOffDerivationLinks (h : SystemState.objectsAgreeOffDerivationLin
   · rw [SystemState.getCNode?_eq_some_iff] at hC
     obtain ⟨cn', hb, hw⟩ := (h id).cnode_fwd hC
     refine ⟨cn', (SystemState.getCNode?_eq_some_iff _ _ _).mpr hb,
-      CNode.proj_eq_of_withoutLinks_eq (·.radixWidth) hw, fun s c hL _ => ?_⟩
+      CNode.proj_eq_of_withoutLinks_eq (·.radixWidth) hw, fun s c hL => ⟨c, ?_, rfl, fun _ => rfl⟩⟩
     rw [CNode.proj_eq_of_withoutLinks_eq (·.lookup s) hw]; exact hL
 
-/-- A write of one CNode that keeps its radix and every capability it holds
-naming no untyped object keeps every CNode. -/
+/-- A write of one CNode that keeps its radix and every slot it fills, with a
+capability naming the same target, the very capability when it names no
+untyped object, keeps every CNode. -/
 theorem of_cnodeWrite {a : SeLe4n.ObjId} {cn cn' : CNode}
     (hPre : st.objects[a]? = some (.cnode cn)) (hPost : st'.objects[a]? = some (.cnode cn'))
     (hNe : ∀ oid, oid ≠ a → st'.objects[oid]? = st.objects[oid]?)
     (hR : cn'.radixWidth = cn.radixWidth)
-    (hL : ∀ s c, cn.lookup s = some c → ¬ capNamesUntyped st c → cn'.lookup s = some c) :
+    (hL : ∀ s c, cn.lookup s = some c → ∃ c', cn'.lookup s = some c' ∧ c'.target = c.target ∧
+      (¬ capNamesUntyped st c → c' = c)) :
     CNodeSlotsKept st st' := by
   refine ⟨fun id => ?_, fun id cn0 hC => ?_⟩
   · by_cases e : id = a
@@ -103,7 +105,7 @@ theorem of_cnodeWrite {a : SeLe4n.ObjId} {cn cn' : CNode}
       rw [hPre] at hC; cases hC
       exact ⟨cn', (SystemState.getCNode?_eq_some_iff _ _ _).mpr hPost, hR, hL⟩
     · exact ⟨cn0, (SystemState.getCNode?_eq_some_iff _ _ _).mpr ((hNe id e).trans hC), rfl,
-        fun _ _ h _ => h⟩
+        fun _ c h => ⟨c, h, rfl, fun _ => rfl⟩⟩
 
 end CNodeSlotsKept
 
@@ -115,12 +117,13 @@ theorem cspaceInsertSlot_cnodeSlotsKept {dst : CSpaceAddr} {cap : Capability}
   have hPre := (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hGet
   refine CNodeSlotsKept.of_cnodeWrite hPre (storeObject_objects_eq _ _ _ _ hInv hStore)
     (fun oid hne => cspaceInsertSlot_preserves_objects_ne st st' dst cap oid hne hInv h)
-    (CNode.insert_radixWidth _ _ _) (fun s c hL _ => ?_)
+    (CNode.insert_radixWidth _ _ _) (fun s c hL => ⟨c, ?_, rfl, fun _ => rfl⟩)
   have hs : dst.slot ≠ s := fun e => by subst e; rw [hEmpty] at hL; cases hL
   rw [CNode.lookup_insert_ne cn dst.slot s cap hs (CNode.slotsUnique_holds _)]; exact hL
 
 /-- A free-index write at a slot holding a capability naming an untyped object
-keeps every CNode: it rewrites that capability alone. -/
+keeps every CNode: it rewrites that capability's free index alone, so the slot
+names the same target. -/
 theorem setCapFreeIndex_cnodeSlotsKept {a : CSpaceAddr} {idx : Nat} {st : SystemState}
     (hInv : st.objects.invExt)
     (hU : ∀ c, SystemState.lookupSlotCap st a = some c → capNamesUntyped st c) :
@@ -133,13 +136,15 @@ theorem setCapFreeIndex_cnodeSlotsKept {a : CSpaceAddr} {idx : Nat} {st : System
     | cnode cn =>
       refine CNodeSlotsKept.of_cnodeWrite hO (setCapFreeIndex_objects_self hInv hO)
         (fun oid hne => setCapFreeIndex_objects_ne hInv hne) (CNode.setFreeIndex_radixWidth _ _ _)
-        (fun s c hL hNU => ?_)
+        (fun s c hL => ?_)
       by_cases e : a.slot = s
       · subst e
-        refine absurd (hU c ?_) hNU
-        unfold SystemState.lookupSlotCap SystemState.lookupCNode
-        rw [hO]; exact hL
-      · rw [CNode.lookup_setFreeIndex_ne _ _ e]; exact hL
+        refine ⟨c.withFreeIndex idx, ?_, Capability.withFreeIndex_target c idx, fun hNU => ?_⟩
+        · rw [CNode.lookup_setFreeIndex_self, hL]; rfl
+        · refine absurd (hU c ?_) hNU
+          unfold SystemState.lookupSlotCap SystemState.lookupCNode
+          rw [hO]; exact hL
+      · exact ⟨c, by rw [CNode.lookup_setFreeIndex_ne _ _ e]; exact hL, rfl, fun _ => rfl⟩
     | _ => exact .of_objects_eq (by unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO])
 
 /-- **Setting a derivation's source full keeps every CNode**, when the source

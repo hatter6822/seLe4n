@@ -19,11 +19,14 @@ an untyped source's free index.  So a slot that held a capability still holds
 it, and a resolution that reached a capability still reaches it.
 
 `CNodeSlotsKept st st'` is that frame: every object keeps its kind, and every
-CNode keeps its radix and every capability it holds, those naming an untyped
-object up to their free index.  Over it, a walk that stopped at an occupied
-slot stops there again (`resolveAddressBits_of_cnodeSlotsKept`), and a
-resolution of a capability naming no untyped object resolves to the same
-capability (`syscallResolveCap_of_cnodeSlotsKept`), with the same type verdict
+CNode keeps its radix and every slot it fills, with a capability naming the
+same target; one naming no untyped object is kept whole, one naming an untyped
+object up to its free index.  Over it, a walk that stopped at an occupied slot
+stops there again (`resolveAddressBits_of_cnodeSlotsKept`), a resolution
+resolves to a capability naming the same target
+(`syscallResolveCap_target_of_cnodeSlotsKept`), to the same capability when it
+names no untyped object (`syscallResolveCap_of_cnodeSlotsKept`), and the type
+verdict, which reads the target alone, is kept
 (`syscallTargetAccepted_of_cnodeSlotsKept`).
 -/
 
@@ -37,24 +40,25 @@ def capNamesUntyped (st : SystemState) (c : Capability) : Prop :=
   ∃ oid, c.target = .object oid ∧ (st.getUntyped? oid).isSome
 
 /-- **Every CNode kept with every capability it holds**: each object keeps its
-kind, and each CNode its radix and each capability it holds that names no
-untyped object. -/
+kind, and each CNode its radix and each slot it fills, with a capability naming
+the same target, the very capability when it names no untyped object. -/
 structure CNodeSlotsKept (st st' : SystemState) : Prop where
   kind : ∀ id : SeLe4n.ObjId, (st'.objects[id]?).map KernelObject.objectType =
     (st.objects[id]?).map KernelObject.objectType
   cnode : ∀ (id : SeLe4n.ObjId) (cn : CNode), st.getCNode? id = some cn → ∃ cn', st'.getCNode? id = some cn' ∧
     cn'.radixWidth = cn.radixWidth ∧
-    ∀ s c, cn.lookup s = some c → ¬ capNamesUntyped st c → cn'.lookup s = some c
+    ∀ s c, cn.lookup s = some c → ∃ c', cn'.lookup s = some c' ∧ c'.target = c.target ∧
+      (¬ capNamesUntyped st c → c' = c)
 
 namespace CNodeSlotsKept
 
 variable {st st' st'' : SystemState}
 
 theorem refl (st : SystemState) : CNodeSlotsKept st st :=
-  ⟨fun _ => rfl, fun _ cn h => ⟨cn, h, rfl, fun _ _ hL _ => hL⟩⟩
+  ⟨fun _ => rfl, fun _ cn h => ⟨cn, h, rfl, fun _ c hL => ⟨c, hL, rfl, fun _ => rfl⟩⟩⟩
 
 theorem of_objects_eq (h : st'.objects = st.objects) : CNodeSlotsKept st st' := by
-  refine ⟨fun id => by rw [h], fun id cn hC => ⟨cn, ?_, rfl, fun _ _ hL _ => hL⟩⟩
+  refine ⟨fun id => by rw [h], fun id cn hC => ⟨cn, ?_, rfl, fun _ c hL => ⟨c, hL, rfl, fun _ => rfl⟩⟩⟩
   rw [SystemState.getCNode?_eq_some_iff] at hC ⊢
   rw [h]; exact hC
 
@@ -102,13 +106,18 @@ theorem trans (h₁ : CNodeSlotsKept st st') (h₂ : CNodeSlotsKept st' st'') :
   refine ⟨fun id => (h₂.kind id).trans (h₁.kind id), fun id cn hC => ?_⟩
   obtain ⟨cn', hC', hR', hL'⟩ := h₁.cnode id cn hC
   obtain ⟨cn'', hC'', hR'', hL''⟩ := h₂.cnode id cn' hC'
-  exact ⟨cn'', hC'', hR''.trans hR', fun s c hL hU =>
-    hL'' s c (hL' s c hL hU) (fun hU' => hU ((h₁.capNamesUntyped_iff c).mp hU'))⟩
+  refine ⟨cn'', hC'', hR''.trans hR', fun s c hL => ?_⟩
+  obtain ⟨c', hc', hT', hE'⟩ := hL' s c hL
+  obtain ⟨c'', hc'', hT'', hE''⟩ := hL'' s c' hc'
+  refine ⟨c'', hc'', hT''.trans hT', fun hU => ?_⟩
+  have e' := hE' hU
+  subst e'
+  exact hE'' fun hU' => hU ((h₁.capNamesUntyped_iff c').mp hU')
 
 /-- **A kind-preserving write keeps every CNode**: it writes no CNode at all. -/
 theorem of_kindPreservingWriteAt (h : ∀ oid, kindPreservingWriteAt st st' oid) :
     CNodeSlotsKept st st' := by
-  refine ⟨fun id => ?_, fun id cn hC => ⟨cn, ?_, rfl, fun _ _ hL _ => hL⟩⟩
+  refine ⟨fun id => ?_, fun id cn hC => ⟨cn, ?_, rfl, fun _ c hL => ⟨c, hL, rfl, fun _ => rfl⟩⟩⟩
   · rcases h id with e | ⟨pre, post, hp, hq, ht, -⟩
     · rw [e]
     · rw [hp, hq]; simp only [Option.map_some, ht]
@@ -143,19 +152,20 @@ theorem isCNodeCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept 
   cases c.target <;> simp [h.getCNode?_isSome]
 
 /-- **A walk that stopped at an occupied slot stops there again**: over a step
-that keeps every CNode, a resolution whose slot holds a capability naming no
-untyped object passes the same guards and radices, descends through the same
-CNode capabilities and stops at the same slot with the same bits left. -/
+that keeps every CNode, a resolution whose slot holds a capability passes the
+same guards and radices, descends through the same CNode capabilities and stops
+at the same slot with the same bits left (the slot it stops at holds a
+capability naming the same target, so not a CNode one). -/
 theorem resolveAddressBits_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept st st')
     (cptr : SeLe4n.CPtr) :
     ∀ (nBits : Nat) (nodeCap : Capability) (ref : SlotRef) (rem : Nat) (c : Capability),
       resolveAddressBits nodeCap cptr nBits st = .ok (ref, rem) →
-      SystemState.lookupSlotCap st ref = some c → ¬ capNamesUntyped st c →
+      SystemState.lookupSlotCap st ref = some c →
       resolveAddressBits nodeCap cptr nBits st' = .ok (ref, rem) := by
   intro nBits
   induction nBits using Nat.strongRecOn with
   | _ n ih =>
-    intro nodeCap ref rem c hR hLk hU
+    intro nodeCap ref rem c hR hLk
     rw [resolveAddressBits] at hR ⊢
     cases hT : nodeCap.target with
     | object id =>
@@ -187,20 +197,18 @@ theorem resolveAddressBits_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSl
               | some cap =>
                 intro hR
                 dsimp only at hR
-                have hNU : ¬ capNamesUntyped st cap := by
-                  by_cases hI : isCNodeCap st cap = true
-                  · exact not_capNamesUntyped_of_isCNodeCap hI
-                  · rw [if_neg hI] at hR
-                    cases hR
-                    unfold SystemState.lookupSlotCap SystemState.lookupCNode at hLk
-                    rw [(SystemState.getCNode?_eq_some_iff st id cn).mp hC] at hLk
-                    dsimp only at hLk
-                    rw [hS] at hLk; cases hLk; exact hU
-                rw [hKeep _ cap hS hNU]
+                obtain ⟨c', hc', hT', hE'⟩ := hKeep _ cap hS
+                rw [hc']
                 dsimp only
-                rw [isCNodeCap_of_cnodeSlotsKept h cap]
+                have hI' : isCNodeCap st' c' = isCNodeCap st cap := by
+                  rw [isCNodeCap_of_cnodeSlotsKept h c']
+                  unfold isCNodeCap
+                  rw [hT']
+                rw [hI']
                 by_cases hI : isCNodeCap st cap = true
-                · rw [if_pos hI] at hR ⊢; exact ih _ (by omega) cap ref rem c hR hLk hU
+                · rw [if_pos hI] at hR ⊢
+                  rw [hE' (not_capNamesUntyped_of_isCNodeCap hI)]
+                  exact ih _ (by omega) cap ref rem c hR hLk
                 · rw [if_neg hI] at hR ⊢; exact hR
               | none =>
                 intro hR
@@ -212,10 +220,12 @@ theorem resolveAddressBits_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSl
                 rw [hS] at hLk; cases hLk
     | _ => rw [hT] at hR; cases hR
 
-/-- A slot holding a capability naming no untyped object holds it again. -/
-theorem lookupSlotCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept st st')
-    {ref : SlotRef} {c : Capability} (hC : SystemState.lookupSlotCap st ref = some c)
-    (hU : ¬ capNamesUntyped st c) : SystemState.lookupSlotCap st' ref = some c := by
+/-- A slot holding a capability holds one naming the same target again, the
+very capability when it names no untyped object. -/
+theorem lookupSlotCap_target_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept st st')
+    {ref : SlotRef} {c : Capability} (hC : SystemState.lookupSlotCap st ref = some c) :
+    ∃ c', SystemState.lookupSlotCap st' ref = some c' ∧ c'.target = c.target ∧
+      (¬ capNamesUntyped st c → c' = c) := by
   unfold SystemState.lookupSlotCap SystemState.lookupCNode at hC ⊢
   cases hO : st.objects[ref.cnode]? with
   | none => rw [hO] at hC; cases hC
@@ -227,16 +237,26 @@ theorem lookupSlotCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKe
       obtain ⟨cn', hC', -, hKeep⟩ :=
         h.cnode ref.cnode cn ((SystemState.getCNode?_eq_some_iff st _ cn).mpr hO)
       rw [(SystemState.getCNode?_eq_some_iff st' _ cn').mp hC']
-      exact hKeep _ c hC hU
+      exact hKeep _ c hC
     | _ => cases hC
 
-/-- **A resolution of a capability naming no untyped object resolves to it
-again** over a step that keeps every CNode: the walk stops at the same slot
-(`resolveAddressBits_of_cnodeSlotsKept`) and the slot holds the same
-capability. -/
-theorem syscallResolveCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept st st')
-    (gate : SyscallGate) {cap : Capability} (hR : syscallResolveCap gate st = .ok (cap, st))
-    (hU : ¬ capNamesUntyped st cap) : syscallResolveCap gate st' = .ok (cap, st') := by
+/-- The reserved-object refusal reads a capability's target alone. -/
+theorem capTargetsReservedKernelObject_congr_target {c c' : Capability}
+    (h : c'.target = c.target) :
+    capTargetsReservedKernelObject c' = capTargetsReservedKernelObject c := by
+  unfold capTargetsReservedKernelObject
+  rw [h]
+
+/-- **A resolution resolves again, to a capability naming the same target**,
+over a step that keeps every CNode: the walk stops at the same slot
+(`resolveAddressBits_of_cnodeSlotsKept`), the slot holds a capability naming
+the same target, so not a reserved one, and the very capability when it names
+no untyped object. -/
+theorem syscallResolveCap_target_of_cnodeSlotsKept {st st' : SystemState}
+    (h : CNodeSlotsKept st st') (gate : SyscallGate) {cap : Capability}
+    (hR : syscallResolveCap gate st = .ok (cap, st)) :
+    ∃ cap', syscallResolveCap gate st' = .ok (cap', st') ∧ cap'.target = cap.target ∧
+      (¬ capNamesUntyped st cap → cap' = cap) := by
   unfold syscallResolveCap at hR ⊢
   cases hL : gate.lookupSlot st with
   | error f => rw [hL] at hR; cases hR
@@ -267,12 +287,22 @@ theorem syscallResolveCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlo
               rw [hW] at hL
               dsimp only at hL
               cases hL
-              rw [resolveAddressBits_of_cnodeSlotsKept h gate.capAddr 64 root _ rem cap hW hC hU]
+              rw [resolveAddressBits_of_cnodeSlotsKept h gate.capAddr 64 root _ rem cap hW hC]
         rw [hL']
         dsimp only
-        rw [lookupSlotCap_of_cnodeSlotsKept h hC hU]
+        obtain ⟨c', hc', hT', hE'⟩ := lookupSlotCap_target_of_cnodeSlotsKept h hC
+        rw [hc']
         dsimp only
-        rw [if_neg hRes]
+        rw [capTargetsReservedKernelObject_congr_target hT', if_neg hRes]
+        exact ⟨c', rfl, hT', hE'⟩
+
+/-- **A resolution of a capability naming no untyped object resolves to it
+again** over a step that keeps every CNode. -/
+theorem syscallResolveCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept st st')
+    (gate : SyscallGate) {cap : Capability} (hR : syscallResolveCap gate st = .ok (cap, st))
+    (hU : ¬ capNamesUntyped st cap) : syscallResolveCap gate st' = .ok (cap, st') := by
+  obtain ⟨c', hc', -, hE⟩ := syscallResolveCap_target_of_cnodeSlotsKept h gate hR
+  rw [hc', hE hU]
 
 /-- A kept kind keeps the kind an id holds, read in place. -/
 theorem objectKindIs_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKept st st')
@@ -296,6 +326,13 @@ theorem objectKindIs_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeSlotsKep
       simp only [Option.map_some, Option.some.injEq] at hK
       dsimp only
       rw [hK]
+
+/-- The type verdict reads a capability's target alone. -/
+theorem syscallTargetAccepted_congr_target (sid : SyscallId) (st : SystemState)
+    {c c' : Capability} (h : c'.target = c.target) :
+    syscallTargetAccepted sid st c' = syscallTargetAccepted sid st c := by
+  unfold syscallTargetAccepted
+  rw [h]
 
 /-- **The type verdict is kept**: the target type each syscall accepts reads
 the kind of the object a capability names, which a step that keeps every CNode
