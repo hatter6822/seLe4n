@@ -26,6 +26,36 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
+/-- **A step that covers the other cores and writes no saved register another
+core held keeps the executing core's bank match**: a thread current on the
+executing core after the step was current there before, so no other core held
+it, so its saved registers are kept, and so is the executing core's bank. -/
+theorem contextMatchesCurrentOnCore_of_stepCovers_writtenFree {e : CoreId} {s0 s : SystemState}
+    (hS : stepCovers (otherCore e) s0 s) (hW : savedRegsWrittenFree (otherCore e) s0 s0 s)
+    (hM : contextMatchesCurrentOnCore s0 e) : contextMatchesCurrentOnCore s e := by
+  cases hP : s.scheduler.currentOnCore e with
+  | none => unfold contextMatchesCurrentOnCore; rw [hP]; trivial
+  | some t =>
+    have hT := hS.currentKept e (ne_otherCore e) t hP
+    refine contextMatchesCurrentOnCore_of_savedRegs hP hT ?_ (hS.banksKept e (ne_otherCore e)) hM
+    rcases hW t with x | x
+    · exact x
+    · exact absurd hT (x e (ne_otherCore e)).1
+
+/-- **A refused reply-receive keeps the executing core's bank match** (WS-SX
+SX34): every leg it ran before it stopped covers the other cores, and it writes
+only the answered caller's saved registers, which no other core held. -/
+theorem replyRecvTransferStoppedState_contextMatchesCurrentOnCore {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {e : CoreId} {st : SystemState}
+    (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hInv : st.objects.invExt) (hM : contextMatchesCurrentOnCore st e) :
+    contextMatchesCurrentOnCore
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant e st) e :=
+  contextMatchesCurrentOnCore_of_stepCovers_writtenFree
+    (replyRecvTransferStoppedState_stepCovers (otherCore e) hInv).1
+    (replyRecvTransferStoppedState_savedRegsWrittenFree hD hRT hBNR hInv).1 hM
+
 /-- WS-ZA ZA6.28: **the syscall dispatch leaves the executing core's bank
 matching after the commit's staging**: from a match before the dispatch and
 after the argument spill, each of the dispatch's arms keeps it (see the module
