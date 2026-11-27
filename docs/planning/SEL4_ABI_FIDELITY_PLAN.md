@@ -1148,6 +1148,28 @@ A different answer changes only the rows that cite it.
     (`replyRecvReplyStep_cnodeSlotsKept`). A receive capability that does not
     resolve on entry declares no footprint and keeps the coarse
     serialisation.
+  - **The definition keeps the entry's order where the entry resolves the
+    receive capability** (SX36's fifth session's design, accepted
+    2026-11-27). `dispatchReplyRecvAfterReply` reads the receive capability
+    after the reply only where the reply answers a caller and the entry
+    refuses that capability; where the entry resolves it, the reply-receive
+    runs as before. seL4's order is a theorem,
+    `dispatchReplyRecvAfterReply_eq_sel4Order`: on a state whose object
+    store holds `objects.invExt`, every answering case is the reply step,
+    then the receive capability's read on the state it left. The two orders
+    can differ only off `objects.invExt`, where the reply step's frame
+    (`replyRecvReplyStep_cnodeSlotsKept`) is not proven. The definition
+    takes this shape because the compiled route's equations are
+    unconditional, and the entry-order branch keeps every in-place arm's
+    equation as it is. The difference goes away when WS-CK's CK1 puts
+    `objects.invExt` in the object table's type: CK1 then simplifies the
+    definition to seL4's order outright, and its row says so. The answering
+    counterparts of the type and right orders are
+    `dispatchReplyRecvAfterReply_type_after_reply` and
+    `dispatchReplyRecvAfterReply_right_after_reply` (the reply step, then
+    the entry's verdict), the first for a capability naming no untyped
+    object, since the frame keeps an untyped capability only up to its free
+    index.
   - **A receive refused after the reply has one outcome on both arms**
     (SX36's third session). In seL4 the reply is complete
     (`handleInvocation`) before `handleRecv` runs, and its signal path
