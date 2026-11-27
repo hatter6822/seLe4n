@@ -860,6 +860,16 @@ theorem donationPushFrame?_answer (Z : SystemState) (t : TCB) :
   | none => rfl
   | some rid => dsimp only; rw [getReply?_answer]
 
+theorem donationPushRefusal?_answer (Z : SystemState) (server : SeLe4n.ThreadId)
+    (old? : Option SeLe4n.ReplyId) (pushRid : SeLe4n.ReplyId) :
+    donationPushRefusal? (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ id κ)) server old? pushRid =
+      donationPushRefusal? Z server old? pushRid := by
+  unfold donationPushRefusal?
+  have hT : (lookupTcb (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ id κ)) server).isNone =
+      (lookupTcb Z server).isNone := by
+    rw [lookupTcb_answer']; cases lookupTcb Z server <;> rfl
+  simp only [getReply?_answer, hT]
+
 theorem storeDonationFramePush_answer (Z : SystemState) (scId : SeLe4n.SchedContextId)
     (pushRid : SeLe4n.ReplyId) (pushReply : Reply) (old? : Option SeLe4n.ReplyId)
     (hP : Z.getReply? pushRid ≠ none) (hNo : Z.objects.noResizeDue) :
@@ -961,6 +971,10 @@ theorem donateSchedContext_answer (Z : SystemState) (client server : SeLe4n.Thre
         | ok q =>
           obtain ⟨pushRid, pushReply⟩ := q
           obtain ⟨-, hR, -⟩ := donationPushFrame?_ok Z ct pushRid pushReply hP
+          dsimp only
+          rw [donationPushRefusal?_answer]
+          cases donationPushRefusal? Z server sc.scReply pushRid
+          case some => rfl
           dsimp only
           rw [storeObject_answer r ρ μ κ Z _ _ _ (objects_of_getSchedContext? hS) hNo
               (storeLeaves_schedContext hS _) (.inr ⟨rfl, rfl⟩),
@@ -1123,6 +1137,10 @@ theorem donateSchedContext_noResizeDue (Z Z' : SystemState) (client server : SeL
           obtain ⟨pushRid, pushReply⟩ := q
           obtain ⟨-, hR, -⟩ := donationPushFrame?_ok Z ct pushRid pushReply hP
           rw [hP] at h
+          dsimp only at h
+          cases hAd : donationPushRefusal? Z server sc.scReply pushRid
+          case some => rw [hAd] at h; cases h
+          rw [hAd] at h
           dsimp only at h
           rw [storeObject_eq_of_leaves (storeLeaves_schedContext hS _)] at h
           have hNo1 := fun o => insert_present_noResizeDue Z _ _ o (objects_of_getSchedContext? hS) hNo
@@ -1348,6 +1366,10 @@ theorem donateSchedContext_answerReadsKept (c : SeLe4n.ThreadId) (Z Z' : SystemS
           obtain ⟨pushRid, pushReply⟩ := q
           obtain ⟨-, hR, -⟩ := donationPushFrame?_ok Z ct pushRid pushReply hP
           rw [hP] at h
+          dsimp only at h
+          cases hAd : donationPushRefusal? Z server sc.scReply pushRid
+          case some => rw [hAd] at h; cases h
+          rw [hAd] at h
           dsimp only at h
           rw [storeObject_eq_of_leaves (storeLeaves_schedContext hS _)] at h
           have hNo1 := fun o => insert_present_noResizeDue Z _ _ o (objects_of_getSchedContext? hS) hNo

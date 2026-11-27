@@ -546,6 +546,11 @@ theorem donateSchedContext_ledger (st : SystemState) (c sv k) :
       | error e => rfl
       | ok q =>
         obtain ⟨pr, prp⟩ := q
+        dsimp only
+        rw [show donationPushRefusal? (recordPhysicalWrites st ws) sv sc.scReply pr =
+          donationPushRefusal? st sv sc.scReply pr from rfl]
+        cases donationPushRefusal? st sv sc.scReply pr
+        case some => rfl
         dsimp only; rw [storeObject_ledger]
         cases storeObject _ _ st with
         | error e => rfl

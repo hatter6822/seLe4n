@@ -1488,6 +1488,31 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentIdleState
   , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentStartedState
   , `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer
+  -- WS-SX SX34: the reply-receive's refusal-carrying pop, post-receive donation and
+  -- transition, each its specification with the refusal's state forgotten.  The
+  -- refusal-carrying reply-receive arms call the transition from SX34's second piece
+  -- on, and this census then refuses these rows as wired.
+  , `SeLe4n.Kernel.applyCallDonationOnCoreR
+  , `SeLe4n.Kernel.applyRendezvousCallDonationR
+  , `SeLe4n.Kernel.donateSchedContextR
+  , `SeLe4n.Kernel.endpointReplyRecvAnsweringBodyR
+  , `SeLe4n.Kernel.keepDonatedSchedContextR
+  , `SeLe4n.Kernel.keepDonatedSchedContextResolvedR
+  , `SeLe4n.Kernel.markKeyChangeOf
+  , `SeLe4n.Kernel.popUnheldReplyHeadR
+  , `SeLe4n.Kernel.receiveTransferCapsDone
+  , `SeLe4n.Kernel.replyRecvPopDonationR
+  , `SeLe4n.Kernel.replyRecvPostReceiveDonationR
+  , `SeLe4n.Kernel.replyRecvTransferOnCoreR
+  , `SeLe4n.Kernel.replyRecvTransferStoppedState
+  , `SeLe4n.Kernel.returnDonatedSchedContextR
+  , `SeLe4n.Kernel.returnDonatedSchedContextResolvedR
+  , `SeLe4n.Kernel.returnUnheldSchedContextR
+  , `SeLe4n.Kernel.severUnheldSchedContextR
+  , `SeLe4n.Kernel.storeDonationFramePushR
+  , `SeLe4n.Kernel.storeDonationHeadClearR
+  , `SeLe4n.Kernel.storeDonationHeadPopR
+  , `SeLe4n.Kernel.storeReplyReHeadR
   ]
 
 /-- The `private` members of the same set.

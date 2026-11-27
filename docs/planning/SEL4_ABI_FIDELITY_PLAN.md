@@ -1044,6 +1044,35 @@ A different answer changes only the rows that cite it.
   - The rows after SX33 are renumbered (SX34–SX45 became SX35–SX46): the
     gate is SX35, the QEMU scenarios SX36, the lock-set ceiling SX45 and the
     closure SX46.
+- **D62. SX34's donation is admitted before its first write.** *SX34's
+  measurement and the coordinator's ruling (2026-11-27), the owner's
+  checks-first ruling (as for the pop's admission, D60), so no new card.*
+  `donateSchedContext` refused at four points after a store: the pushed frame
+  named as its own predecessor, a frame below that does not resolve, and the
+  donor's and the server's thread lookups. A refusal-carrying form carries the
+  state at that point, a donation half done, and the report consumers' families
+  that take only `objects.invExt` cannot refute it. The ruling: an admission
+  (`donationPushRefusal?`) asks the three of those the state handed in can
+  answer, on that state, before the first store, with the error the later check
+  gives. The donor's lookup needs no admission: its key holds a thread, and no
+  store before it writes a thread.
+  - **The pair, under `objects.invExt`.** An admitted donation refuses only on
+    the state handed in (`donateSchedContextR_stops_at_entry`, lifted to the
+    rendezvous donation as `applyRendezvousCallDonationR_stops_at_entry`), and
+    a donation that succeeds was admitted (`donationPushRefusal?_eq_none_of_ok`).
+  - **The fast forms.** The in-place donation's guard implies the admission
+    with no invariant (`donateSchedContext_eq_inPlace` discharges it from its
+    own hypotheses), so every `@[csimp]` stays unconditional.
+  - **The defensive checks.** The four checks after the stores stay. They run
+    only off `objects.invExt`, and WS-CK's CK1 retires them.
+  - **Scope.** The admission is in the shared `donateSchedContext`, so the
+    `.call` and `.receive` donations are checked first too. On a state with a
+    well-formed object table their results are unchanged. The admission refuses
+    exactly where a later check would have, with the same error, because the
+    stores before those checks write a context, Replies and the donor's thread
+    at keys that hold no Reply the admission reads and no thread but the donor.
+    That argument is not yet a theorem: the converse of the pair, stated
+    against the stores, is open.
 
 ## 4. Rows
 
@@ -1752,7 +1781,7 @@ is 21,021,237 bytes and compiles in 769 s.
 - `RefusalCarryingReplyRecv.c` no larger than SX29's (12,944,474 bytes) (**not met**: 12,959,438 bytes, 14,964 bytes (0.12%) over, compiled in 427 s; the bound moves to SX34 with the general path's 1 MB cell);
 - every heap reading 0; the IR measurement run again and its count reported against 1,498 (**met**: 1,498, the same lines as SX32's).
 
-### SX34 — ReplyRecv's refused receive, and its wrappers carrying their callee's state (D53, D60, D61)
+### SX34 — ReplyRecv's refused receive, and its wrappers carrying their callee's state (D53, D60, D61, D62)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|

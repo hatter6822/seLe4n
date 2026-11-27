@@ -4841,6 +4841,16 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyR_eq($|[ ({:
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCoreR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCoreR_eq_reporting($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
 run_negative_check "INVARIANT" rg -n 'receiveTransferCaps req none target st1q' SeLe4n/Kernel/RefusalCarryingReplyRecvTransfer.lean
+# The donation's admission, read before its first write (WS-SX SX34, D62): the specification and its
+# refusal-carrying form both ask `donationPushRefusal?` of the state handed in, right after the push
+# frame resolves and before the context's store; the in-place donation's proof discharges it from its
+# own guard; an admitted donation refuses only on the state handed in, under `objects.invExt`.
+run_check "INVARIANT" rg -n -U '      \| \.ok \(pushRid, pushReply\) =>\n([ \t]*(--[^\n]*)?\n)*        match donationPushRefusal\? st serverTid sc\.scReply pushRid with\n        \| some e => \.error e\n        \| none =>\n([ \t]*(--[^\n]*)?\n)*        let sc. :=' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n -U '      \| \.ok \(pushRid, pushReply\) =>\n        match donationPushRefusal\? st serverTid sc\.scReply pushRid with\n        \| some e => \.error \(e, st\)\n        \| none =>\n        let clientKey' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n -U '^  rw \[donationPushRefusal\?_eq_none hNe$' SeLe4n/Kernel/IPC/Operations/DonationInPlace.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContextR_stops_at_entry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonationR_stops_at_entry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem donationPushRefusal\?_eq_none_of_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.

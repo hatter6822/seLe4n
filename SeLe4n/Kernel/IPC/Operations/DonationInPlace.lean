@@ -159,6 +159,11 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [donationPushFrame?_of st donor rid pr hRO hR hPrev hNext hCaller, hk]
   dsimp only
+  -- The admission, from the guard's own facts: no invariant is asked.
+  rw [donationPushRefusal?_eq_none hNe
+    (fun o h => by obtain ⟨oR, hOR⟩ := (hOld o h).1; rw [hOR]; rfl)
+    (by unfold lookupTcb; rw [hSRes]; simp only [Bool.false_eq_true, ↓reduceIte, hS]; rfl)]
+  dsimp only
   rw [show (⟨rid.val⟩ : SeLe4n.ReplyId) = rid from rfl, hR, hS]
   dsimp only
   simp only [SeLe4n.reuseSome_eq, ReplyStackLink.reuseHead_eq, ReplyStackLink.reuseFrame_eq]

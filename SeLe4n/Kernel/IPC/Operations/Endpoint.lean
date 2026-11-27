@@ -2580,6 +2580,53 @@ needed, because the resolver refuses on the pre-state shape alone. -/
     | bound scId => simp only [hB]
     | donated scId owner => simp only [hB]
 
+/-- **The donation's admission, read before its first write** (WS-SX SX34, the
+owner's checks-first ruling, seL4-MCS's `reply_push` / `schedContext_donate`,
+which cannot refuse once they have begun): every refusal `donateSchedContext`
+would otherwise reach only after a store -- the frame pushed onto itself, a frame
+below that does not resolve, a server that is not a thread -- asked of the state
+handed in, with the error the later check gives.  On a state whose object table
+is well formed the stores move none of these answers
+(`donateSchedContextR_stops_at_entry`, `donationPushRefusal?_eq_none_of_stored`),
+so the admission refuses exactly what the later checks would, and they stay as
+defensive checks that run only off `objects.invExt`. -/
+def donationPushRefusal? (st : SystemState) (serverTid : SeLe4n.ThreadId)
+    (oldHead? : Option SeLe4n.ReplyId) (pushRid : SeLe4n.ReplyId) : Option KernelError :=
+  -- Asked of the link itself, so the test builds no `some pushRid`.
+  match oldHead? with
+  | some old =>
+    if old == pushRid then some (.invalidArgument 0)
+    else if (st.getReply? old).isNone then some .objectNotFound
+    else if (lookupTcb st serverTid).isNone then some .objectNotFound else none
+  | none => if (lookupTcb st serverTid).isNone then some .objectNotFound else none
+
+/-- The admission passes where the frame is not its own predecessor, the frame
+below resolves and the server is a thread. -/
+theorem donationPushRefusal?_eq_none {st : SystemState} {serverTid : SeLe4n.ThreadId}
+    {oldHead? : Option SeLe4n.ReplyId} {pushRid : SeLe4n.ReplyId}
+    (hNe : oldHead? ≠ some pushRid)
+    (hOld : ∀ old, oldHead? = some old → (st.getReply? old).isSome = true)
+    (hS : (lookupTcb st serverTid).isSome = true) :
+    donationPushRefusal? st serverTid oldHead? pushRid = none := by
+  unfold donationPushRefusal?
+  have h3 : (lookupTcb st serverTid).isNone = false := by
+    cases h : lookupTcb st serverTid
+    · rw [h] at hS; cases hS
+    · rfl
+  cases oldHead? with
+  | none => simp only [h3, Bool.false_eq_true, ↓reduceIte]
+  | some old =>
+    have h1 : (old == pushRid) = false := by
+      cases h : (old == pushRid)
+      · rfl
+      · exact absurd (by rw [eq_of_beq h]) hNe
+    have h2 : (st.getReply? old).isNone = false := by
+      have hI := hOld old rfl
+      cases h : st.getReply? old
+      · rw [h] at hI; cases hI
+      · rfl
+    simp only [h1, h2, h3, Bool.false_eq_true, ↓reduceIte]
+
 /-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
 
 Performs the full ownership transfer of the SchedContext from donor to server,
@@ -2630,7 +2677,11 @@ owner, and the reply object (`blockedOnReply`) links the donor to the call so
 - Client has `schedContextBinding = .bound clientScId`
 - SchedContext `sc.boundThread = some clientTid`
 
-Returns the updated state or error if lookups fail.
+Returns the updated state or error if lookups fail.  **Checks first** (WS-SX
+SX34): every refusal is decided before the first store -- the later ones by
+`donationPushRefusal?`, read on the state handed in -- so a refused donation
+commits nothing; the lookups after the stores stay as defensive checks that
+run only where the object table is not well formed.
 
 **Atomicity contract (AC3-A / I-02)**:
 This function performs 4 sequential store steps (through states
@@ -2679,6 +2730,11 @@ def donateSchedContext
       match donationPushFrame? st donorTcb with
       | .error e => .error e
       | .ok (pushRid, pushReply) =>
+        -- WS-SX SX34 (checks first): every refusal the stores would otherwise
+        -- meet later, asked here, before the first of them.
+        match donationPushRefusal? st serverTid sc.scReply pushRid with
+        | some e => .error e
+        | none =>
         -- Step 2: Update SchedContext to point to the server, and make the
         -- donor's reply the new head of its donation stack (WS-OD OD4.1).  One
         -- store: the rebinding and the push are the same fact about the same
@@ -2793,6 +2849,9 @@ theorem donateSchedContext_ok_storeChain
           | error _ => intro h; cases h
           | ok frame =>
             obtain ⟨pushRid, pushReply⟩ := frame
+            simp only []
+            cases hAd : donationPushRefusal? st serverTid sc.scReply pushRid
+            case some => intro h; cases h
             simp only []
             cases hS1 : storeObject clientScId.toObjId
                 (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
