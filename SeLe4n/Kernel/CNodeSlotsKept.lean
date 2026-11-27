@@ -106,7 +106,8 @@ theorem trans (h₁ : CNodeSlotsKept st st') (h₂ : CNodeSlotsKept st' st'') :
     hL'' s c (hL' s c hL hU) (fun hU' => hU ((h₁.capNamesUntyped_iff c).mp hU'))⟩
 
 /-- **A kind-preserving write keeps every CNode**: it writes no CNode at all. -/
-theorem of_kindPreservingWrite (h : kindPreservingWrite st st') : CNodeSlotsKept st st' := by
+theorem of_kindPreservingWriteAt (h : ∀ oid, kindPreservingWriteAt st st' oid) :
+    CNodeSlotsKept st st' := by
   refine ⟨fun id => ?_, fun id cn hC => ⟨cn, ?_, rfl, fun _ _ hL _ => hL⟩⟩
   · rcases h id with e | ⟨pre, post, hp, hq, ht, -⟩
     · rw [e]
@@ -116,6 +117,10 @@ theorem of_kindPreservingWrite (h : kindPreservingWrite st st') : CNodeSlotsKept
     · rw [e]; exact hC
     · rw [hC] at hp; cases hp
       exact absurd (ht.trans rfl) hn
+
+/-- A kind-preserving write, its ghosts aside. -/
+theorem of_kindPreservingWrite (h : kindPreservingWrite st st') : CNodeSlotsKept st st' :=
+  of_kindPreservingWriteAt h.objectsAt
 
 end CNodeSlotsKept
 
