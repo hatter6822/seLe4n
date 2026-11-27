@@ -106,7 +106,7 @@
 > its fix became a new SX35, and SX35–SX46 became SX36–SX47.
 > SX34 ran past its stop line, so it was wrapped at its validated point (D64):
 > the install checked first and the C bound became a new SX35, and SX35–SX47
-> became SX36–SX48. SX34 landed at `v0.37.63`.
+> became SX36–SX48. SX34 landed at `v0.37.63`, and SX35 at `v0.37.64`.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX48, numbered in the order they are implemented, one PR each.
@@ -1948,19 +1948,21 @@ is 21,021,237 bytes and compiles in 769 s.
 
 ### SX35 — The install checked first, and the C bound (D64)
 
+**LANDED at `v0.37.64`.**
+
 SX34's remainder (D64): the general path's 1 MB cell on the capability
 installs, and `RefusalCarryingReplyRecv.c`'s size and compile bound.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX35.1 | `ipcUnwrapCapsLoop` holds nothing across an install: it reads each install's admission (`ipcTransferSingleCap`'s CNode, revocability, derivation and insert checks) on the state before the install writes, or it calls a refusal-carrying install that hands back the state it stopped in, so the `.error` fallback no longer keeps the loop's entry state live. This covers the reply-receive path's capability transfer (`receiveTransferCaps` under `endpointReplyRecvAnsweringBodyR`); WS-CK's class (d) row (CK2) cites it and does not redo the loop. | The loop's (or the install's) unconditional equality to its specification; `ipcUnwrapCapsLoop_rel` and the capability-transfer consumers restated over it. | Tier 3 anchors, relation-break-tested; the IR measurement shows no hold in `ipcUnwrapCapsLoop` |
-| SX35.2 | `RefusalCarryingReplyRecv.lean`'s proofs move into a proofs module of their own, following the Operations/Invariant split, so their compiled match splitters leave `RefusalCarryingReplyRecv.c`. The two splits SX34 added (`replyRecvReplyRefused`'s and `replyRecvAnsweringReport`'s) are avoided where a proof can do without them. | The moved proofs unchanged in statement; every consumer's import updated. | `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less, measured against kept copies of SX29's and SX34's generated C |
-| SX35.3 | Release, with the debug QEMU run on the general path (the in-place takes unrouted, the patch never committed) over the own-context reply-receive and the donating Call takes that install a capability. | none | no 1 MB cell on either lane (one per installs-cap form at SX34, D64); every other heap reading 0 |
+| SX35.1 | **LANDED at `v0.37.64`** (the loop reads `transferInstallAdmitted` on the turn's state and runs `transferInstallPerform` or stops on that state; `ipcUnwrapCapsLoop_succ` is the specification's turn, unconditionally). `ipcUnwrapCapsLoop` holds nothing across an install: it reads each install's admission (`ipcTransferSingleCap`'s CNode, revocability, derivation and insert checks) on the state before the install writes, or it calls a refusal-carrying install that hands back the state it stopped in, so the `.error` fallback no longer keeps the loop's entry state live. This covers the reply-receive path's capability transfer (`receiveTransferCaps` under `endpointReplyRecvAnsweringBodyR`); WS-CK's class (d) row (CK2) cites it and does not redo the loop. | The loop's (or the install's) unconditional equality to its specification; `ipcUnwrapCapsLoop_rel` and the capability-transfer consumers restated over it. | Tier 3 anchors, relation-break-tested; the IR measurement shows no hold in `ipcUnwrapCapsLoop` |
+| SX35.2 | **LANDED at `v0.37.64`** (the proofs are `RefusalCarryingReplyRecvEquations.lean`; none asks for a match's equations, so neither module compiles a splitter, the two SX34 added included). `RefusalCarryingReplyRecv.lean`'s proofs move into a proofs module of their own, following the Operations/Invariant split, so their compiled match splitters leave `RefusalCarryingReplyRecv.c`. The two splits SX34 added (`replyRecvReplyRefused`'s and `replyRecvAnsweringReport`'s) are avoided where a proof can do without them. | The moved proofs unchanged in statement; every consumer's import updated. | `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less, measured against kept copies of SX29's and SX34's generated C |
+| SX35.3 | **LANDED at `v0.37.64`.** Release, with the debug QEMU run on the general path (the in-place takes unrouted, the patch never committed) over the own-context reply-receive and the donating Call takes that install a capability. | none | no 1 MB cell on either lane (one per installs-cap form at SX34, D64); every other heap reading 0 |
 
 **Acceptance:**
-- no hold of the loop's state across an install, by the IR measurement;
-- `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less;
-- the general path's own-context and installs-cap steps read no 1 MB cell; every other heap reading 0.
+- no hold of the loop's state across an install, by the IR measurement (**met**: no hold in `ipcUnwrapCapsLoop`; 1,493 holds against SX34's 1,494);
+- `RefusalCarryingReplyRecv.c` at 12,941,835 bytes or less and its compile about 480 s or less (**met** for the size: 12,888,652 bytes, and 12,889,913 with the proofs module's 1,261, against SX34's 12,966,427; the compile took 492–496 s on a day SX34's kept C took 495 s and SX29's 517 s, so it matches SX34's and is 21 s under SX29's on the same machine, though not under 480 s there; a match splitter is cheap to compile, so removing them shrank the file, not the time);
+- the general path's own-context and installs-cap steps read no 1 MB cell (**met** on both lanes, first call and steady state: the four installs-cap forms read 133, 135, 958 and 960 cells, 7,072 to 31,600 bytes, against one 1 MB cell each at SX34); every other heap reading 0 (**met**).
 
 ### SX36 — ReplyRecv's receive capability resolved after the reply (D53, D60, D63)
 

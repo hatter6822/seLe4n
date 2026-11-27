@@ -456,7 +456,7 @@ theorem ipcUnwrapCapsLoop_mapTcbInPlace (caps : Array TransferCap)
         mapStepState x G (ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel Z)
   | 0, _, _, _, _, _ => rfl
   | fuel + 1, idx, slot?, acc, Z, hNo => by
-    simp only [ipcUnwrapCapsLoop]
+    rw [ipcUnwrapCapsLoop_succ]
     cases caps[idx]? with
     | none => rfl
     | some tc =>

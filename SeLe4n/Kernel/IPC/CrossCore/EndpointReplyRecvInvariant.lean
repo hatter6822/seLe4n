@@ -752,7 +752,7 @@ theorem ipcUnwrapCapsLoop_ok (caps : Array TransferCap) (endpointId : Option SeL
       ∃ r, ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel st = .ok r
   | 0, _, _, acc, st => ⟨_, rfl⟩
   | fuel + 1, idx, slot?, acc, st => by
-    simp only [ipcUnwrapCapsLoop]
+    rw [ipcUnwrapCapsLoop_succ]
     cases caps[idx]? with
     | none => exact ⟨_, rfl⟩
     | some tc =>
