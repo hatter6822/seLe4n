@@ -198,16 +198,6 @@ theorem writeFfiRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadI
   unfold Platform.FFI.writeFfiRegistersToTcb
   exact updateTcb_keyFrame st tid (fun _ => rfl) hInv
 
-/-- The state a refusal of the checked entry reports (`cancelReceiveBusyReply`)
-covers: the state itself, or its busy reply's holder cancelled. -/
-theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
-    (ec : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
-    stepCovers e st (cancelReceiveBusyReply ctx ec st) ∧
-      (cancelReceiveBusyReply ctx ec st).objects.invExt := by
-  rcases cancelReceiveBusyReply_cases_holder ctx ec st with h | ⟨_, _, -, -, h⟩
-  · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
-  · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
-
 /-- **A refused reply-receive covers** (WS-SX SX34): every leg it ran before it
 stopped covers and keeps the object table well formed. -/
 theorem replyRecvTransferStoppedState_stepCovers (e : CoreId) {epId : SeLe4n.ObjId}
@@ -236,6 +226,20 @@ theorem replyRecvTransferStoppedState_stepCovers (e : CoreId) {epId : SeLe4n.Obj
     (fun _ h => endpointReceiveDualWithCapsOnCore_stepCovers e h)
     (fun s t h => descheduleAtPlacement_stepCovers e s t h)
     (fun s t c h => propagatePipChainCrossCore_stepCovers e c _ s t h) hInv
+
+
+/-- The state a refusal of the checked entry reports (`cancelReceiveBusyReply`)
+covers: the state itself, its busy reply's holder cancelled, or a
+reply-receive's stopped state. -/
+theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
+    (ec : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    stepCovers e st (cancelReceiveBusyReply ctx ec st) ∧
+      (cancelReceiveBusyReply ctx ec st).objects.invExt := by
+  rcases cancelReceiveBusyReply_cases_holder ctx ec st with h | ⟨_, _, -, -, h⟩ | hA
+  · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
+  · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
+  · obtain ⟨_, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
+    rw [h]; exact replyRecvTransferStoppedState_stepCovers e hInv
 
 /-- **The ABI dispatch covers** on the executing core: the argument spill moves
 no key, the checked entry covers, a capability fault is a covered delivery, and

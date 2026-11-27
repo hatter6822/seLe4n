@@ -32,7 +32,10 @@ proven equal to `RefusalCarrying.ofKernel` of the specification's dispatch
 a reply-receive whose receive then blocks on an endpoint no sender waits on
 writes in place on every reply arm (`replyRecvBlockArmCode`,
 `replyRecvOnCore_arm_deliveredRegs`); any other takes the specification's
-path.
+path.  A receive leg refused after the reply was answered reports the state
+the refusing step stopped in, the completed reply kept
+(`replyRecvAnsweringReport`), as seL4's `SysReplyRecv` keeps it when
+`handleRecv` refuses.
 -/
 
 namespace SeLe4n.Kernel
@@ -122,21 +125,44 @@ admits it, and nothing otherwise.  It hands back the recorded caller itself. -/
   | some c => if answers c then c? else none
   | none => none
 
+/-- **The state an answering reply-receive's refusal reports** (WS-SX SX34,
+D60 option (b)): where the receive leg's flow gate passes and the reply answers
+a caller on a receive that completes no bound notification, the state the
+transition's refusing step stopped in (`replyRecvTransferStoppedState`): the
+completed reply is kept, as seL4's `SysReplyRecv` keeps it when `handleRecv`
+refuses.  The state it was handed otherwise, since those refusals precede the
+first write. -/
+def replyRecvAnsweringReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (replyAddr : SeLe4n.CPtr)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState) : SystemState :=
+  match cap.target with
+  | .object epId =>
+    if endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+      match resolveReplyRecvReplyR st tid replyAddr with
+      | .ok (some (rid, prevCaller, replyBadge, replyGrant)) =>
+        if receiveCompletesSignal ctx st tid then st
+        else
+          replyRecvTransferStoppedState epId tid rid prevCaller mi.label
+            { registers := extractMessageRegisters regs mi, badge := replyBadge } replyGrant
+            executingCore st
+      | _ => st
+    else st
+  | _ => st
+
 /-- **The state a reply-receive arm's refusal reports**: the receive arm's
 (`receiveArmReport`) when the reply half is skipped, by an extra capability
 that does not look up (WS-SX SX6.1), a reply with no caller to answer (WS-SX
 SX7.2) or a refused reply (WS-SX SX33), since the receive half then runs
-alone; the state it was handed otherwise, since the reply-receive refuses
-before its first write. -/
+alone; the answering report (`replyRecvAnsweringReport`) otherwise. -/
 def replyRecvArmReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (extraCaps : Nat) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId)
-    (cap : Capability) (st : SystemState) : SystemState :=
-  match callerExtraCapsFault? st tid extraCaps with
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (replyAddr : SeLe4n.CPtr)
+    (executingCore : Concurrency.CoreId) (cap : Capability) (st : SystemState) : SystemState :=
+  match callerExtraCapsFault? st tid mi.extraCaps with
   | some _ => receiveArmReport ctx tid true replyAddr executingCore cap st
   | none =>
     if replyRecvRepliesToNoOne st tid replyAddr || replyRecvReplyRefused ctx st tid replyAddr then
       receiveArmReport ctx tid true replyAddr executingCore cap st
-    else st
+    else replyRecvAnsweringReport ctx tid mi regs replyAddr executingCore cap st
 
 /-- **A reply-receive whose reply half is skipped** (WS-SX SX6.1, SX7.2; seL4-MCS
 `SysReplyRecv`, whose `handleInvocation` on the reply capability runs with
@@ -176,8 +202,11 @@ theorem replyRecvSkipReport_eq (ctx : LabelingContext) (decoded : SyscallDecodeR
   rfl
 
 /-- The checked reply-receive arm (`dispatchWithCapChecked`'s `.replyRecv`
-case) through the specification's path, refusing in the state it was handed
-(`endpointReplyRecvCheckedArmGeneralR_eq`). -/
+case) through the specification's path
+(`endpointReplyRecvCheckedArmGeneralR_eq`): a refusal before the reply is
+answered reports the state it was handed, and a refusal of the receive leg
+after it reports the state the refusing step stopped in
+(`replyRecvTransferOnCoreR`, `replyRecvAnsweringReport`). -/
 def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (replyAddr : SeLe4n.CPtr)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -205,11 +234,11 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
                 | .ok r => .ok r
                 | .error e => .error (e, st)
               else
-              match replyRecvTransferOnCore epId tid rid prevCaller mi.label msg
+              match replyRecvTransferOnCoreR epId tid rid prevCaller mi.label msg
                   replyGrant executingCore st with
               | .ok (summary, st') =>
                   .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
-              | .error e => .error (e, st))
+              | .error es => .error es)
     | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
@@ -222,7 +251,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     endpointReplyRecvCheckedArmGeneralR ctx decoded.msgInfo decoded.msgRegs
         decoded.replyCPtr tid executingCore cap st =
       RefusalCarrying.ofKernelReporting
-        (replyRecvArmReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvArmReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore cap)
         (dispatchWithCapChecked ctx decoded tid executingCore gate cap) st := by
   cases hTgt : cap.target with
@@ -232,7 +261,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     case neg =>
       simp only [endpointReplyRecvCheckedArmGeneralR, RefusalCarrying.ofKernelReporting,
         dispatchWithCapChecked, dispatchCapabilityOnly, hRR, hTgt, hFlow, Bool.not_false,
-        ↓reduceIte, replyRecvArmReport, receiveArmReport]
+        ↓reduceIte, replyRecvArmReport, receiveArmReport, replyRecvAnsweringReport]
       split <;> (try split) <;> rfl
     simp only [endpointReplyRecvCheckedArmGeneralR, hTgt, hFlow, Bool.not_true,
       Bool.false_eq_true, ↓reduceIte, callerExtraCapsFailK_eq]
@@ -256,7 +285,8 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     have hEq := resolveReplyRecvReplyR_eq st tid gate decoded hCaller hRoot
     cases hS : resolveReplyRecvReply gate decoded st with
     | error e =>
-      simp only [hEq, hS, Bool.false_eq_true, ↓reduceIte, replyRecvReplyRefused, Bool.false_or]
+      simp only [hEq, hS, Bool.false_eq_true, ↓reduceIte, replyRecvReplyRefused, Bool.false_or,
+        replyRecvAnsweringReport, hTgt, hFlow]
     | ok r =>
       cases r with
       | none =>
@@ -269,11 +299,15 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
         simp only [hEq, hS, Bool.false_eq_true, ↓reduceIte, replyRecvReplyRefused,
           Bool.false_or]
         by_cases hAns : replyRecvReplyAnswers ctx st tid prevCaller = true
-        · simp only [replyRecvAnsweredReply?, hAns, ↓reduceIte, Bool.not_true, Bool.false_eq_true]
-          split
-          · rcases replyRecvCompletesSignalArm ctx tid prevCaller decoded.msgInfo.label _
+        · simp only [replyRecvAnsweredReply?, hAns, ↓reduceIte, Bool.not_true, Bool.false_eq_true,
+            replyRecvAnsweringReport, hTgt, hFlow, hEq, hS]
+          by_cases hSig : receiveCompletesSignal ctx st tid = true
+          · simp only [hSig, ↓reduceIte]
+            rcases replyRecvCompletesSignalArm ctx tid prevCaller decoded.msgInfo.label _
               replyGrant executingCore st with _ | ⟨⟨⟩, st'⟩ <;> rfl
-          · rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
+          · simp only [hSig, Bool.false_eq_true, ↓reduceIte]
+            rw [replyRecvTransferOnCoreR_eq_match]
+            rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
               replyGrant executingCore st with
               _ | ⟨summary, st'⟩ <;> rfl
         · simp only [Bool.not_eq_true] at hAns
@@ -285,7 +319,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
   | _ =>
     simp only [endpointReplyRecvCheckedArmGeneralR, RefusalCarrying.ofKernelReporting,
       dispatchWithCapChecked, dispatchCapabilityOnly, hRR, hTgt, replyRecvArmReport,
-      receiveArmReport]
+      receiveArmReport, replyRecvAnsweringReport]
     split <;> (try split) <;> rfl
 
 /-- The reply capability a reply-receive names, checked as
@@ -496,19 +530,20 @@ theorem replyRecvReplyInertW_spec {st : SystemState} {tid c : SeLe4n.ThreadId} {
 
 /-- The checked reply-receive once its reply capability is resolved, through the
 specification's path (`replyRecvTransferOnCore`, which answers a faulted caller
-with its fault reply).  Out of line, so the reply's message record is built only
-here. -/
+with its fault reply), a refusal reporting the state the refusing step stopped
+in (`replyRecvTransferOnCoreR`).  Out of line, so the reply's message record is
+built only here. -/
 @[noinline] def replyRecvRendezvousR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    match replyRecvTransferOnCore epId tid rid c label
+    match replyRecvTransferOnCoreR epId tid rid c label
         { registers := Architecture.regMessageBody layout rf len, badge := badge }
         grant executingCore st with
     | .ok (summary, st') =>
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
-    | .error e => .error (e, st)
+    | .error es => .error es
 
 /-- WS-ZA ZA6.34: **a reply-receive answering a caller recording no server that
 may block in place**, read on the pre-state: the caller `c` blocked on reply
@@ -834,6 +869,7 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             replyRecvBlockArmCode_spec hK
           obtain rfl : ct = ct0 := by rw [hT] at hTc0'; cases hTc0'; rfl
           unfold replyRecvRendezvousR
+          rw [replyRecvTransferOnCoreR_eq_match]
           rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO), hTail]
           have h := replyRecvOnCore_arm_capsDelivered _ st epId tid c rid layout rf len badge
             executingCore ct rt ep rp stcb _ hAd hSz hT hRO hE hS' hR' hEnq hRp hStash hRecR hReq
@@ -1062,6 +1098,7 @@ theorem replyRecvArmTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR) hF
         rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
         unfold replyRecvRendezvousR
+        rw [replyRecvTransferOnCoreR_eq_match]
         rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
         generalize endpointReplyRecvOnCore epId tid rid c
           { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
@@ -1088,6 +1125,7 @@ theorem replyRecvArmTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
                   hF hReq
                 rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
                 unfold replyRecvRendezvousR
+                rw [replyRecvTransferOnCoreR_eq_match]
                 rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
                 generalize endpointReplyRecvOnCore epId tid rid c
                   { registers := Architecture.regMessageBody layout rf len, badge := badge } true
@@ -1442,6 +1480,7 @@ theorem replyRecvArmCallTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         grant executingCore ct rp ep s sTcb capAddr mi hAd hCA hSz4 hT hRO hRp
         (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hR' hF
       unfold replyRecvRendezvousR
+      rw [replyRecvTransferOnCoreR_eq_match]
       rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
@@ -1466,6 +1505,7 @@ theorem replyRecvArmCallTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             len badge executingCore ct rp ep s sTcb capAddr mi stcb _ hAd hCA hSz4 hT hRO
             hRp hE hH hS hSC hR' hF hReq
           unfold replyRecvRendezvousR
+          rw [replyRecvTransferOnCoreR_eq_match]
           rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
           generalize endpointReplyRecvOnCore epId tid rid c
             { registers := Architecture.regMessageBody layout rf len, badge := badge } true
@@ -1559,6 +1599,7 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         layout rf len badge grant executingCore ct rt ep rp tf hAd hPF hT hRO hE hS hR hEnq hRp
         hStash hRecR
       unfold replyRecvRendezvousR
+      rw [replyRecvTransferOnCoreR_eq_match]
       rw [hEq]
       simp only [CapTransferSummary.capInfo_empty]
       rw [hTail, hStg]
@@ -1579,6 +1620,7 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR) hFs
           rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
           unfold replyRecvRendezvousR
+          rw [replyRecvTransferOnCoreR_eq_match]
           generalize replyRecvTransferOnCore epId tid rid c label
             { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
             executingCore st = r at h ⊢
@@ -1678,6 +1720,7 @@ theorem replyRecvCallFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
       badge grant executingCore ct rp ep tf s sTcb capAddr mi hAd hCA hSz4 hPF hT hRO hRp hE hH hS
       hSC ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hRt) hFs
     unfold replyRecvRendezvousR
+    rw [replyRecvTransferOnCoreR_eq_match]
     generalize replyRecvTransferOnCore epId tid rid c label
       { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
       executingCore st = r at h ⊢
@@ -1931,6 +1974,7 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
             have hInert := replyRecvReplyInertW_spec hI hT
             have h := replyRecvOnCore_arm_deliveredRegs _ st epId tid c rid layout rf len badge grant
               executingCore ct rt ep rp hAd hSz hT hRO hE hS hR hEnq hRp hStash hRecR hInert
+            rw [replyRecvTransferOnCoreR_eq_match]
             rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)
               (hA := hAd.popAdmits hT hRO), hTail]
             generalize endpointReplyRecvOnCore epId tid rid c
@@ -1962,7 +2006,7 @@ theorem endpointReplyRecvCheckedArmR_eq (ctx : LabelingContext)
     endpointReplyRecvCheckedArmR ctx layout rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore cap st =
       RefusalCarrying.ofKernelReporting
-        (replyRecvArmReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvArmReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore cap)
         (dispatchWithCapChecked ctx decoded tid executingCore gate cap) st := by
   rw [endpointReplyRecvCheckedArmR_eq_general]
@@ -2156,7 +2200,7 @@ arm's (`replyRecvArmReport`) once the operand's slot check and rights pass; the
 state it was handed otherwise, since every refusal before the arm writes
 nothing. -/
 def replyRecvOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (extraCaps : Nat) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId)
     (requiredRight : AccessRight) (operand : Option Capability) (st : SystemState) :
     SystemState :=
   match operand with
@@ -2165,7 +2209,7 @@ def replyRecvOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     if SeLe4n.Kernel.capTargetsReservedKernelObject cap then st
     else if !syscallTargetAccepted .replyRecv st cap then st
     else if cap.hasRight requiredRight then
-      replyRecvArmReport ctx tid extraCaps replyAddr executingCore cap st
+      replyRecvArmReport ctx tid mi regs replyAddr executingCore cap st
     else st
 
 theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -2183,7 +2227,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
         decoded.msgInfo.label tid executingCore
         (syscallRequiredRight decoded.syscallId) (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernelReporting
-        (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore (syscallRequiredRight decoded.syscallId)
           (SystemState.lookupSlotCap st ref))
         (dispatchCheckedArmThenTaint ctx decoded tid executingCore
@@ -2244,7 +2288,7 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernelReporting
         (operandReport decoded.capAddr tid executingCore
           (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)
-          (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
             decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)))
         (dispatchSyscallChecked ctx decoded tid executingCore) := by
   funext st
@@ -2260,17 +2304,19 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
 /-! ### The long reply-receive -/
 
 /-- The long reply-receive's rendezvous through the specification's path, its
-message read in the replier's registers and IPC buffer (`longReplyRecvRegs`). -/
+message read in the replier's registers and IPC buffer (`longReplyRecvRegs`), a
+refusal reporting the state the refusing step stopped in
+(`replyRecvTransferOnCoreR`). -/
 @[noinline] def replyRecvLongRendezvousR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool) (rf : SeLe4n.RegisterFile)
     (len label : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    match replyRecvTransferOnCore epId tid rid c label
+    match replyRecvTransferOnCoreR epId tid rid c label
         { registers := longReplyRecvRegs rf st tid len, badge := badge }
         grant executingCore st with
     | .ok (summary, st') =>
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
-    | .error e => .error (e, st)
+    | .error es => .error es
 
 /-- Whether the long reply-receive's transferring arm may block in place: the
 grant right, an unfaulted caller and `replyRecvBlocksFast`.  Out of line, so
@@ -2374,6 +2420,7 @@ theorem replyRecvLongTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hG hR' hF
         rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
         unfold replyRecvLongRendezvousR
+        rw [replyRecvTransferOnCoreR_eq_match]
         rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
         generalize endpointReplyRecvOnCore epId tid rid c
           { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
@@ -2396,6 +2443,7 @@ theorem replyRecvLongTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
                 hRp hE hH hS hSC hG hR' hF (hReqOf stcb hS')
               rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
               unfold replyRecvLongRendezvousR
+              rw [replyRecvTransferOnCoreR_eq_match]
               rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
               generalize endpointReplyRecvOnCore epId tid rid c
                 { registers := longReplyRecvRegs rf st tid len, badge := badge } true
@@ -2531,6 +2579,7 @@ theorem replyRecvLongCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Threa
         executingCore ct rp ep s sTcb capAddr mi hAd hCA hLen hSzL hT hRO hRp
         (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hR' hF
       unfold replyRecvLongRendezvousR
+      rw [replyRecvTransferOnCoreR_eq_match]
       rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
@@ -2550,6 +2599,7 @@ theorem replyRecvLongCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Threa
         badge executingCore ct rp ep s sTcb capAddr mi stcb _ hAd hCA hLen hSzL hT hRO
         hRp hE hH hS hSC hR' hF (hReqOf stcb hS')
       unfold replyRecvLongRendezvousR
+      rw [replyRecvTransferOnCoreR_eq_match]
       rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } true
@@ -2616,6 +2666,7 @@ theorem replyRecvLongCapsR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         obtain rfl : ct = ct0 := by
           rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hTc0] at hT; cases hT; rfl
         unfold replyRecvLongRendezvousR
+        rw [replyRecvTransferOnCoreR_eq_match]
         rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault) (hA := hAd.popAdmits hT hRO)]
         have h := replyRecvOnCore_arm_capsDeliveredLong _ st epId tid c rid rf len badge
           executingCore ct rt ep rp stcb _ hAd hLen hSzL hT hRO hE hS hR' hEnq hRp hStash hRecR
@@ -2708,6 +2759,7 @@ theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
         label rf len badge grant executingCore ct rt ep rp tf hAd hLen hPF hT hRO hE hS hR hEnq hRp
         hStash hRecR
       unfold replyRecvLongRendezvousR
+      rw [replyRecvTransferOnCoreR_eq_match]
       rw [hEq]
       simp only [CapTransferSummary.capInfo_empty]
       rw [hTail, hStg]
@@ -2728,6 +2780,7 @@ theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
             ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR) hFs
           rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
           unfold replyRecvLongRendezvousR
+          rw [replyRecvTransferOnCoreR_eq_match]
           generalize replyRecvTransferOnCore epId tid rid c label
             { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
             executingCore st = r at h ⊢
@@ -2822,6 +2875,7 @@ theorem replyRecvLongCallFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Thre
       badge grant executingCore ct rp ep tf s sTcb capAddr mi hAd hCA hLen hPF hT hRO hRp hE hH hS
       hSC ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hRt) hFs
     unfold replyRecvLongRendezvousR
+    rw [replyRecvTransferOnCoreR_eq_match]
     generalize replyRecvTransferOnCore epId tid rid c label
       { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
       executingCore st = r at h ⊢
@@ -3072,6 +3126,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
               have h := replyRecvOnCore_arm_deliveredLong _ st epId tid c rid rf mi.length badge
                 grant executingCore ct rt ep rp hAd (by omega) hSzL hT hRO hE hS hR hEnq hRp hStash
                 hRecR hInert
+              rw [replyRecvTransferOnCoreR_eq_match]
               rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault) (hA := hAd.popAdmits hT hRO), hTail]
               generalize endpointReplyRecvOnCore epId tid rid c
                 { registers := longReplyRecvRegs rf st tid mi.length, badge := badge } grant
@@ -3111,7 +3166,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq (ctx : LabelingContext)
     endpointReplyRecvLongCheckedArmR ctx rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore cap st =
       RefusalCarrying.ofKernelReporting
-        (replyRecvArmReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvArmReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore cap)
         (dispatchWithCapChecked ctx decoded tid executingCore gate cap) st := by
   rw [endpointReplyRecvLongCheckedArmR_eq_general ctx rf capAddr decoded.msgInfo tid executingCore
@@ -3173,7 +3228,7 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
         decoded.msgInfo.label tid executingCore
         (syscallRequiredRight decoded.syscallId) (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernelReporting
-        (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore (syscallRequiredRight decoded.syscallId)
           (SystemState.lookupSlotCap st ref))
         (dispatchCheckedArmThenTaint ctx decoded tid executingCore
@@ -3236,7 +3291,7 @@ theorem dispatchReplyRecvLongCheckedR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernelReporting
         (operandReport decoded.capAddr tid executingCore
           (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)
-          (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
             decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)))
         (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   apply dispatchOperandCheckedR_eq_reporting_at ctx decoded tid executingCore _ _

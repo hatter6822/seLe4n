@@ -172,4 +172,19 @@ theorem replyRecvTransferOnCoreR_eq_reporting (epId : SeLe4n.ObjId) (tid : SeLe4
   | error es => obtain ⟨e, s⟩ := es; rfl
   | ok r => rfl
 
+/-- The refusal-carrying transition as the transition, its refusal carrying the
+stopped state (`replyRecvTransferOnCoreR_eq_reporting`, the report unfolded). -/
+theorem replyRecvTransferOnCoreR_eq_match (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
+    (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    replyRecvTransferOnCoreR epId tid rid prevCaller label msg grant executingCore st =
+      match replyRecvTransferOnCore epId tid rid prevCaller label msg grant executingCore st with
+      | .error e =>
+          .error (e, replyRecvTransferStoppedState epId tid rid prevCaller label msg grant
+            executingCore st)
+      | .ok r => .ok r := by
+  rw [replyRecvTransferOnCoreR_eq_reporting]
+  unfold RefusalCarrying.ofKernelReporting
+  cases replyRecvTransferOnCore epId tid rid prevCaller label msg grant executingCore st <;> rfl
+
 end SeLe4n.Kernel

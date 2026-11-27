@@ -6,6 +6,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersCallReply
 import SeLe4n.Kernel.Architecture.TaintWordFrame
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersCapabilityDispatch
 import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
+import SeLe4n.Kernel.ReplyRecvRefusalErrors
 
 /-!
 # The saved-register census over the whole syscall dispatch
@@ -864,6 +865,7 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
     -- writes only the holder, blocked at the spill and so free of every other
     -- core; the fault delivery then names a receive head blocked after the
     -- cancel, so blocked at the spill.
+    rename_i ke hE
     have hS : SystemState.RunQueueStage st
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
@@ -885,26 +887,47 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
-          ).objects.invExt ∧
+          ).objects.invExt := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+        hX | ⟨_, hd, -, -, hX⟩ | hA
+      · rw [hX]; exact ⟨.refl _, iW⟩
+      · rw [hX]
+        exact ⟨(cancelReplyHolder_savedRegsWrittenFree iW
+            (blockedCurrentNowhere_of_currentDequeuedUnique E1.dequeued) hBNR1).rebase hBase,
+          cancelReplyHolder_objects_invExt _ hd e iW⟩
+      · -- WS-SX SX34: a reply-receive's stopped state writes only the answered
+        -- caller's saved registers
+        obtain ⟨_, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
+        rw [hX]
+        obtain ⟨w, i⟩ := replyRecvTransferStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW
+        exact ⟨w.rebase hBase, i⟩
+    -- the fault's delivery names a receive head blocked after the report; a
+    -- reply-receive's stopped state raises a fault only where it stopped where
+    -- it started (`cancelReceiveBusyReply_cases_of_fault`)
+    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke =
+          some f →
         ∀ ep t, ((cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           ).getEndpoint? ep).bind (·.receiveQ.head) = some t → offCoreFree e st t := by
-      rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+      intro f hF
+      rcases cancelReceiveBusyReply_cases_of_fault iW
+          (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur) hE hF with
         hX | ⟨_, hd, -, -, hX⟩ <;> rw [hX]
-      · exact ⟨.refl _, iW, fun _ _ ht =>
-          hBase _ (offCoreFree_of_receiveHead E1.dequeued E1.queueHeads hRT1 hBNR1 ht)⟩
-      · exact ⟨(cancelReplyHolder_savedRegsWrittenFree iW
-            (blockedCurrentNowhere_of_currentDequeuedUnique E1.dequeued) hBNR1).rebase hBase,
-          cancelReplyHolder_objects_invExt _ hd e iW, fun _ _ ht =>
+      · exact fun _ _ ht =>
+          hBase _ (offCoreFree_of_receiveHead E1.dequeued E1.queueHeads hRT1 hBNR1 ht)
+      · exact fun _ _ ht =>
           hBase _ (offCoreFree_of_receiveHead_cancelReplyHolder iW E1.dequeued hRT1 hBNR1
-            E1.queueHeadCancelFacts ht)⟩
-    obtain ⟨w0, iR, hHR⟩ := hSC
+            E1.queueHeadCancelFacts ht)
+    obtain ⟨w0, iR⟩ := hSC
     have w1 := (savedRegsWrittenFree.of_kept hW1 fun _ e => e ▸ hFr).trans w0
     clear hS E1 hRT1 hBNR1 hBase w0
     generalize cancelReceiveBusyReply ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
-      at h w1 iR hHR
+      at h w1 iR hFF
     split at h
     · split at h
       · -- a dropped fault: the refusal's state and its ledger record
@@ -912,7 +935,9 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
         exact savedRegsWrittenFree.census (base := st) (w1.trans (.of_kept (W := fun _ => False)
             (.of_objects_eq (Platform.FFI.recordDroppedFault_objects_eq _ _ _ _ _ _ _))
             fun _ h => h.elim)) hC.currentKept hC.residentKept
-      · cases h
+      · rename_i fault hF _
+        have hHR := hFF fault hF
+        cases h
         refine savedRegsWrittenFree.census (base := st) ?_ hC.currentKept hC.residentKept
         unfold Platform.FFI.deliverSyscallCapFault
         dsimp only

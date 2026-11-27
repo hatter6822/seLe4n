@@ -5,6 +5,7 @@ Released under GPL-3.0-or-later license as described in the file LICENSE.
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.BlockedNotResident
 import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
 import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkStages
+import SeLe4n.Kernel.ReplyRecvRefusalErrors
 
 /-!
 # The syscall arms' readiness frames, and the syscall entry's carry
@@ -2045,7 +2046,11 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
   dsimp only at h
   split at h
   · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, which
-    -- blocks no thread and keeps the endpoint heads blocked.
+    -- blocks no thread and keeps the endpoint heads blocked.  WS-SX SX34: a
+    -- reply-receive's stopped state blocks none but the caller, and raises a
+    -- capability fault only where it stopped where it started
+    -- (`cancelReceiveBusyReply_cases_of_fault`).
+    rename_i ke hE
     have hC : SystemState.RunQueueEntryStage
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
@@ -2053,26 +2058,44 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
         readyKeptStage (· = tid)
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+        hEq | ⟨_, hd, -, -, hEq⟩ | hA
+      · rw [hEq]; exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _⟩
+      · rw [hEq]
+        exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e⟩
+      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+        rw [hCur1] at hCt
+        cases hCt
+        rw [hEq]
+        exact ⟨replyRecvTransferStoppedState_runQueueEntryStage E1.objInv E1.refined E1.dequeued
+            E1.queueHeads hCur1 hNI,
+          replyRecvTransferStoppedState_readyKeptStage E1.objInv E1.refined E1.dequeued
+            E1.queueHeads hCur1 hNI⟩
+    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke =
+          some f →
         queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).scheduler.currentOnCore e
           = some tid := by
-      rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+      intro f hF
+      rcases cancelReceiveBusyReply_cases_of_fault E1.objInv hCur1 hE hF with
         hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
-      · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, E1.queueHeads, hCur1⟩
-      · exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e,
-          cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
+      · exact ⟨E1.queueHeads, hCur1⟩
+      · exact ⟨cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
           by rw [cancelReplyHolder_currentOnCore]; exact hCur1⟩
-    obtain ⟨hS, hK, hQR, hCurR⟩ := hC
+    obtain ⟨hS, hK⟩ := hC
     obtain ⟨hIR, hRR⟩ := hS.1.links E1.objInv E1.refined
     have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
     have hKW := readyKeptStage.trans hW.entry.1 (.of_stage hW) hK
     generalize cancelReceiveBusyReply ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
-      at h hS hK hKW hQR hIR hRR hDR hCurR
+      at h hS hK hKW hFF hIR hRR hDR
     have hL := hW.entry.1.trans hS.1
     split at h
     · split at h
@@ -2083,7 +2106,9 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
         exact readyKeptStage.trans hL hKW (.of_stage ((SystemState.RunQueueStage.of_frame
           rfl rfl rfl rfl (hS := rfl) (hRes := rfl) :
             SystemState.RunQueueStage stR { stR with declassificationRefusals := L })))
-      · cases h
+      · rename_i fault hF _
+        obtain ⟨hQR, hCurR⟩ := hFF fault hF
+        cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
           (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)

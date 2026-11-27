@@ -330,7 +330,7 @@ def replyRecvEntryReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     if decoded.syscallId = .replyRecv then
       operandReport decoded.capAddr tid executingCore
         (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps)
-        (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st
     else st
   | .error _ => st
@@ -439,6 +439,32 @@ private theorem receiveEntryReport_cases (ctx : LabelingContext)
     · exact Or.inr ⟨decoded, k, hDec, hRecv, hCode k hK, h⟩
   · exact Or.inl rfl
 
+/-- **A reply-receive's operand report reached its answering report** (WS-SX
+SX34): the operand `cap?` is a capability the reply-receive accepts, on an
+endpoint whose receive flow gate passes, no extra capability faults, the reply
+capability resolves to a caller the reply answers on a receive that completes
+no bound notification, and the report `s` is the state the transition's
+refusing step stopped in (`replyRecvTransferStoppedState`). -/
+def ReplyRecvAnsweringReported (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (decoded : SyscallDecodeResult)
+    (cap? : Option Capability) (st s : SystemState) : Prop :=
+  ∃ (cap : Capability) (epId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool),
+    cap? = some cap ∧
+    SeLe4n.Kernel.capTargetsReservedKernelObject cap = false ∧
+    syscallTargetAccepted .replyRecv st cap = true ∧
+    cap.hasRight (syscallRequiredRight .replyRecv) = true ∧
+    cap.target = .object epId ∧
+    endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true ∧
+    callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none ∧
+    resolveReplyRecvReplyR st tid decoded.replyCPtr = .ok (some (rid, c, badge, grant)) ∧
+    replyRecvReplyAnswers ctx st tid c = true ∧
+    receiveCompletesSignal ctx st tid = false ∧
+    s = replyRecvTransferStoppedState epId tid rid c decoded.msgInfo.label
+      { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+        badge := badge }
+      grant executingCore st
+
 /-- A reply-receive's report on its decode is the state handed to it or its
 busy reply's cancel: the latter only when it skipped its reply and received,
 its extra capabilities failing or its reply answering no caller, the holder
@@ -448,15 +474,22 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
     (executingCore : Concurrency.CoreId) (decoded : SyscallDecodeResult) (xc : Nat)
     (st : SystemState) (hRR : decoded.syscallId = .replyRecv) :
     operandReport decoded.capAddr tid executingCore xc
-        (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+        (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st = st ∨
-      ∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
+      (∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
         (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
           recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
         operandReport decoded.capAddr tid executingCore xc
-          (replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
             decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st =
-          cancelReplyHolder st ⟨k⟩ executingCore := by
+          cancelReplyHolder st ⟨k⟩ executingCore) ∨
+      (st.scheduler.currentOnCore executingCore = some tid ∧
+        ∃ (tcb : TCB) (ref : CSpaceAddr), st.getObject? tid.toObjId = some (.tcb tcb) ∧
+          lookupSlot tcb decoded.capAddr st = .ok ref ∧
+          ReplyRecvAnsweringReported ctx tid executingCore decoded (SystemState.lookupSlotCap st ref)
+            st (operandReport decoded.capAddr tid executingCore xc
+              (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
+                decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv)) st)) := by
   have hRecvCase : ∀ cap : Capability,
       replyRecvSkipsReply decoded tid st = true →
       receiveArmReport ctx tid true decoded.replyCPtr executingCore cap st = st ∨
@@ -519,46 +552,128 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
               decoded.replyCPtr st rfl (by rw [receiveReplyAddr?_of_replyRecv' hRR]; rfl), h0]
         · rfl
   have hArm : ∀ cap? : Option Capability,
-      replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+      replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
           decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv) cap? st = st ∨
-        ∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
+        (∃ k : Nat, replyRecvSkipsReply decoded tid st = true ∧
           (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
             recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
-          replyRecvOperandReport ctx tid decoded.msgInfo.extraCaps
+          replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
             decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv) cap? st =
-            cancelReplyHolder st ⟨k⟩ executingCore := by
+            cancelReplyHolder st ⟨k⟩ executingCore) ∨
+        ReplyRecvAnsweringReported ctx tid executingCore decoded cap? st
+          (replyRecvOperandReport ctx tid decoded.msgInfo decoded.msgRegs
+            decoded.replyCPtr executingCore (syscallRequiredRight .replyRecv) cap? st) := by
     intro cap?
     unfold replyRecvOperandReport replyRecvArmReport
     split
     · exact Or.inl rfl
+    rename_i cap
     split
     · exact Or.inl rfl
+    rename_i hRes
     split
     · exact Or.inl rfl
+    rename_i hAcc
     split
-    · split
+    · rename_i hRight
+      split
       · rename_i hXc
-        exact hRecvCase _ (by simp [replyRecvSkipsReply, hXc])
-      · split
+        exact (hRecvCase _ (by simp [replyRecvSkipsReply, hXc])).imp_right Or.inl
+      · rename_i hXc
+        split
         · rename_i hNo
           rcases (Bool.or_eq_true _ _).mp hNo with hNo | hRef
-          · exact hRecvCase _
-              (by simp [replyRecvSkipsReply, resolveReplyRecvReply_of_repliesToNoOne hNo])
-          · exact hRefCase _ hRef
-        · exact Or.inl rfl
+          · exact (hRecvCase _
+              (by simp [replyRecvSkipsReply, resolveReplyRecvReply_of_repliesToNoOne hNo])).imp_right
+              Or.inl
+          · exact (hRefCase _ hRef).imp_right Or.inl
+        · rename_i hNo
+          unfold replyRecvAnsweringReport
+          split
+          · rename_i epId hTgt
+            split
+            · rename_i hFlow
+              split
+              · rename_i rid c badge grant hR
+                split
+                · exact Or.inl rfl
+                · rename_i hSig
+                  have hAns : replyRecvReplyAnswers ctx st tid c = true := by
+                    simp only [replyRecvRepliesToNoOne, replyRecvReplyRefused, hR, Bool.false_or,
+                      Bool.not_eq_true', Bool.not_eq_false'] at hNo
+                    simpa using hNo
+                  exact Or.inr (Or.inr ⟨cap, epId, rid, c, badge, grant, rfl,
+                    by simpa using hRes, by simpa using hAcc, hRight, hTgt, hFlow, hXc, hR, hAns,
+                    by simpa using hSig, rfl⟩)
+              · exact Or.inl rfl
+            · exact Or.inl rfl
+          · exact Or.inl rfl
     · exact Or.inl rfl
   unfold operandReport
   split
   · exact Or.inl rfl
+  rename_i hCurNe
   split
-  · split
-    · split
+  · rename_i tcb hObj
+    split
+    · rename_i ref hRef
+      split
       · exact Or.inl rfl
       · split
         · exact Or.inl rfl
-        · exact hArm _
+        · rcases hArm (SystemState.lookupSlotCap st ref) with h | h | h
+          · exact Or.inl h
+          · exact Or.inr (Or.inl h)
+          · exact Or.inr (Or.inr ⟨by simpa using hCurNe, tcb, ref, hObj, hRef, h⟩)
     · exact Or.inl rfl
   · exact Or.inl rfl
+
+/-- **A refusal of the checked entry reported a reply-receive's stopped state**
+(WS-SX SX34): the executing core runs `tid`, whose frame decodes, in a secure
+labelling context, to a reply-receive whose operand resolves and whose arm
+reached its answering report (`ReplyRecvAnsweringReported`) with report `s`. -/
+def ReplyRecvAnsweringEntry (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
+    (st s : SystemState) : Prop :=
+  ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (ref : CSpaceAddr),
+    ¬ isInsecureDefaultContext ctx = true ∧
+    st.scheduler.currentOnCore executingCore = some tid ∧
+    st.getObject? tid.toObjId = some (.tcb tcb) ∧
+    SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+      (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext) st tid
+      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
+    decoded.syscallId = .replyRecv ∧
+    lookupSlot tcb decoded.capAddr st = .ok ref ∧
+    ReplyRecvAnsweringReported ctx tid executingCore decoded (SystemState.lookupSlotCap st ref) st s
+
+/-- A resolved reply capability names the reply object's recorded caller. -/
+theorem resolveReplyRecvReplyR_some_caller {st : SystemState} {tid : SeLe4n.ThreadId}
+    {replyAddr : SeLe4n.CPtr} {rid : SeLe4n.ReplyId} {c : SeLe4n.ThreadId}
+    {badge : Option SeLe4n.Badge} {grant : Bool}
+    (h : resolveReplyRecvReplyR st tid replyAddr = .ok (some (rid, c, badge, grant))) :
+    replyAnsweredCaller? st rid = some c := by
+  unfold resolveReplyRecvReplyR at h
+  dsimp only at h
+  split at h
+  · cases h
+  · split at h
+    · rename_i hC
+      cases h
+      exact hC
+    · cases h
+
+/-- What a reply-receive's stopped-state report gives its consumers: the
+running thread, the answered caller, the receive leg's flow gate and the
+report as the transition's stopped state. -/
+theorem ReplyRecvAnsweringEntry.stopped {ctx : LabelingContext} {e : Concurrency.CoreId}
+    {st s : SystemState} (h : ReplyRecvAnsweringEntry ctx e st s) :
+    ∃ (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId)
+      (label : Nat) (msg : IpcMessage) (grant : Bool),
+      st.scheduler.currentOnCore e = some tid ∧ replyAnsweredCaller? st rid = some c ∧
+      endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true ∧
+      s = replyRecvTransferStoppedState epId tid rid c label msg grant e st := by
+  obtain ⟨tid, -, decoded, -, -, hCur, -, -, -, -, cap, epId, rid, c, badge, grant, -, -, -, -, -,
+    hFlow, -, hR, -, -, hS⟩ := h
+  exact ⟨tid, epId, rid, c, _, _, grant, hCur, resolveReplyRecvReplyR_some_caller hR, hFlow, hS⟩
 
 /-- **What a refusal of the checked entry reports is the state handed to it or
 its busy reply's cancel**: `cancelReceiveBusyReply` is the identity, or the
@@ -568,7 +683,7 @@ CSpace root (`recvBusyReplyHolderCode`). -/
 theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     cancelReceiveBusyReply ctx executingCore st = st ∨
-      ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (k : Nat),
+      (∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (k : Nat),
         st.scheduler.currentOnCore executingCore = some tid ∧
         st.getObject? tid.toObjId = some (.tcb tcb) ∧
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
@@ -577,7 +692,8 @@ theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
         receivesWithoutReply decoded tid st ∧
         (∀ gate : SyscallGate, gate.cspaceRootCap = callerCspaceRoot st tid →
           recvBusyReplyHolderCode ctx tid gate decoded st = k + 1) ∧
-        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st ⟨k⟩ executingCore := by
+        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st ⟨k⟩ executingCore) ∨
+      ReplyRecvAnsweringEntry ctx executingCore st (cancelReceiveBusyReply ctx executingCore st) := by
   unfold cancelReceiveBusyReply
   split
   · exact Or.inl rfl
@@ -591,7 +707,7 @@ theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
       rcases receiveEntryReport_cases ctx executingCore st tid tcb capAddr canReply replyAddr hObj
         hRecvRegs with h | ⟨decoded, k, hDec, hRecv, hK, h⟩
       · exact Or.inl h
-      · exact Or.inr ⟨tid, tcb, decoded, k, hCur, hObj, hDec, .inl hRecv, hK, h⟩
+      · exact Or.inr (Or.inl ⟨tid, tcb, decoded, k, hCur, hObj, hDec, .inl hRecv, hK, h⟩)
     all_goals first
       | exact Or.inl rfl
       | (unfold replyRecvEntryReport
@@ -600,9 +716,13 @@ theorem cancelReceiveBusyReply_cases_decoded (ctx : LabelingContext)
            split
            · rename_i hRR
              rcases replyRecvDecodedReport_cases ctx tid executingCore decoded _ st hRR with
-               h | ⟨k, hXc, hK, h⟩
+               h | ⟨k, hXc, hK, h⟩ | ⟨-, tcb', ref, hObj', hRef, hA⟩
              · exact Or.inl h
-             · exact Or.inr ⟨tid, tcb, decoded, k, hCur, hObj, hDec, .inr ⟨hRR, hXc⟩, hK, h⟩
+             · exact Or.inr (Or.inl ⟨tid, tcb, decoded, k, hCur, hObj, hDec, .inr ⟨hRR, hXc⟩, hK, h⟩)
+             · rw [hObj] at hObj'
+               cases hObj'
+               exact Or.inr (Or.inr ⟨tid, tcb, decoded, ref, by assumption, hCur, hObj, hDec, hRR,
+                 hRef, hA⟩)
            · exact Or.inl rfl
          · exact Or.inl rfl)
   · exact Or.inl rfl
@@ -613,17 +733,19 @@ runs. -/
 theorem cancelReceiveBusyReply_cases_holder (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     cancelReceiveBusyReply ctx executingCore st = st ∨
-      ∃ (tid holder : SeLe4n.ThreadId), st.scheduler.currentOnCore executingCore = some tid ∧
+      (∃ (tid holder : SeLe4n.ThreadId), st.scheduler.currentOnCore executingCore = some tid ∧
         holder ≠ tid ∧
-        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st holder executingCore := by
+        cancelReceiveBusyReply ctx executingCore st = cancelReplyHolder st holder executingCore) ∨
+      ReplyRecvAnsweringEntry ctx executingCore st (cancelReceiveBusyReply ctx executingCore st) := by
   rcases cancelReceiveBusyReply_cases_decoded ctx executingCore st with
-    h | ⟨tid, _, decoded, k, hCur, -, -, -, hK, h⟩
+    h | ⟨tid, _, decoded, k, hCur, -, -, -, hK, h⟩ | h
   · exact Or.inl h
-  let gate : SyscallGate :=
-    { callerId := tid, cspaceRootCap := callerCspaceRoot st tid, capAddr := decoded.capAddr,
-      requiredRight := syscallRequiredRight .receive }
-  have hC := hK gate rfl
-  exact Or.inr ⟨tid, ⟨k⟩, hCur, busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hC), h⟩
+  · let gate : SyscallGate :=
+      { callerId := tid, cspaceRootCap := callerCspaceRoot st tid, capAddr := decoded.capAddr,
+        requiredRight := syscallRequiredRight .receive }
+    have hC := hK gate rfl
+    exact Or.inr (Or.inl ⟨tid, ⟨k⟩, hCur, busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hC), h⟩)
+  · exact Or.inr (Or.inr h)
 
 /-- **A refused reply leg returns the state handed to it**: every refusal of
 `endpointReplyOnCore`, the caller's removal from its stack included, reports

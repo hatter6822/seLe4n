@@ -1881,6 +1881,65 @@ theorem finaliseWriteAny_callerCspaceRoot {st st' : SystemState}
     cases pre <;> cases post <;>
       simp_all [KernelObject.objectType, KernelObject.tcbSlots]
 
+/-- **A reply-receive answering its caller declares the reply-receive arm's
+lock set** (WS-SX SX34): its operands are the answering reply's, so its
+footprint is the arm's (`schedLockSet_replyRecvArmOnCore`) on the reply the
+capability resolves to. -/
+theorem replyRecvAnswering_schedLockSet (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (e : CoreId) (tcb : TCB) (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (ops : Concurrency.SyscallLockOperands) (S : LockSet) (epId : SeLe4n.ObjId)
+    (rid : SeLe4n.ReplyId) (prev : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
+    (replyGrant : Bool)
+    (hGate : abiEntryGate decoded tid st = some (tcb, gate))
+    (hLk : syscallLookupCap gate st = .ok (cap, st))
+    (hOps : abiEntryLockOperands decoded tid st = some ops)
+    (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid st) ops e st = some S)
+    (hId : decoded.syscallId = .replyRecv) (hT : cap.target = .object epId)
+    (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
+    (hRRR : resolveReplyRecvReply gate decoded st = .ok (some (rid, prev, replyBadge, replyGrant)))
+    (hAw : replyRecvCallerAwaitsReply st prev = true) :
+    LockSet.ofList? (schedLockSet_replyRecvArmOnCore epId tid rid prev decoded.msgInfo.label
+      { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+          decoded.msgInfo, badge := replyBadge } replyGrant e st) = some S := by
+  have hY : decoded.syscallId ≠ .yield := by rw [hId]; decide
+  obtain ⟨hTcb, -, -, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
+  have hGc : resolveReplyRecvReply gate decoded st =
+      resolveReplyRecvReply (callerReplyGate st tid decoded) decoded st := by
+    have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb
+    rw [hGateEq]
+    exact resolveReplyRecvReply_congr _ _ decoded rfl
+      (by simp only [callerReplyGate, callerCspaceRoot, SystemState.getObject?_eq_getElem, hO])
+  have hSk : replyRecvSkipsReply decoded tid st = false := by
+    simp [replyRecvSkipsReply, hXc, ← hGc, hRRR, hAw]
+  unfold abiEntryLockOperands at hOps
+  rw [if_neg hY] at hOps
+  split at hOps
+  · exact absurd hOps (by simp)
+  rw [hGate] at hOps
+  simp only at hOps
+  rw [hLk] at hOps
+  simp only at hOps
+  have hRecv : receiveGateRefuses decoded.syscallId tid st cap = false := by
+    cases hG : receiveGateRefuses decoded.syscallId tid st cap
+    · rfl
+    · rw [hG] at hOps; simp at hOps
+  simp only [hRecv, Bool.false_eq_true, ↓reduceIte] at hOps
+  unfold abiEntryFootprintId at hSched
+  rw [hId] at hOps hSched
+  rw [hT] at hOps
+  simp only at hOps
+  rw [hXc] at hOps
+  simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hOps
+  rw [hRRR] at hOps
+  simp only [hAw, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hOps
+  simp only [hSk, Bool.false_eq_true, and_false, ↓reduceIte, reduceCtorEq, false_and] at hSched
+  injection hOps with hOps
+  subst hOps
+  simp only [schedLockSetForSyscall, Option.bind_some] at hSched
+  rw [resolveReplyRecvReply_answered gate decoded st rid prev replyBadge replyGrant hRRR] at hSched
+  simp only [Option.bind_some] at hSched
+  exact hSched
+
 /-- **The refusal's reported state is inside the declared footprint**: either
 the spill itself, or the spill with the busy reply's holder cancelled, and then
 the operands are the busy receive's, whose footprint is every core's run queue
@@ -1902,11 +1961,50 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops e stSpilled
       = some S)
     (hU : unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops e stSpilled
-      = some U) :
+      = some U)
+    (hFilledEq : stSpilled = stRegs) :
     footprintCoversWrites U stRegs (cancelReceiveBusyReply ctx e stRegs) := by
   rcases cancelReceiveBusyReply_cases_decoded ctx e stRegs with
-    h | ⟨tid', tcb', decoded', k, hCur', hObj', hDec', hRecv', hCode', h⟩
+    h | ⟨tid', tcb', decoded', k, hCur', hObj', hDec', hRecv', hCode', h⟩ | hA
   · rw [h]; exact footprintCoversWrites_refl U stRegs
+  rotate_left
+  · -- WS-SX SX34: a reply-receive that answered its caller reports the state its
+    -- transition stopped in, inside the arm's footprint
+    subst hFilledEq
+    obtain ⟨tid', tcb', decoded', ref, -, hCur', hObj', hDec', hRR, hRef, cap, epId, rid, c, badge,
+      grant, hCap, hRes, hAcc, hRight, hTgt, hFlow, hXc', hR, hAns, hSig, hS⟩ := hA
+    rw [hCur] at hCur'
+    cases hCur'
+    rw [hTcbRegs] at hObj'
+    cases hObj'
+    rw [hDec] at hDec'
+    cases hDec'
+    obtain ⟨tcbF, gate, cap', hGate, hLk, -, -⟩ :=
+      abiEntryLockOperands_gate_lookup decoded tid stSpilled ops (by rw [hRR]; decide) hOps
+    obtain ⟨hTcbF, -, -, hGateEq⟩ := abiEntryGate_components decoded tid stSpilled tcbF gate hGate
+    have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
+    have hTcbRegs' : stSpilled.objects[tid.toObjId]? = some (.tcb tcb) := hTcbRegs
+    rw [hTcbRegs'] at hTcbF'
+    simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
+    subst hTcbF'
+    have hRc := syscallLookupCap_resolve gate stSpilled cap' hLk
+    rw [hGateEq] at hRc
+    simp only [syscallResolveCap, SyscallGate.lookupSlot_mk, hRef, hCap, hRes, Bool.false_eq_true,
+      ↓reduceIte, Except.ok.injEq, Prod.mk.injEq] at hRc
+    obtain ⟨rfl, -⟩ := hRc
+    have hRoot : gate.cspaceRootCap = callerCspaceRoot stSpilled tid := by
+      rw [hGateEq]; simp only [callerCspaceRoot, hTcbRegs]
+    have hRRR : resolveReplyRecvReply gate decoded stSpilled = .ok (some (rid, c, badge, grant)) := by
+      rw [← resolveReplyRecvReplyR_eq stSpilled tid gate decoded (by rw [hGateEq]) hRoot, hR]
+    have hAw : replyRecvCallerAwaitsReply stSpilled c = true := by
+      simp only [replyRecvReplyAnswers, Bool.and_eq_true] at hAns
+      exact hAns.2
+    have hL := replyRecvAnswering_schedLockSet decoded tid e tcb gate cap stSpilled ops S epId rid c
+      badge grant hGate hLk hOps hSched hRR hTgt hXc' hRRR hAw
+    rw [hS]
+    exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U _ _ hSched hU
+      (schedLockSet_replyRecvArmOnCore_coversStopped epId tid rid c _ _ grant e stSpilled S
+        hRegsObjInv hL)
   rw [h]
   rw [hCur] at hCur'
   cases hCur'
@@ -2019,28 +2117,23 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
   | error ke =>
     rw [hDisp] at hD
     simp only at hD
-    -- the state the refusal reports: the spill, or the spill with its busy
-    -- reply's holder cancelled, which keeps every CNode and CSpace root
-    have hFrameR : callerCspaceRoot (cancelReceiveBusyReply ctx e
+    -- the state the refusal reports: the spill, the spill with its busy
+    -- reply's holder cancelled (which keeps every CNode and CSpace root), or
+    -- the state an answering reply-receive's refused receive stopped in; on
+    -- a state keeping every CNode and CSpace root, no capability fault fires
+    have hNoFaultOf : (callerCspaceRoot (cancelReceiveBusyReply ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid
         = callerCspaceRoot (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           tid ∧
         ∀ id, (cancelReceiveBusyReply ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).getCNode? id
-          = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).getCNode? id := by
-      rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        h | ⟨_, holder, -, -, h⟩
-      · rw [h]; exact ⟨rfl, fun _ => rfl⟩
-      · rw [h]
-        exact ⟨finaliseWriteAny_callerCspaceRoot
-            (cancelReplyHolder_finaliseFrameAny _ holder e hRegsObjInv).write tid,
-          cancelReplyHolder_getCNode? _ holder e hRegsObjInv⟩
-    have hNoFault : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+          = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).getCNode? id) →
+        Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke
           = none := by
+      intro hFrameR
       have hTcbRegs' :
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects[tid.toObjId]?
             = some (.tcb tcb) := hTcbRegs
@@ -2084,12 +2177,32 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             rw [hFrameR.1, hRoot, receiveReplyFault?_congr_getCNode? _ decoded _ _ hFrameR.2,
               ← receiveReplyFault?_congr_objects _ decoded _ _ hFillObj]
             exact hReplyF)
+    have hNoFault : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+        (cancelReceiveBusyReply ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke
+          = none := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+        h | ⟨_, holder, -, -, h⟩ | hA
+      · exact hNoFaultOf (by rw [h]; exact ⟨rfl, fun _ => rfl⟩)
+      · exact hNoFaultOf (by
+          rw [h]
+          exact ⟨finaliseWriteAny_callerCspaceRoot
+              (cancelReplyHolder_finaliseFrameAny _ holder e hRegsObjInv).write tid,
+            cancelReplyHolder_getCNode? _ holder e hRegsObjInv⟩)
+      · -- WS-SX SX34: a reply-receive that answered its caller faults only where
+        -- its transition stopped where it started
+        rcases hA.capFault_none_of_dispatch hRegsObjInv (by rw [hRegsSch]; exact hCur) hTcbRegs
+            hDec (by rw [← hFilled]; exact hDisp) with hSt | hN
+        · exact hNoFaultOf (by rw [hSt]; exact ⟨rfl, fun _ => rfl⟩)
+        · exact hN
     rw [hNoFault] at hD
     simp only at hD
     have hCancel := cancelReceiveBusyReply_coversWrites ctx e tid tcb decoded _ stSpilled ops S U
       hRegsObjInv (by rw [hRegsSch]; exact hCur) hTcbRegs hDec hFillObj
       (fun gate => recvBusyReplyHolderCode_congr_objects ctx tid gate decoded hFillObj)
-      (fun n => by rw [hFilled]) hOps hSched hU
+      (fun n => by rw [hFilled]) hOps hSched hU hFilled
     -- WS-SX SX7.2: a `Call` writes the error's fifth word to its IPC buffer;
     -- any other syscall writes nothing but the refusal record
     by_cases hC : syscallId = Syscall.call.number.toUInt32

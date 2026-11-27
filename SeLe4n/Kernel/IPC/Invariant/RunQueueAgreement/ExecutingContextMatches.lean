@@ -117,9 +117,18 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
           ).objects.invExt := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        hX | ⟨_, hd, -, -, hX⟩ <;> rw [hX]
-      · exact ⟨hSp, stepCovers_refl _ _, iW⟩
-      · obtain ⟨c1, i1⟩ := cancelReplyHolder_stepCovers (otherCore e) _ hd e iW
+        hX | ⟨_, hd, -, -, hX⟩ | hA
+      · rw [hX]; exact ⟨hSp, stepCovers_refl _ _, iW⟩
+      rotate_left
+      · -- WS-SX SX34: a reply-receive's stopped state covers the other cores and
+        -- writes only the answered caller's saved registers
+        obtain ⟨_, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
+        rw [hX]
+        obtain ⟨c1, i1⟩ := replyRecvTransferStoppedState_stepCovers (otherCore e) iW
+        exact ⟨replyRecvTransferStoppedState_contextMatchesCurrentOnCore E1.dequeued
+          (by rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT) hBNR1 iW hSp, c1, i1⟩
+      · rw [hX]
+        obtain ⟨c1, i1⟩ := cancelReplyHolder_stepCovers (otherCore e) _ hd e iW
         refine ⟨contextMatchesCurrentOnCore_of_savedRegs
           (by rw [cancelReplyHolder_currentOnCore]; exact hC0) hC0 ?_
           (c1.banksKept e (ne_otherCore e)) hSp, c1, i1⟩

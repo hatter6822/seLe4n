@@ -209,12 +209,19 @@ theorem unknownSyscallEntryState_queueLabelsStage (ctx : LabelingContext) (coreI
 
 /-! ### The syscall entry -/
 
-/-- **A refused receive's busy-reply cancel**: nothing, or a reply holder's
-cancel. -/
+/-- **A refused receive's busy-reply cancel**, where the refusal reported the
+state handed to it or its busy reply's cancel (as one that raises a capability
+fault does, `cancelReceiveBusyReply_cases_of_fault`): nothing, or a reply
+holder's cancel. -/
 theorem QueueLabelsFrame.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt) :
+    (st : SystemState) (hInv : st.objects.invExt)
+    (hC : _root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st = st ∨
+      ∃ (tid holder : SeLe4n.ThreadId), st.scheduler.currentOnCore e = some tid ∧
+        holder ≠ tid ∧
+        _root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st =
+          _root_.SeLe4n.Kernel.cancelReplyHolder st holder e) :
     QueueLabelsFrame st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ <;> rw [hE]
+  rcases hC with hE | ⟨_, holder, -, -, hE⟩ <;> rw [hE]
   · exact QueueLabelsFrame.refl hInv
   · exact QueueLabelsFrame.cancelReplyHolder st holder e hInv
 
@@ -263,6 +270,23 @@ theorem QueueLabelsStage.replyRecvTransferStoppedState {ctx : LabelingContext}
   (QueueLabelsGrowFrame.replyRecvTransferStoppedState hInv).stage
     (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm
 
+/-- **The state a refusal of the checked entry reports carries the waiters'
+labels** (WS-SX SX34): the state itself, its busy reply's holder cancelled, or
+a reply-receive's stopped state, admitted by its receive gate. -/
+theorem QueueLabelsStage.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) ∧
+      (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st).objects.invExt := by
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | hE | hA
+  · have F := QueueLabelsFrame.cancelReceiveBusyReply ctx e st hInv (Or.inl hE)
+    exact ⟨F.stage, F.invExt⟩
+  · have F := QueueLabelsFrame.cancelReceiveBusyReply ctx e st hInv (Or.inr hE)
+    exact ⟨F.stage, F.invExt⟩
+  · obtain ⟨_, _, _, _, _, _, _, -, -, hFlow, hS⟩ := hA.stopped
+    rw [hS]
+    exact ⟨QueueLabelsStage.replyRecvTransferStoppedState hInv hFlow,
+      replyRecvTransferStoppedState_objects_invExt hInv⟩
+
 /-- **The checked syscall entry keeps the endpoint waiters' labels**: the
 dispatch of the request the running caller's registers decode to. -/
 theorem syscallEntryChecked_queueLabelsStage {ctx : LabelingContext}
@@ -304,7 +328,8 @@ theorem syscallDispatchFromAbi_queueLabelsStage {ctx : LabelingContext} {e : Cor
     exact QueueLabelsFrame.updateTcb st tid hInv fun _ => TcbWaitsKept.of_ipc rfl
   dsimp only at h
   split at h
-  · have F := F1.andThen fun hI => QueueLabelsFrame.cancelReceiveBusyReply ctx e _ hI
+  · obtain ⟨FS, FI⟩ := QueueLabelsStage.cancelReceiveBusyReply ctx e _ F1.invExt
+    have FSt := F1.stage.trans FS
     split at h
     · split at h
       · cases h
@@ -312,19 +337,19 @@ theorem syscallDispatchFromAbi_queueLabelsStage {ctx : LabelingContext} {e : Cor
           (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
         rw [hL]
-        exact F.stage.trans (QueueLabelsStage.of_objects_eq rfl)
+        exact FSt.trans (QueueLabelsStage.of_objects_eq rfl)
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have W := QueueLabelsFrame.writeFaultRegistersToTcb _ tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) F.invExt
-        exact (F.stage.trans W.stage).trans (QueueLabelsStage.faultDeliverOnCoreChecked W.invExt)
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) FI
+        exact (FSt.trans W.stage).trans (QueueLabelsStage.faultDeliverOnCoreChecked W.invExt)
     · split at h
       · cases h
-        exact F.stage.trans (QueueLabelsStage.of_objects_eq
+        exact FSt.trans (QueueLabelsStage.of_objects_eq
           ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
             (Architecture.recordErrorOverflow_objects _ _ _)))
       · cases h
-        exact F.stage.trans (QueueLabelsStage.of_objects_eq
+        exact FSt.trans (QueueLabelsStage.of_objects_eq
           (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _))
   · rename_i hE
     cases h

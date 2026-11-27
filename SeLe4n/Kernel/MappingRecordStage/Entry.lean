@@ -321,15 +321,6 @@ theorem syscallEntryChecked_mappingStage {ctx : LabelingContext}
     ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩).trans
     (dispatchSyscallChecked_mappingStage ctx decoded tid e _ st' (P.of_tables_eq rfl rfl rfl) h)
 
-/-- The state a refusal of the checked entry reports
-(`cancelReceiveBusyReply`) keeps the mappings recorded: the state itself, or
-its busy reply's holder cancelled. -/
-theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
-    (st : SystemState) : MappingStage st (cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩
-  · rw [h]; exact MappingStage.refl _
-  · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
-
 /-- **A refused reply-receive keeps the mappings recorded** (WS-SX SX34): every
 leg it ran before it stopped does. -/
 theorem replyRecvTransferStoppedState_mappingStage {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
@@ -347,6 +338,18 @@ theorem replyRecvTransferStoppedState_mappingStage {epId : SeLe4n.ObjId} {tid : 
     (fun _ _ => endpointReceiveDualWithCapsOnCore_mappingStage)
     (fun s t _ => descheduleAtPlacement_mappingStage s t)
     (fun _ _ _ _ => propagatePipChainCrossCore_mappingStage) hInv hInv
+
+
+/-- The state a refusal of the checked entry reports
+(`cancelReceiveBusyReply`) keeps the mappings recorded: the state itself, its
+busy reply's holder cancelled, or a reply-receive's stopped state. -/
+theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
+    (st : SystemState) : MappingStage st (cancelReceiveBusyReply ctx e st) := by
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩ | hA
+  · rw [h]; exact MappingStage.refl _
+  · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
+  · obtain ⟨_, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
+    rw [h]; exact replyRecvTransferStoppedState_mappingStage
 
 /-- **The ABI dispatch keeps the mappings recorded**: the argument spill (a
 register write, which keeps the premises), then the checked entry, a

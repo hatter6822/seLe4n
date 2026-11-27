@@ -2587,7 +2587,7 @@ would otherwise reach only after a store -- the frame pushed onto itself, a fram
 below that does not resolve, a server that is not a thread -- asked of the state
 handed in, with the error the later check gives.  On a state whose object table
 is well formed the stores move none of these answers
-(`donateSchedContextR_stops_at_entry`, `donationPushRefusal?_eq_none_of_stored`),
+(`donateSchedContextR_stops_at_entry`, `donationPushRefusal?_some_exact`),
 so the admission refuses exactly what the later checks would, and they stay as
 defensive checks that run only off `objects.invExt`. -/
 def donationPushRefusal? (st : SystemState) (serverTid : SeLe4n.ThreadId)

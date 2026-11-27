@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.KernelRecords.Entry
 import SeLe4n.Kernel.ReschedulePendingArms.Entry
+import SeLe4n.Kernel.ReplyRecvRefusalErrors
 
 /-! # The syscall entry keeps the records, and every committing entry preserves them
 
@@ -296,26 +297,44 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
   split at h
   · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, which
     -- keeps the records, the endpoint heads and the caller `.ready`.
+    rename_i ke hE
     have hInv1 := P1.deletes.2.1.2.1
     have hIpc1 := P1.deletes.2.1.1
-    have hC : RecordsStage (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+    -- WS-SX SX34: a reply-receive's stopped state keeps the records; it raises a
+    -- capability fault only where it stopped where it started
+    -- (`cancelReceiveBusyReply_cases_of_fault`), so the fault's delivery reads
+    -- the endpoint heads and the caller `.ready` on the two cases it always took
+    have hS : RecordsStage (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) := by
+      rcases cancelReceiveBusyReply_cases_holder ctx e
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+        hEq | ⟨t', hd, hC', hne, hEq⟩ | hA
+      · rw [hEq]; exact .refl _
+      · rw [hEq]; exact RecordsStage.cancelReplyHolder _ hd e
+      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+        rw [hCur1] at hCt
+        cases hCt
+        rw [hEq]
+        exact RecordsStage.replyRecvTransferStoppedState P1.deletes.1 (hR1 e tid hCur1)
+    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+          (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke =
+          some f →
         queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         CallerReady (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid := by
-      rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
+      intro f hF
+      rcases cancelReceiveBusyReply_cases_of_fault hInv1 hCur1 hE hF with
         hEq | ⟨t', hd, hC', hne, hEq⟩ <;> rw [hEq]
-      · exact ⟨.refl _, hIpc1.queueHeadBlockedConsistent, hR1 e tid hCur1⟩
+      · exact ⟨hIpc1.queueHeadBlockedConsistent, hR1 e tid hCur1⟩
       · rw [hCur1] at hC'; cases hC'
-        exact ⟨RecordsStage.cancelReplyHolder _ hd e,
-          cancelReplyHolder_queueHeadBlockedConsistent _ hd e hInv1 (.of_ipcInvariantFull hIpc1),
+        exact ⟨cancelReplyHolder_queueHeadBlockedConsistent _ hd e hInv1 (.of_ipcInvariantFull hIpc1),
           (hR1 e tid hCur1).cancelReplyHolder hInv1 (Ne.symm hne)⟩
-    obtain ⟨hS, hQR, hCR⟩ := hC
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR at h hS hQR hCR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR at h hS hFF
     split at h
     · split at h
       · -- a dropped fault: the refusal's state and its ledger record
@@ -324,7 +343,9 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
         rw [hL]
         exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI =>
           RecordsFrame.of_objects_eq hI rfl rfl rfl)
-      · cases h
+      · rename_i fault hF _
+        obtain ⟨hQR, hCR⟩ := hFF fault hF
+        cases h
         unfold Platform.FFI.deliverSyscallCapFault
         exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)
     · split at h

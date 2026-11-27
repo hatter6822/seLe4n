@@ -76,14 +76,6 @@ theorem syscallEntryChecked_lendersStage {ctx : LabelingContext}
     (P tid (regs, s0) decoded hCur hP hDec) (hR e tid hCur) hW hA h
 
 
-/-- **A refused receive's busy-reply cancel**, a labelled step: nothing, or a
-reply holder's cancel (its reply arm's pop to the frame's recorded caller). -/
-theorem LendersStep.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt) :
-    LendersStep ctx st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ <;> rw [hE]
-  · exact LendersStep.refl hInv
-  · exact LendersStep.cancelReplyHolder st holder e hInv
 
 /-- **A refused reply-receive carries equal lending labels** (WS-SX SX34): the
 legs it ran before it stopped -- the reply leg, the pop (its owner the reply's
@@ -158,6 +150,27 @@ theorem LendersStep.replyRecvTransferStoppedState {ctx : LabelingContext}
   have HD := LendersFrame.replyRecvHolderDeschedule tid holder st2 hInvV
   exact (hNR _ _ _ HD.invExt).stage (HD.stage h1)
 
+/-- **The state a refusal of the checked entry reports**, a labelled step:
+nothing, a reply holder's cancel (its reply arm's pop to the frame's recorded
+caller), or a reply-receive's stopped state, whose legs the entry's lending
+premises cover (`LendersDispatchPremises.replyRecv`). -/
+theorem LendersStep.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt)
+    (P : SyscallEntryLendPremises ctx SeLe4n.arm64DefaultLayout e 32 st) :
+    LendersStep ctx st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ | hA
+  · rw [hE]; exact LendersStep.refl hInv
+  · rw [hE]; exact LendersStep.cancelReplyHolder st holder e hInv
+  · obtain ⟨tid, tcb, decoded, ref, -, hCur, hObj, hDec, -, -, cap, epId, rid, c, badge, grant, -,
+      -, -, -, hTgt, -, -, hR, -, -, hS⟩ := hA
+    have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
+      simp only [lookupThreadRegisterContext, hObj]
+    have hD := (P tid _ decoded hCur hRegs hDec tcb hObj cap).replyRecv epId rid c badge grant hTgt
+      (by rw [← resolveReplyRecvReplyR_eq st tid _ decoded rfl
+        (by simp only [callerCspaceRoot, hObj]), hR])
+    rw [hS]
+    exact LendersStep.replyRecvTransferStoppedState hInv (resolveReplyRecvReplyR_some_caller hR) hD
+
 /-- **What the ABI dispatch reads**: for the caller the core runs, the checked
 entry's premises at the state the arguments are spilled to, and a capability
 fault's delivery premises at the state its registers are spilled to after a
@@ -206,10 +219,12 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
     exact QueueLabelsFrame.updateTcb st tid hInv fun _ => TcbWaitsKept.of_ipc rfl
   dsimp only at h
   split at h
-  · have F := (LendersStep.of_frame (ctx := ctx) F1).andThen fun hI =>
-      LendersStep.cancelReceiveBusyReply ctx e _ hI
+  · rename_i ke hE
+    have F := (LendersStep.of_frame (ctx := ctx) F1).andThen fun hI =>
+      LendersStep.cancelReceiveBusyReply ctx e _ hI (P.entry tid hCur)
     split at h
-    · split at h
+    · rename_i fault hF
+      split at h
       · cases h
         obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 _
           (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e
@@ -218,7 +233,9 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
         exact F.stage.trans (LendersStage.of_kept (chainObjectsKept.of_objects_eq rfl))
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
-        have W := (W1.andThen fun hI => QueueLabelsFrame.cancelReceiveBusyReply ctx e _ hI).andThen
+        have W := (W1.andThen fun hI => QueueLabelsFrame.cancelReceiveBusyReply ctx e _ hI
+            (cancelReceiveBusyReply_cases_of_fault hI
+              (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur) hE hF)).andThen
           fun hI => QueueLabelsFrame.writeFaultRegistersToTcb _ tid
             (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) hI
         exact F.stage.trans fun hFl => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid _ _

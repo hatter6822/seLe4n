@@ -1139,16 +1139,22 @@ A different answer changes only the rows that cite it.
     No invariant requires a current thread to hold a context, so the interim
     state is on the invariant. SX34's measurement of that cost is the basis
     of SX35's estimate.
-  - **SX34's interim form.** Until SX35, the third case of the report's
-    consumers (a refused receive after a pop that returned a context) is
-    reachable only off the invariant. SX34 could not refute its holder states
-    from the premises the run-queue and kernel-records consumers already
-    take: refuting them needs every receive-leg and donation refusal shown
-    unreachable, and those premises do not carry the IPC invariants that
-    would. So SX34 restates those consumers' current-thread facts as "the
-    caller is current, or it is the holder whose deschedule vacated the slot,
-    with a reschedule pending". SX35 replaces that form, since the server
-    then stays current.
+  - **SX34 needed no interim form** (SX34's seventh session's finding, the
+    coordinator's ruling of 2026-11-27). Until SX35, the third case of the
+    report's consumers (a refused receive after a pop that returned a
+    context) is reachable only off the invariant. Its holder states are not
+    refuted from the run-queue and kernel-records consumers' premises, and
+    they need not be: those consumers read the current thread, the endpoint
+    heads and the caller's readiness only to deliver a capability fault, and
+    the third case raises one only where the transition stopped in the state
+    it was handed, where the consumers' first case applies
+    (`ReplyRecvAnsweringEntry.capFault_none`: the reply's lookup faults only
+    on a lookup's refusal, and the transition's refusals are lookups' only
+    there, `replyRecvTransferOnCore_refusal_notLookup`). Every other branch
+    takes the family's stage of the stopped state. No consumer restates its
+    current-thread fact. SX35 still decides the current slot once a bad
+    receive capability reaches the post-reply state, since that case is then
+    reachable on the invariant.
   - **The lock set.** The receive capability's walk on the post-reply state
     can differ from the entry state's: the reply's capability transfer can
     install a capability in a slot that walk passes through, where the
@@ -1872,7 +1878,7 @@ is 21,021,237 bytes and compiles in 769 s.
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX34.1 | Refusal-carrying forms of the reply-receive's pop and post-receive donation, down to their stores: where a refusal precedes the operation's first write the form returns its input, so nothing is held; where it follows one, the form carries the state at that point. Where this reaches code WS-CK's CK2 owns, it is done for the reply-receive path only. | Each form's unconditional equality to its specification. | Tier 3 anchors, relation-break-tested |
-| SX34.2 | The refusal-carrying composite and the arm's transition over it, each refusal carrying the state its step stopped in; a refused receive reports the nothing-received outcome (the priority-inheritance reversion, and the holder's deschedule where the pop returned a context, D53) on the state the receive returned (D60's option (b)); the 12 refusal-carrying reply-receive wrappers carry their callee's state, not the entry state. | The composite's and each wrapper's equality to its specification restated; the report's consumers gain the refused-receive case (the invariant families at the stopped states; the run-queue and kernel-records consumers' current-thread fact in D63's interim form, which SX35 replaces); the entry and cross-core non-interference proofs restated. | Tier 3 anchors; `RefusalCarryingReplyRecv.c` back to 12,941,835 bytes or less and its compile to about 480 s or less (SX28's), measured against a kept copy of SX29's generated C |
+| SX34.2 | The refusal-carrying composite and the arm's transition over it, each refusal carrying the state its step stopped in; a refused receive reports the nothing-received outcome (the priority-inheritance reversion, and the holder's deschedule where the pop returned a context, D53) on the state the receive returned (D60's option (b)); the 12 refusal-carrying reply-receive wrappers carry their callee's state, not the entry state. | The composite's and each wrapper's equality to its specification restated; the report's consumers gain the refused-receive case (the invariant families at the stopped states; the capability-fault delivery on the two cases it always took, since the stopped state raises a fault only where it stopped where it started, so no consumer restates its current-thread fact, D63); the entry and cross-core non-interference proofs restated. | Tier 3 anchors; `RefusalCarryingReplyRecv.c` back to 12,941,835 bytes or less and its compile to about 480 s or less (SX28's), measured against a kept copy of SX29's generated C |
 | SX34.3 | QEMU: the own-context reply-receive on the general path (before the in-place take routes it), and a donating one. | none | the step reading no 1 MB cell on both lanes (110 cells, one of them 1 MB, at SX29, D52), then the legs measured again; every other heap reading 0 |
 
 **Acceptance:**
@@ -1886,7 +1892,7 @@ is 21,021,237 bytes and compiles in 769 s.
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX35.1 | ReplyRecv's receive-capability lookup and receive gate move after the reply step, as seL4's `handleRecv` places them (D63). The entry resolves the reply capability and runs the reply step. It then resolves the receive capability on the post-reply state: the operand lookup, the slot checks, the kind and the receive right. A bad receive capability answers the caller, then delivers `CapFault(epCPtr, true)` on the post-reply state. The receive's flow gate still runs before anything the receive makes observable. This takes ReplyRecv's part of SX41.1 (the receive on the state after the invoke phase, for a reply capability), and SX41.1 says so. The declared lock set is measured against the post-reply walk; if the entry footprint cannot cover it, the row stops and reports (D63). | The arm's and the dispatch's equalities to their specifications restated; every family over the reply-receive's report (the run-queue, kernel-records, queue-label, lender, mapping and reschedule stages, the seam coverage and its refusal footprint, the lock bracket, `FaultEntry`) over a lookup on the post-reply state; the entry and cross-core non-interference proofs. | Tier 3 anchors, relation-break-tested; QEMU: a valid reply with a receive capability not found, of the wrong kind and without the receive right, each answering the caller and faulting, at 0 |
-| SX35.2 | The passive server stays current until the scheduling point, as seL4's `rescheduleRequired` leaves `ksCurThread` (D63). The holder's deschedule in the nothing-received outcome and on the reply-receive's success path keeps the current slot, in a holder-only form (`descheduleAtPlacement` itself is unchanged). The scheduling point's successor step also fires on a current thread that cannot be scheduled. It takes a current thread with no context off the core without re-enqueueing it, so no thread runs without a context. | Every success-path family over the holder's deschedule and the nothing-received outcome restated; the scheduling point's drop step with its invariant suite and seam coverage; the non-interference proofs of the reply-receive step and the scheduling point. SX34's interim current-thread form in the run-queue and kernel-records consumers retires. | Tier 3 anchors; QEMU: a passive server's ReplyRecv with a refused receive capability after its pop, at 0 |
+| SX35.2 | The passive server stays current until the scheduling point, as seL4's `rescheduleRequired` leaves `ksCurThread` (D63). The holder's deschedule in the nothing-received outcome and on the reply-receive's success path keeps the current slot, in a holder-only form (`descheduleAtPlacement` itself is unchanged). The scheduling point's successor step also fires on a current thread that cannot be scheduled. It takes a current thread with no context off the core without re-enqueueing it, so no thread runs without a context. | Every success-path family over the holder's deschedule and the nothing-received outcome restated; the scheduling point's drop step with its invariant suite and seam coverage; the non-interference proofs of the reply-receive step and the scheduling point. The run-queue and kernel-records consumers' fault-delivery branch takes the post-reply case SX35.1 makes reachable (D63: SX34 needed no interim form). | Tier 3 anchors; QEMU: a passive server's ReplyRecv with a refused receive capability after its pop, at 0 |
 | SX35.3 | Release: the generated C's size and compile time, and the heap readings, measured again. | none | every heap reading 0 |
 
 **Acceptance:**

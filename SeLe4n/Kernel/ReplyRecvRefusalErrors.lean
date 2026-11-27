@@ -629,4 +629,121 @@ theorem syscallCapFaultAt_none_of_lookup_ok_of_notLookup (layout : SeLe4n.Syscal
   simp only [Platform.FFI.syscallCapFaultAt, SystemState.getObject?_eq_getElem, hTcb, hDec, hIpc,
     hLookup, hR]
 
+/-- **The checked entry's refusal on a reply-receive that reached its answering
+report is the transition's refusal**: every check the entry runs before the
+transition passed (`ReplyRecvAnsweringEntry`), so the entry refuses with the
+error the transition refuses with. -/
+theorem ReplyRecvAnsweringEntry.entry_error {ctx : LabelingContext} {e : CoreId}
+    {st s : SystemState} {ke : KernelError} (hA : ReplyRecvAnsweringEntry ctx e st s)
+    (h : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout e 32 st = .error ke) :
+    ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (epId : SeLe4n.ObjId)
+      (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool),
+      st.scheduler.currentOnCore e = some tid ∧
+      st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (threadOperationCode st tid SeLe4n.arm64DefaultLayout tcb.registerContext)
+        st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
+      decoded.syscallId = .replyRecv ∧
+      syscallOperandLookup decoded.syscallId
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+          requiredRight := syscallRequiredRight decoded.syscallId }
+        (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st = .ok () ∧
+      s = replyRecvTransferStoppedState epId tid rid c label msg grant e st ∧
+      replyRecvTransferOnCore epId tid rid c label msg grant e st = .error ke := by
+  obtain ⟨tid, tcb, decoded, ref, hCtx, hCur, hObj, hDec, hRR, hRef, cap, epId, rid, c, badge,
+    grant, hCap, hRes, hAcc, hRight, hTgt, hFlow, hXc, hR, hAns, hSig, hS⟩ := hA
+  have hObj' : st.objects[tid.toObjId]? = some (.tcb tcb) := by
+    rw [← SystemState.getObject?_eq_getElem]; exact hObj
+  have hRoot : tcb.spaceCells[0] = callerCspaceRoot st tid := by
+    simp only [callerCspaceRoot, hObj]
+  have hResolve : syscallResolveCap
+      { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+        requiredRight := syscallRequiredRight .replyRecv } st = .ok (cap, st) := by
+    simp only [syscallResolveCap, SyscallGate.lookupSlot_mk, hRef, hCap, hRes, Bool.false_eq_true,
+      ↓reduceIte]
+  have hXc0 : ∀ n, syscallExtraCapCount .replyRecv n = 0 := fun _ => rfl
+  refine ⟨tid, tcb, decoded, epId, rid, c, _, _, grant, hCur, hObj', hDec, hRR, ?_, hS, ?_⟩
+  · rw [hRR]
+    simp only [syscallOperandLookup, hResolve, hXc0, callerExtraCapsFault?_zero, receiveGateRefuses,
+      hAcc, hRight, receiveBoundRefuses, Bool.not_true, Bool.false_or, Bool.and_false,
+      Bool.false_eq_true, ↓reduceIte, syscallReceivesOnCap, Bool.true_and, Bool.or_false]
+  have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
+    simp only [lookupThreadRegisterContext, hObj]
+  have hResR := resolveReplyRecvReplyR_eq st tid
+    { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+      requiredRight := syscallRequiredRight .replyRecv } decoded rfl hRoot
+  rw [hR] at hResR
+  simp only [syscallEntryChecked, hCtx, hCur, hRegs, hDec, Bool.false_eq_true, ↓reduceIte,
+    dispatchSyscallChecked, ne_eq, not_true_eq_false, hRR, reduceCtorEq, hObj, syscallInvokeTyped,
+    decodedExtraCapsFault?, hResolve, hXc0, callerExtraCapsFault?_zero, hAcc, Bool.not_true,
+    hRight, dispatchWithCapChecked, dispatchCapabilityOnly, hTgt, hFlow, hXc, ← hResR, hAns,
+    hSig] at h
+  revert h
+  cases replyRecvTransferOnCore epId tid rid c decoded.msgInfo.label _ grant e st with
+  | error e' => intro h; cases h; rfl
+  | ok r => intro h; cases h
+
+/-- **A reply-receive that reached its answering report raises no capability
+fault but on the state it was handed**: the fault decision reads the operand's
+lookup, which passed, and the reply's lookup on the reported state, which
+faults only on a lookup's refusal, and the transition's refusals are lookups'
+only where it stopped where it started (`replyRecvTransferOnCore_refusal_notLookup`). -/
+theorem ReplyRecvAnsweringEntry.capFault_none {ctx : LabelingContext} {e : CoreId}
+    {st s : SystemState} {ke : KernelError} {t : SeLe4n.ThreadId}
+    (hA : ReplyRecvAnsweringEntry ctx e st s) (hInv : st.objects.invExt)
+    (hCur : st.scheduler.currentOnCore e = some t)
+    (h : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout e 32 st = .error ke) :
+    s = st ∨ Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout st s t ke = none := by
+  obtain ⟨tid, tcb, decoded, epId, rid, c, label, msg, grant, hCur', hObj, hDec, hRR, hLookup, hS,
+    hErr⟩ := hA.entry_error h
+  rw [hCur] at hCur'
+  cases hCur'
+  rcases replyRecvTransferOnCore_refusal_notLookup epId t rid c label msg grant e st hInv hErr with
+    hSt | hKe
+  · exact Or.inl (hS.trans hSt)
+  · exact Or.inr (syscallCapFaultAt_none_of_lookup_ok_of_notLookup _ st s t ke tcb decoded true
+      hObj hDec (by rw [hRR]; rfl) hLookup hKe)
+
+/-- `ReplyRecvAnsweringEntry.capFault_none` on the dispatch the entry runs on the
+running thread's decoded frame. -/
+theorem ReplyRecvAnsweringEntry.capFault_none_of_dispatch {ctx : LabelingContext} {e : CoreId}
+    {st s : SystemState} {ke : KernelError} {t : SeLe4n.ThreadId} {tcb : TCB}
+    {decoded : SyscallDecodeResult}
+    (hA : ReplyRecvAnsweringEntry ctx e st s) (hInv : st.objects.invExt)
+    (hCur : st.scheduler.currentOnCore e = some t)
+    (hObj : st.getObject? t.toObjId = some (.tcb tcb))
+    (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+      (threadOperationCode st t SeLe4n.arm64DefaultLayout tcb.registerContext) st t
+      SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded)
+    (h : dispatchSyscallChecked ctx decoded t e st = .error ke) :
+    s = st ∨ Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout st s t ke = none := by
+  refine hA.capFault_none hInv hCur ?_
+  obtain ⟨_, _, _, _, hCtx, -⟩ := hA
+  have hRegs : lookupThreadRegisterContext t st = .ok (tcb.registerContext, st) := by
+    simp only [lookupThreadRegisterContext, hObj]
+  simp only [syscallEntryChecked, hCtx, hCur, hRegs, hDec, Bool.false_eq_true, ↓reduceIte]
+  exact h
+
+/-- **A refusal that raises a capability fault reported the state it was handed
+or its busy reply's cancel** (WS-SX SX34): a reply-receive's stopped state
+other than the state handed to it raises none
+(`ReplyRecvAnsweringEntry.capFault_none`), so a consumer of the fault's
+delivery takes the two cases it always took. -/
+theorem cancelReceiveBusyReply_cases_of_fault {ctx : LabelingContext} {e : CoreId}
+    {st : SystemState} {ke : KernelError} {t : SeLe4n.ThreadId} {f : Fault}
+    (hInv : st.objects.invExt) (hCur : st.scheduler.currentOnCore e = some t)
+    (hE : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout e 32 st = .error ke)
+    (hF : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout st
+      (cancelReceiveBusyReply ctx e st) t ke = some f) :
+    cancelReceiveBusyReply ctx e st = st ∨
+      ∃ (tid holder : SeLe4n.ThreadId), st.scheduler.currentOnCore e = some tid ∧
+        holder ≠ tid ∧ cancelReceiveBusyReply ctx e st = cancelReplyHolder st holder e := by
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with h | h | hA
+  · exact Or.inl h
+  · exact Or.inr h
+  · rcases hA.capFault_none hInv hCur hE with h | h
+    · exact Or.inl h
+    · rw [h] at hF
+      cases hF
+
 end SeLe4n.Kernel
