@@ -352,4 +352,164 @@ theorem replyRecvReceiveCap_of_cnodeSlotsKept {st st' : SystemState} (h : CNodeS
   ⟨syscallResolveCap_of_cnodeSlotsKept h gate hR (not_capNamesUntyped_of_replyRecvAccepted hA),
     (syscallTargetAccepted_of_cnodeSlotsKept h .replyRecv cap).trans hA⟩
 
+/-! ### The `.reply` arm's transition
+
+A reply-receive whose receive completes a bound notification answers its caller
+through the `.reply` arm's transition (`replyRecvCompletesSignalArm`): the
+reply leg, the donation's pop and the priority reversion, then the reply's
+capability transfer and the staged message, or the fault reply's outcome. -/
+
+theorem descheduleAtPlacement_cnodeSlotsKept (st : SystemState) (tid : SeLe4n.ThreadId) :
+    CNodeSlotsKept st (descheduleAtPlacement st tid) :=
+  .of_kindPreservingWrite (descheduleAtPlacement_objectsAgreeOffRunLinks st tid).kindPreserving
+
+theorem propagatePipChainCrossCore_cnodeSlotsKept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
+    CNodeSlotsKept st (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 :=
+  .of_kindPreservingWrite (propagatePipChainCrossCore_kindPreservingWrite st tid ec fuel hInv)
+
+/-- The reply's donation pop keeps every CNode. -/
+theorem applyReplyDonationOnCore_cnodeSlotsKept {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : Concurrency.CoreId}
+    (hInv : st.objects.invExt) (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    CNodeSlotsKept st st' := by
+  rcases applyReplyDonationOnCore_ok_decompose _ _ _ _ _ h with
+    ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩ | ⟨_, _, _, -, -, -, hK⟩
+  · exact popUnheldReplyHead_cnodeSlotsKept hInv hP
+  · exact ((CNodeSlotsKept.of_kindPreservingWrite
+      (returnDonatedSchedContext_kindPreservingWrite hInv hR)).trans
+      (settleReturnedContext_cnodeSlotsKept _ _ _)).trans
+      (descheduleAtPlacement_cnodeSlotsKept _ holderVtid.val)
+  · exact .of_kindPreservingWrite (keepDonatedSchedContext_kindPreservingWrite hInv hK)
+
+/-- **The cross-core reply keeps every CNode**: the reply leg, the donation's
+pop and the priority reversion each keep every kind.  Read off its
+discriminants. -/
+theorem endpointReplyCrossCoreDispatch_cnodeSlotsKept {replier target : SeLe4n.ThreadId}
+    {msg : IpcMessage} {executingCore : Concurrency.CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    CNodeSlotsKept st (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
+  have k1 := endpointReplyOnCore_cnodeSlotsKept (replier := replier) (target := target)
+    (msg := msg) (executingCore := executingCore) hInv
+  have hI1 := endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hInv
+  unfold endpointReplyCrossCoreDispatch
+  cases hR : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res =>
+    rw [hR] at k1 hI1
+    cases res with
+    | error _ => exact .refl _
+    | ok sgi =>
+      dsimp only
+      have hDon : ∀ (rid : SeLe4n.ReplyId) (tv : SeLe4n.ValidThreadId) (s2 : SystemState),
+          applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) = .ok s2 →
+          CNodeSlotsKept st s2 ∧ s2.objects.invExt := fun _ _ _ hD =>
+        ⟨k1.trans (applyReplyDonationOnCore_cnodeSlotsKept hI1 hD),
+          applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI1 hD⟩
+      cases hS : recordedReplyServer? st target with
+      | some expected =>
+        dsimp only
+        cases hV : SeLe4n.ThreadId.toValid? expected with
+        | none => exact .refl _
+        | some _ =>
+          dsimp only
+          cases hA : answeredReplyObject? st target with
+          | none => exact k1.trans (propagatePipChainCrossCore_cnodeSlotsKept _ _ _ _ hI1)
+          | some rid =>
+            dsimp only
+            cases hT : SeLe4n.ThreadId.toValid? target with
+            | none => exact .refl _
+            | some tv =>
+              dsimp only
+              cases hD : applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) with
+              | error _ => exact .refl _
+              | ok s2 =>
+                exact (hDon rid tv s2 hD).1.trans
+                  (propagatePipChainCrossCore_cnodeSlotsKept _ _ _ _ (hDon rid tv s2 hD).2)
+      | none =>
+        dsimp only
+        cases hA : answeredReplyObject? st target with
+        | none => exact k1
+        | some rid =>
+          dsimp only
+          cases hT : SeLe4n.ThreadId.toValid? target with
+          | none => exact .refl _
+          | some tv =>
+            dsimp only
+            cases hD : applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) with
+            | error _ => exact .refl _
+            | ok s2 => exact (hDon rid tv s2 hD).1
+
+/-- The fault reply keeps every CNode: the cross-core reply, then its decoded
+outcome. -/
+theorem faultReplyOnCore_cnodeSlotsKept {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
+    {regs : Array SeLe4n.RegValue} {executingCore : Concurrency.CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    CNodeSlotsKept st (faultReplyOnCore replier faulted mi regs executingCore st).1 := by
+  have k1 := endpointReplyCrossCoreDispatch_cnodeSlotsKept (replier := replier)
+    (target := faulted) (msg := IpcMessage.empty) (executingCore := executingCore) hInv
+  have hI1 := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
+    IpcMessage.empty executingCore st hInv
+  unfold faultReplyOnCore
+  cases hT : st.getTcb? faulted with
+  | none => exact .refl _
+  | some tcb =>
+    dsimp only
+    cases hF : tcb.pendingFault with
+    | none => exact .refl _
+    | some tf =>
+      dsimp only
+      cases hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st with
+      | mk s1 res =>
+        rw [hR] at k1 hI1
+        cases res with
+        | error _ => exact .refl _
+        | ok _ => exact k1.trans (faultReplyApplyOnCore_cnodeSlotsKept s1 faulted _ hI1)
+
+/-- **The `.reply` arm's transition keeps every CNode**: the fault reply, or the
+cross-core reply, the reply's capability transfer and the staged message. -/
+theorem replyTransferOnCoreChecked_cnodeSlotsKept {ctx : LabelingContext}
+    {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {executingCore : Concurrency.CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st
+      = .ok ((), st')) :
+    CNodeSlotsKept st st' := by
+  unfold replyTransferOnCoreChecked at h
+  by_cases hF : threadHasPendingFault st callerTid = true
+  · rw [if_pos hF] at h
+    have k := faultReplyOnCore_cnodeSlotsKept (replier := replier) (faulted := callerTid)
+      (mi := mi) (regs := regs) (executingCore := executingCore) hInv
+    cases hR : faultReplyOnCore replier callerTid mi regs executingCore st with
+    | mk s res =>
+      rw [hR] at h k
+      cases res with
+      | error _ => cases h
+      | ok _ => cases h; exact k
+  · rw [if_neg hF] at h
+    unfold endpointReplyCrossCoreDispatchChecked at h
+    by_cases hFl : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf callerTid) = true
+    · rw [if_pos hFl] at h
+      have k := endpointReplyCrossCoreDispatch_cnodeSlotsKept (replier := replier)
+        (target := callerTid) (msg := msg) (executingCore := executingCore) hInv
+      have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid msg
+        executingCore st hInv
+      cases hR : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+      | mk s res =>
+        rw [hR] at h k hI
+        cases res with
+        | error _ => cases h
+        | ok _ =>
+          dsimp only at h
+          cases hX : replyTransferCaps st replier callerTid grant s with
+          | error _ => rw [hX] at h; cases h
+          | ok p =>
+            obtain ⟨summary, sX⟩ := p
+            rw [hX] at h
+            cases h
+            exact (k.trans (receiveTransferCaps_cnodeSlotsKept hI hX)).trans
+              (CNodeSlotsKept.of_kindPreservingWrite
+                (Architecture.stageDeliveredMessage_kindPreservingWrite sX callerTid summary.capInfo
+                  (receiveTransferCaps_objects_invExt hI hX)))
+    · rw [if_neg hFl] at h; cases h
+
 end SeLe4n.Kernel
