@@ -12662,7 +12662,14 @@ run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_isOk_iff_core($|[ ({:\[\]
 # `.ipcTransfer` edge declines when the source slot is empty, so no
 # destroyer — present or future — can leave an unrevokable child behind.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcTransferSingleCap[^\n]*(\n([ \t][^\n]*)?)*\n      match cdtNodeIsRevocable st srcNode with\n      \| false => \.error \(\.invalidCapability 0\)" SeLe4n/Kernel/Capability/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcUnwrapCapsLoop[^\n]*(\n([ \t][^\n]*)?)*\n          match ipcTransferSingleCap tc\.cap tc\.srcSlot dst st with\n          \| \.error _ => \.ok \(\{ results := acc \}, st\)" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem ipcUnwrapCapsLoop_succ[^\n]*(\n([ \t][^\n]*)?)*\n            match ipcTransferSingleCap tc\.cap tc\.srcSlot dst st with\n            \| \.error _ => \.ok \(\{ results := acc \}, st\)" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
+# The loop reads each install's admission on the turn's own state and either
+# writes the install on that state or stops on it, so no state is kept across a
+# write; the admission is the install's checks, the source's liveness among them,
+# and each turn is the specification's turn by an unconditional equation.
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCapsLoop_succ($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcUnwrapCapsLoop [^\n]*(\n([ \t][^\n]*)?)*\n          if transferInstallAdmitted tc\.srcSlot\.cnode tc\.srcSlot\.slot dst\.cnode dst\.slot tc\.cap st\n          then\n            ipcUnwrapCapsLoop caps endpointId rtcb \(idx \+ 1\) none\n              \(acc\.push \(\.installed dst\.cnode dst\.slot\)\) fuel.\n              \(transferInstallPerform tc\.srcSlot\.cnode tc\.srcSlot\.slot dst\.cnode dst\.slot tc\.cap st\)\n          else \.ok \(\{ results := acc \}, st\)" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def transferInstallAdmitted[^\n]*(\n([ \t][^\n]*)?)*\n  \(SystemState\.lookupSlotCap st ⟨scn, ssl⟩\)\.isSome && !untypedDeriveRefused st ⟨scn, ssl⟩ cap &&\n    cspaceDstAdmitted ⟨dcn, dsl⟩ st" SeLe4n/Kernel/IPC/Operations/CapTransfer.lean'
 # PR #873 round 18: that check asked whether the node still MAPPED to a slot, on
 # the premise that every destroyer severs the mapping.  Delete, CNode retype and
 # the descendant sweep do; the LOCAL sibling sweep does not -- `revokeTargetLocal`

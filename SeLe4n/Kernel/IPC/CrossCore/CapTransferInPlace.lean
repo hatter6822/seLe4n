@@ -194,99 +194,6 @@ theorem receiveSlotK_eq {α : Type} (st : SystemState) (tcb : TCB)
     cases bufferWordOf? st tcb.spaceCells[2] tcb.ipcBuffer ipcBufferReceiveDepthWord <;>
     first | rfl | exact receivePathSlotK_eq _ _ _ _ _ _ _
 
-/-! ### One capability's install, in place -/
-
-/-- **The checks `ipcTransferSingleCap` makes**, read in place: the source slot
-holds a capability, the derivation rule admits it, and the receive slot is an
-empty, addressable slot of a CNode. -/
-@[inline] def transferInstallAdmitted (scn : SeLe4n.ObjId) (ssl : SeLe4n.Slot)
-    (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (cap : Capability) (st : SystemState) : Bool :=
-  (SystemState.lookupSlotCap st ⟨scn, ssl⟩).isSome && !untypedDeriveRefused st ⟨scn, ssl⟩ cap &&
-    cspaceDstAdmitted ⟨dcn, dsl⟩ st
-
-/-- **`ipcTransferSingleCap`'s writes, in place**: the capability's fields,
-with no mapping record, written straight into the receive slot's own record
-(`CNode.insertFields`, as `cspaceCopyPerformImpl` writes a copy), the transfer's
-derivation edge, and an untyped source set full. -/
-@[inline] def transferInstallPerform (scn : SeLe4n.ObjId) (ssl : SeLe4n.Slot)
-    (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (cap : Capability) (st : SystemState) :
-    SystemState :=
-  untypedSourceSetFull
-    ((st.storeCNodeWith dcn
-      (·.insertFields dsl cap.target cap.rights cap.badgeWord cap.badged cap.freeIndex
-        cap.cnodeGuard cap.cnodeGuardSize)).cdtAddChild
-      ⟨scn, ssl⟩ ⟨dcn, dsl⟩ .ipcTransfer) ⟨scn, ssl⟩ cap
-
-/-- **One install is its checks and its writes**: where the checks pass, the
-specification's install succeeds with exactly the in-place writes; where they
-fail it refuses. -/
-theorem ipcTransferSingleCap_eq_inPlace {β : Type} (cap : Capability) (src dst : SlotRef)
-    (st : SystemState) (kErr : β) (kOk : SystemState → β) :
-    (match ipcTransferSingleCap cap src dst st with
-      | .error _ => kErr
-      | .ok ((), st') => kOk st') =
-      if transferInstallAdmitted src.cnode src.slot dst.cnode dst.slot cap st then
-        kOk (transferInstallPerform src.cnode src.slot dst.cnode dst.slot cap st)
-      else kErr := by
-  unfold transferInstallAdmitted
-  cases hD : cspaceDstAdmitted ⟨dst.cnode, dst.slot⟩ st with
-  | false =>
-    simp only [Bool.and_false, Bool.false_eq_true, ↓reduceIte]
-    cases hT : ipcTransferSingleCap cap src dst st with
-    | error _ => rfl
-    | ok p =>
-      obtain ⟨⟨⟩, st'⟩ := p
-      obtain ⟨_, st2, -, -, -, hIns, -⟩ := ipcTransferSingleCap_ok_cases hT
-      obtain ⟨cn, hC, hA, hE, -⟩ := cspaceInsertSlot_ok_decompose _ _ _ _ hIns
-      unfold cspaceDstAdmitted at hD
-      simp only [hC, hA, hE, Option.isNone_none, Bool.and_self, Bool.true_eq_false] at hD
-  | true =>
-    have hIns := cspaceInsertSlot_of_admitted hD cap.withoutMapping
-    have hC : ∃ cn, st.getCNode? dst.cnode = some cn := by
-      unfold cspaceDstAdmitted at hD
-      split at hD
-      · next cn h => exact ⟨cn, h⟩
-      · cases hD
-    obtain ⟨cn, hC⟩ := hC
-    simp only [Bool.and_true]
-    unfold ipcTransferSingleCap cdtNodeIsRevocable
-    simp only [hC]
-    cases hL : (SystemState.lookupSlotCap st src).isSome with
-    | false => rfl
-    | true =>
-      simp only [Bool.true_and]
-      cases hU : untypedDeriveRefused st src cap with
-      | true => rfl
-      | false =>
-        simp only [Bool.not_false, Bool.false_eq_true, ↓reduceIte]
-        rw [hIns]
-        unfold transferInstallPerform
-        simp only [CNode.insertFields_eq_insert]
-        rfl
-
-theorem ipcTransferSingleCap_of_admitted {cap : Capability} {src dst : SlotRef}
-    {st : SystemState}
-    (h : transferInstallAdmitted src.cnode src.slot dst.cnode dst.slot cap st = true) :
-    ipcTransferSingleCap cap src dst st =
-      .ok ((), transferInstallPerform src.cnode src.slot dst.cnode dst.slot cap st) := by
-  have := ipcTransferSingleCap_eq_inPlace (β := Option SystemState) cap src dst st none some
-  rw [if_pos h] at this
-  revert this
-  cases ipcTransferSingleCap cap src dst st with
-  | error _ => intro h; cases h
-  | ok p => obtain ⟨⟨⟩, s⟩ := p; intro h; cases h; rfl
-
-theorem ipcTransferSingleCap_of_refused {cap : Capability} {src dst : SlotRef}
-    {st : SystemState}
-    (h : transferInstallAdmitted src.cnode src.slot dst.cnode dst.slot cap st = false) :
-    ∃ e, ipcTransferSingleCap cap src dst st = .error e := by
-  have := ipcTransferSingleCap_eq_inPlace (β := Option SystemState) cap src dst st none some
-  rw [if_neg (by simp [h])] at this
-  revert this
-  cases ipcTransferSingleCap cap src dst st with
-  | error e => intro _; exact ⟨e, rfl⟩
-  | ok p => obtain ⟨⟨⟩, s⟩ := p; intro h; cases h
-
 /-! ### The transfer loop, in place -/
 
 /-- One of three, by index (the third for every index past the second). -/
@@ -418,7 +325,7 @@ theorem ipcUnwrapCapsLoop_eq_capSteps (ep : SeLe4n.ObjId) (unw : Bool) (rt : TCB
       intro j hj
       have := hC (j + 1) (Nat.succ_lt_succ hj)
       rwa [show idx + (j + 1) = idx + 1 + j by omega] at this
-    simp only [ipcUnwrapCapsLoop, h0, capStepsApply, capStepsInfo]
+    simp only [ipcUnwrapCapsLoop_succ, h0, capStepsApply, capStepsInfo]
     unfold transferCapAt TransferCap.fromSlot
     dsimp only
     rw [capUnwrapsAt_transferEndpoint]

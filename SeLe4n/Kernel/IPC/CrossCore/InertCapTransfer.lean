@@ -172,7 +172,7 @@ theorem receiveTransferCaps_of_inert {st st' : SystemState}
             simp only [hNe, Bool.false_eq_true, ↓reduceIte, ipcUnwrapCaps]
             obtain ⟨n, hS⟩ : ∃ n, caps.size = n + 1 := ⟨caps.size - 1, by omega⟩
             rw [hS]
-            simp only [ipcUnwrapCapsLoop, h0, TransferCap.fromSlot, hU, Bool.false_eq_true,
+            simp only [ipcUnwrapCapsLoop_succ, h0, TransferCap.fromSlot, hU, Bool.false_eq_true,
               ↓reduceIte]
   · simp [capTransferInert] at hInert
 

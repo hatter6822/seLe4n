@@ -133,10 +133,112 @@ theorem recordUnwrappedBadge_ghostsKept (st : SystemState) (tcb : TCB) (i : Nat)
     (b : SeLe4n.Badge) : (recordUnwrappedBadge st tcb i b).cdt = st.cdt := by
   unfold recordUnwrappedBadge; split <;> rfl
 
+/-! ### One capability's install, in place -/
+
+/-- **The checks `ipcTransferSingleCap` makes**, read in place: the source slot
+holds a capability, the derivation rule admits it, and the receive slot is an
+empty, addressable slot of a CNode. -/
+@[inline] def transferInstallAdmitted (scn : SeLe4n.ObjId) (ssl : SeLe4n.Slot)
+    (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (cap : Capability) (st : SystemState) : Bool :=
+  (SystemState.lookupSlotCap st ⟨scn, ssl⟩).isSome && !untypedDeriveRefused st ⟨scn, ssl⟩ cap &&
+    cspaceDstAdmitted ⟨dcn, dsl⟩ st
+
+/-- **`ipcTransferSingleCap`'s writes, in place**: the capability's fields,
+with no mapping record, written straight into the receive slot's own record
+(`CNode.insertFields`, as `cspaceCopyPerformImpl` writes a copy), the transfer's
+derivation edge, and an untyped source set full. -/
+@[inline] def transferInstallPerform (scn : SeLe4n.ObjId) (ssl : SeLe4n.Slot)
+    (dcn : SeLe4n.ObjId) (dsl : SeLe4n.Slot) (cap : Capability) (st : SystemState) :
+    SystemState :=
+  untypedSourceSetFull
+    ((st.storeCNodeWith dcn
+      (·.insertFields dsl cap.target cap.rights cap.badgeWord cap.badged cap.freeIndex
+        cap.cnodeGuard cap.cnodeGuardSize)).cdtAddChild
+      ⟨scn, ssl⟩ ⟨dcn, dsl⟩ .ipcTransfer) ⟨scn, ssl⟩ cap
+
+/-- **One install is its checks and its writes**: where the checks pass, the
+specification's install succeeds with exactly the in-place writes; where they
+fail it refuses. -/
+theorem ipcTransferSingleCap_eq_inPlace {β : Type} (cap : Capability) (src dst : SlotRef)
+    (st : SystemState) (kErr : β) (kOk : SystemState → β) :
+    (match ipcTransferSingleCap cap src dst st with
+      | .error _ => kErr
+      | .ok ((), st') => kOk st') =
+      if transferInstallAdmitted src.cnode src.slot dst.cnode dst.slot cap st then
+        kOk (transferInstallPerform src.cnode src.slot dst.cnode dst.slot cap st)
+      else kErr := by
+  unfold transferInstallAdmitted
+  cases hD : cspaceDstAdmitted ⟨dst.cnode, dst.slot⟩ st with
+  | false =>
+    simp only [Bool.and_false, Bool.false_eq_true, ↓reduceIte]
+    cases hT : ipcTransferSingleCap cap src dst st with
+    | error _ => rfl
+    | ok p =>
+      obtain ⟨⟨⟩, st'⟩ := p
+      obtain ⟨_, st2, -, -, -, hIns, -⟩ := ipcTransferSingleCap_ok_cases hT
+      obtain ⟨cn, hC, hA, hE, -⟩ := cspaceInsertSlot_ok_decompose _ _ _ _ hIns
+      unfold cspaceDstAdmitted at hD
+      simp only [hC, hA, hE, Option.isNone_none, Bool.and_self, Bool.true_eq_false] at hD
+  | true =>
+    have hIns := cspaceInsertSlot_of_admitted hD cap.withoutMapping
+    have hC : ∃ cn, st.getCNode? dst.cnode = some cn := by
+      unfold cspaceDstAdmitted at hD
+      split at hD
+      · next cn h => exact ⟨cn, h⟩
+      · cases hD
+    obtain ⟨cn, hC⟩ := hC
+    simp only [Bool.and_true]
+    unfold ipcTransferSingleCap cdtNodeIsRevocable
+    simp only [hC]
+    cases hL : (SystemState.lookupSlotCap st src).isSome with
+    | false => rfl
+    | true =>
+      simp only [Bool.true_and]
+      cases hU : untypedDeriveRefused st src cap with
+      | true => rfl
+      | false =>
+        simp only [Bool.not_false, Bool.false_eq_true, ↓reduceIte]
+        rw [hIns]
+        unfold transferInstallPerform
+        simp only [CNode.insertFields_eq_insert]
+        rfl
+
+theorem ipcTransferSingleCap_of_admitted {cap : Capability} {src dst : SlotRef}
+    {st : SystemState}
+    (h : transferInstallAdmitted src.cnode src.slot dst.cnode dst.slot cap st = true) :
+    ipcTransferSingleCap cap src dst st =
+      .ok ((), transferInstallPerform src.cnode src.slot dst.cnode dst.slot cap st) := by
+  have := ipcTransferSingleCap_eq_inPlace (β := Option SystemState) cap src dst st none some
+  rw [if_pos h] at this
+  revert this
+  cases ipcTransferSingleCap cap src dst st with
+  | error _ => intro h; cases h
+  | ok p => obtain ⟨⟨⟩, s⟩ := p; intro h; cases h; rfl
+
+theorem ipcTransferSingleCap_of_refused {cap : Capability} {src dst : SlotRef}
+    {st : SystemState}
+    (h : transferInstallAdmitted src.cnode src.slot dst.cnode dst.slot cap st = false) :
+    ∃ e, ipcTransferSingleCap cap src dst st = .error e := by
+  have := ipcTransferSingleCap_eq_inPlace (β := Option SystemState) cap src dst st none some
+  rw [if_neg (by simp [h])] at this
+  revert this
+  cases ipcTransferSingleCap cap src dst st with
+  | error e => intro _; exact ⟨e, rfl⟩
+  | ok p => obtain ⟨⟨⟩, s⟩ := p; intro h; cases h
+
 /-- **One capability's turn of seL4's `transferCapsToSlots` loop**, from index
 `idx`: unwrap a capability to the endpoint (its badge to the receiver's buffer),
 or install it in the receive slot `slot?` and use the slot up, or stop.
-Termination is structural on `fuel` (`caps.size` at the entry). -/
+Termination is structural on `fuel` (`caps.size` at the entry).
+
+The install reads its admission first (`transferInstallAdmitted`: the receive
+slot an empty, addressable slot of a CNode, the source a live slot, the
+derivation rule; every check `ipcTransferSingleCap` makes) on the state the
+turn is handed, then makes the install's writes on that state
+(`transferInstallPerform`) or stops on it.  So no turn keeps its state across a
+write to answer a refusal, and a CNode store finds the object table it rewrites
+unshared.  Each turn is `ipcTransferSingleCap`'s install, the turn's equality to
+its specification (`ipcUnwrapCapsLoop_succ`). -/
 def ipcUnwrapCapsLoop (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId) (rtcb : TCB)
     (idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult) (fuel : Nat) :
     Kernel CapTransferSummary :=
@@ -154,11 +256,61 @@ def ipcUnwrapCapsLoop (caps : Array TransferCap) (endpointId : Option SeLe4n.Obj
         match slot? with
         | none => .ok ({ results := acc }, st)
         | some dst =>
-          match ipcTransferSingleCap tc.cap tc.srcSlot dst st with
-          | .error _ => .ok ({ results := acc }, st)
-          | .ok ((), st') =>
+          if transferInstallAdmitted tc.srcSlot.cnode tc.srcSlot.slot dst.cnode dst.slot tc.cap st
+          then
             ipcUnwrapCapsLoop caps endpointId rtcb (idx + 1) none
-              (acc.push (.installed dst.cnode dst.slot)) fuel' st'
+              (acc.push (.installed dst.cnode dst.slot)) fuel'
+              (transferInstallPerform tc.srcSlot.cnode tc.srcSlot.slot dst.cnode dst.slot tc.cap st)
+          else .ok ({ results := acc }, st)
+
+/-- The loop out of fuel stops. -/
+theorem ipcUnwrapCapsLoop_zero (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
+    (rtcb : TCB) (idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult) :
+    ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc 0 =
+      fun st => .ok ({ results := acc }, st) := rfl
+
+/-- **Each turn is the specification's turn**, unconditionally: the install is
+`ipcTransferSingleCap`, its refusal the stop on the state the turn was handed
+(`ipcTransferSingleCap_of_admitted`, `ipcTransferSingleCap_of_refused`). -/
+theorem ipcUnwrapCapsLoop_succ (caps : Array TransferCap) (endpointId : Option SeLe4n.ObjId)
+    (rtcb : TCB) (idx : Nat) (slot? : Option CSpaceAddr) (acc : Array CapTransferResult)
+    (fuel : Nat) :
+    ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc (fuel + 1) =
+      match caps[idx]? with
+      | none => fun st => .ok ({ results := acc }, st)
+      | some tc => fun st =>
+        if capUnwrapsAt tc.cap endpointId then
+          let b := tc.cap.badge.getD SeLe4n.Badge.zero
+          ipcUnwrapCapsLoop caps endpointId rtcb (idx + 1) slot? (acc.push (.unwrapped b)) fuel
+            (recordUnwrappedBadge st rtcb idx b)
+        else
+          match slot? with
+          | none => .ok ({ results := acc }, st)
+          | some dst =>
+            match ipcTransferSingleCap tc.cap tc.srcSlot dst st with
+            | .error _ => .ok ({ results := acc }, st)
+            | .ok ((), st') =>
+              ipcUnwrapCapsLoop caps endpointId rtcb (idx + 1) none
+                (acc.push (.installed dst.cnode dst.slot)) fuel st' := by
+  funext st
+  conv => lhs; unfold ipcUnwrapCapsLoop
+  cases caps[idx]? with
+  | none => rfl
+  | some tc =>
+    dsimp only
+    by_cases hU : capUnwrapsAt tc.cap endpointId = true
+    · rw [if_pos hU, if_pos hU]
+    · rw [if_neg hU, if_neg hU]
+      cases slot? with
+      | none => rfl
+      | some dst =>
+        dsimp only
+        by_cases hA : transferInstallAdmitted tc.srcSlot.cnode tc.srcSlot.slot dst.cnode dst.slot
+            tc.cap st = true
+        · rw [if_pos hA, ipcTransferSingleCap_of_admitted hA]
+        · rw [if_neg hA]
+          obtain ⟨e, he⟩ := ipcTransferSingleCap_of_refused (Bool.eq_false_iff.mpr hA)
+          rw [he]
 
 /-- **Transfer the capabilities resolved at the rendezvous** (seL4's
 `transferCapsToSlots`) to the receiver `rtcb`, whose receive slot is `slot?`,
@@ -182,10 +334,10 @@ theorem ipcUnwrapCapsLoop_rel (R : SystemState → SystemState → Prop)
       ipcUnwrapCapsLoop caps endpointId rtcb idx slot? acc fuel st = .ok (summary, st') →
       R st' st
   | 0, _, _, _, st, st', _, _, h => by
-    simp only [ipcUnwrapCapsLoop, Except.ok.injEq, Prod.mk.injEq] at h
+    simp only [ipcUnwrapCapsLoop_zero, Except.ok.injEq, Prod.mk.injEq] at h
     rw [← h.2]; exact hRefl st
   | fuel + 1, idx, slot?, acc, st, st', summary, hInst, h => by
-    simp only [ipcUnwrapCapsLoop] at h
+    rw [ipcUnwrapCapsLoop_succ] at h
     cases hC : caps[idx]? with
     | none =>
       simp only [hC, Except.ok.injEq, Prod.mk.injEq] at h

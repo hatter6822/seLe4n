@@ -171,9 +171,9 @@ theorem replyTransferCaps_of_inert (pre : SystemState) (replier caller : SeLe4n.
   unfold ipcUnwrapCaps
   generalize resolveExtraCaps root addrs true st = caps
   cases hN : caps.size with
-  | zero => simp [ipcUnwrapCapsLoop]
+  | zero => simp [ipcUnwrapCapsLoop_zero]
   | succ n =>
-    simp only [ipcUnwrapCapsLoop]
+    rw [ipcUnwrapCapsLoop_succ]
     cases caps[0]? with
     | none => rfl
     | some tc => simp [capUnwrapsAt]

@@ -1298,6 +1298,12 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `performReceiveCallNoLinkDelivered` (`receiveCallNoLinkTake_delivered`).
   , `SeLe4n.Kernel.receiveCallNoLinkTakeState
   , `SeLe4n.Kernel.faultSuspend
+  -- One transferred capability's install (seL4 `transferCaps`'s `cteInsert`):
+  -- the specification of the transfer loop's install, which the loop runs as
+  -- its admission read first and its writes on the same state
+  -- (`transferInstallAdmitted`, `transferInstallPerform`,
+  -- `ipcUnwrapCapsLoop_succ`), so no turn holds its state across the write.
+  , `SeLe4n.Kernel.ipcTransferSingleCap
   -- WS-ZA ZA5.4 part 26: names for the states a thread's finalisation reaches
   -- part way (`FinaliseRetirable.lean`), which the carriage of its admission is
   -- stated on (part 34); the finalise runs the steps themselves (`finaliseThread`).
