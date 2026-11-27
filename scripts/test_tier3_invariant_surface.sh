@@ -4913,6 +4913,11 @@ run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_flow($|[ ({:\[\]]
 run_check "INVARIANT" rg -n -U '^theorem dispatchReplyRecvAfterReply_ok [^\n]*\n(    [^\n]*\n)*      syscallLookupCap gate s = \.ok \(cap, s\) ∧\n      syscallTargetAccepted \.replyRecv s cap = true ∧\n      dispatchWithCapChecked ctx decoded tid executingCore gate cap st = \.ok \(\(\), st.\) := by' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallArmChecked_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallArmChecked_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem descheduleKeepingCurrentOnCore_of_current($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
+run_check "INVARIANT" rg -n '^theorem descheduleKeepingCurrentOnCore_induct($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
+run_check "INVARIANT" rg -n '^theorem dropReturnedContextCaller_induct($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
+run_check "INVARIANT" rg -n -U '^theorem dropReturnedContextCaller_not_current_unbound [^\n]*\n(    [^\n]*\n)*    ¬ \(\(dropReturnedContextCaller true \(some caller\) post c\)\.scheduler\.currentOnCore c =\n        some caller ∧\n      threadUnboundAt \(dropReturnedContextCaller true \(some caller\) post c\) caller = true\) := by' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
+run_check "INVARIANT" rg -n '^theorem dropReturnedContextCaller_currentOnCore_none($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReturnedContextDrop.lean
 run_check "INVARIANT" rg -n -U '      match recvEp stA with\n      \| \.error e =>\n          \.error \(e, replyRecvNothingReceived recordedServer executingCore returnedSc\? stA\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '  \| \.ok \(\(\), st1\) =>\n      match recvEp st1 with\n      \| \.error e => \.error \(e, st1\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyThenR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean

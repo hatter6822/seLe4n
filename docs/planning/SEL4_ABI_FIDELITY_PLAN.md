@@ -1199,11 +1199,60 @@ A different answer changes only the rows that cite it.
     `handleRecv`'s fault runs on that thread. seLe4n's holder deschedule
     (`replyRecvNothingReceived`, `descheduleAtPlacement`) clears the core's
     current slot at once. SX36 keeps the server current until the scheduling
-    point, as `rescheduleRequired` leaves it. The scheduling point then takes
-    a current thread with no context off the core without re-enqueueing it.
-    No invariant requires a current thread to hold a context, so the interim
-    state is on the invariant. SX34's measurement of that cost is the basis
-    of SX36's estimate.
+    point, as `rescheduleRequired` leaves it. No invariant requires a
+    current thread to hold a context, so the interim state is on the
+    invariant. SX34's measurement of that cost is the basis of SX36's
+    estimate. SX36.1 and SX36.2 ship together (the coordinator's ruling of
+    2026-11-27, which withdrew the earlier wrap).
+  - **The drop is scoped to a context the reply step's pop returned**
+    (SX36.2's eighth session, the coordinator's ruling of 2026-11-27). An
+    unbound thread is fully schedulable in seLe4n: `hasSufficientBudget`'s
+    `.unbound` arm is `true`, and `schedContextUnbind` re-enqueues its
+    thread at the legacy priority. The owner keeps that feature, so the
+    scheduling point does not drop every current thread that has no context.
+    The holder-only deschedule (`descheduleKeepingCurrentOnCore`) leaves a
+    holder that is current on the named core in place, and
+    `descheduleAtPlacement` is unchanged. At the scheduling point,
+    `dropReturnedContextCaller` takes the caller off its core without
+    re-enqueueing it only when three things hold: the syscall is a
+    ReplyRecv, the caller held a context on loan at entry
+    (`contextReturnableAtEntry`), and the caller is still current with no
+    context. Within a ReplyRecv, only the reply step's pop can unbind the
+    caller, because a receive that dequeues a `Call` donates *to* it. So
+    the gate selects exactly the case the owner's card ruled on. The drop
+    then vacates the slot, and the existing local successor rule chooses
+    another thread. On the capability-fault path the drop never fires: the
+    fault blocks the server on its fault endpoint, which vacates the slot,
+    and the successor rule runs as it does for any blocking leg. The drop
+    fires only on a refusal after the reply that raises no fault (a
+    flow-denied receive, or the receive leg's off-invariant refusals).
+  - **Every path on which a caller can end a syscall without a context**
+    (the sweep, by reading the writers of the binding codes,
+    `scBindingScCode := 0`):
+    - `schedContextUnbind` (and the `.schedContextUnbind` arm's
+      `schedContextUnbindAllOnCore`): unchanged. The thread is re-enqueued
+      at its legacy priority and stays schedulable.
+    - The finalisation of a scheduling context
+      (`finaliseSchedContextDeschedule`, then `finaliseSchedContextUnbind`):
+      unchanged. A ready holder is descheduled at its placement at the step
+      (seL4's `schedContext_unbindTCB`).
+    - The `.reply` arm's pop (`applyReplyDonationOnCore`): unchanged. The
+      holder is descheduled at the step, and no refusal follows the pop.
+    - ReplyRecv's pop, then a receive that blocks: unchanged. The block
+      vacates the slot.
+    - ReplyRecv's pop, then a `Send` rendezvous
+      (`replyRecvPostReceiveDonation`'s second arm): unchanged. The holder
+      is descheduled at the step, and the transition succeeds.
+    - ReplyRecv's pop, then a `Call` rendezvous: the new client's context is
+      donated to the caller, so it keeps running on a context.
+    - ReplyRecv's pop, then a refused receive (`replyRecvNothingReceived`):
+      **changed**. The holder-only deschedule keeps the caller current, and
+      a capability fault blocks it, or the scheduling point drops it.
+    - A `Call`'s or a donating `Send`'s donation (`donateSchedContext`):
+      unchanged. The donor blocks on the reply, which vacates the slot.
+    - The bound notification's return (`maybeReturnSchedContext`, from a
+      blocking `Wait` or `Recv`): unchanged. The waiter blocks, which
+      vacates the slot.
   - **SX34 needed no interim form** (SX34's seventh session's finding, the
     coordinator's ruling of 2026-11-27). Until SX36, the third case of the
     report's consumers (a refused receive after a pop that returned a
