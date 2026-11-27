@@ -1100,13 +1100,29 @@ def replyRecvHolderDescheduleWriteSet (tid holder : SeLe4n.ThreadId)
     (st : SystemState) : List Concurrency.CoreId :=
   if holder = tid then []
   else descheduleAtPlacementCores st holder
+/-- **The cores the nothing-received outcome (`replyRecvNothingReceived`) may
+write**, mirroring its two arms: the chain walk from `recordedServer` where the
+pop handed nothing back, and the holder's deschedule at its placement followed
+by that walk where it handed a context back.  A refused receive, and a refused
+post-receive donation, report that outcome (WS-SX SX34, D60's option (b)), so
+the reply-receive's footprint names these cores on both error arms. -/
+def replyRecvNothingReceivedWriteSet (recordedServer : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
+    List Concurrency.CoreId :=
+  match returned? with
+  | none => pipChainWriteSet st recordedServer serverCore st.objects.size
+  | some (_, holder) => replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
 /-- The chain walk's cores after the post-receive half's `Call` donation: the
-walk from `recordedServer` on the donation's post-state, empty on the
-fail-closed arm. -/
+walk from `recordedServer` on the donation's post-state.  On a refused donation
+the nothing-received outcome's cores on the state handed to the donation, which
+is the state a refused donation stops in on a well-formed object table
+(`applyRendezvousCallDonationR_stops_at_entry`, D62). -/
 def replyRecvRendezvousChainCores (st : SystemState) (tid nextThread recordedServer : SeLe4n.ThreadId)
-    (serverCore : Concurrency.CoreId) : List Concurrency.CoreId :=
+    (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) : List Concurrency.CoreId :=
   match applyRendezvousCallDonation st tid nextThread with
-  | .error _ => []
+  | .error _ => replyRecvNothingReceivedWriteSet recordedServer serverCore returned? st
   | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objects.size
 
 /-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
@@ -1114,9 +1130,10 @@ half may write**, mirroring its own control flow.  Three shapes: a rendezvous
 arm (on either pop answer) donates (per-core silent) and walks from the
 post-donation state; the arm that popped nothing and dequeued no `Call` walks the
 chain from its pre-state; the remaining arm deschedules the recorded server on
-its own core first.  The fail-closed arm
-produces no post-state at all, so its entry is `[]` and the confinement theorem's
-hypothesis rules it out.
+its own core first.  A refused donation reports the nothing-received outcome
+(WS-SX SX34), so its entry is that outcome's cores
+(`replyRecvRendezvousChainCores`); the confinement theorem of the step that
+succeeds rules it out.
 
 The arm is selected by `returned?` — the context the pop handed back — rather
 than by re-reading a binding the pop has already cleared, which is the same
@@ -1128,7 +1145,7 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
   match returned? with
   | none =>
       if rendezvousDequeuedCall st nextThread then
-        replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore
+        replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore returned?
       else pipChainWriteSet st recordedServer serverCore st.objects.size
   | some (_, holder) =>
       if rendezvousDequeuedCall st nextThread then
@@ -1138,7 +1155,7 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
         -- that omitted them would be false of exactly that arm.
         replyRecvHolderDescheduleWriteSet tid holder st ++
           (replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
-              recordedServer serverCore)
+              recordedServer serverCore returned?)
       else replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
 /-- The cores the `.replyRecv` tail writes after the post-receive donation: the
 receive leg's priority hand-off, on the donation's post-state; empty on the
@@ -1198,7 +1215,12 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
               (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore
                   (receiveReturnSchedContext true
                     (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) receiver) with
-               | (_, .error _) => []
+               -- A refused receive reports the nothing-received outcome on the
+               -- receive's state (WS-SX SX34), so its cores are named here.
+               | (sE, .error _) =>
+                  replyRecvNothingReceivedWriteSet
+                    ((recordedReplyServer? st prevCaller).getD receiver) executingCore
+                    returnedSc? sE
                | (st2, .ok (nextThread, _, _)) =>
                   -- The hand-off runs on the donation's post-state.
                   replyRecvPostReceiveDonationWriteSet receiver

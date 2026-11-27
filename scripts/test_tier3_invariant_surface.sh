@@ -4870,6 +4870,10 @@ run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_objects_invE
 run_check "INVARIANT" rg -n -U '^theorem QueueLabelsGrowFrame\.replyRecvTransferStoppedState [^\n]*\n(    [^\n]*\n)*    QueueLabelsGrowFrame tid epId st\n      \(replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st\)' SeLe4n/Kernel/QueueLabels/Entry.lean
 run_check "INVARIANT" rg -n '^theorem QueueLabelsStage\.replyRecvTransferStoppedState($|[ ({:\[\]])' SeLe4n/Kernel/QueueLabels/Entry.lean
 run_check "INVARIANT" rg -n '^theorem LendersStep\.replyRecvTransferStoppedState($|[ ({:\[\]])' SeLe4n/Kernel/ContextLenders/SyscallEntry.lean
+# A refused receive and a refused post-receive donation report the nothing-received outcome, so the
+# reply-receive's footprint names that outcome's cores on both error arms (WS-SX SX34).
+run_check "INVARIANT" rg -n -U '               \| \(sE, \.error _\) =>\n                  replyRecvNothingReceivedWriteSet\n                    \(\(recordedReplyServer\? st prevCaller\)\.getD receiver\) executingCore\n                    returnedSc\? sE' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '  match applyRendezvousCallDonation st tid nextThread with\n  \| \.error _ => replyRecvNothingReceivedWriteSet recordedServer serverCore returned\? st\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.
@@ -14209,7 +14213,7 @@ run_negative_check "INVARIANT" rg -n '[({]lend : Bool' SeLe4n/ tests/
 run_negative_check "INVARIANT" rg -n '^theorem callLend_holderFlowsToContext($|[ ({:\[\]])' SeLe4n/
 # The in-place lend of a reply-receive's taken call is unconditional.
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lendSchedContextInPlace [^\n]*(\n([ \t][^\n]*)?)*\n  migrateSchedContextReplenishment \(donateSchedContextInPlace X donor donee scS\) scS donorHome\n *doneeHome$" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore\n *else" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore returned\?\n *else" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation [^\n]*(\n([ \t][^\n]*)?)*\| none =>\s*(--[^\n]*\s*)*if rendezvousDequeuedCall st nextThread then\n *match applyRendezvousCallDonation st tid nextThread with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def rendezvousCallDonationReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st donor receiver with\n *\| some _ => \[determineTargetCore st donor, determineTargetCore st receiver\]" SeLe4n/Kernel/IPC/Operations/Donation.lean'
 # ...and the `.replyRecv` segment must not read the `.receive` arm's pre-state
