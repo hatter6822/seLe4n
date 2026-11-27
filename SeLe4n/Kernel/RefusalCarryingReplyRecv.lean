@@ -99,6 +99,22 @@ def replyRecvReplyRefused (ctx : LabelingContext) (st : SystemState) (tid : SeLe
   | .ok (some (_, prevCaller, _, _)) => !replyRecvReplyAnswers ctx st tid prevCaller
   | _ => false
 
+/-- **The receive half alone** (WS-SX SX33): the receive arm on the reply
+register's capability (`endpointReceiveCheckedArmR`), which a reply-receive runs
+when its reply half is skipped -- an extra capability that does not look up, a
+reply with no caller to answer, or a refused reply.  Out of line, so each
+reply-receive arm calls one copy of the receive rather than inlining one at
+every skip. -/
+@[noinline] def replyRecvReceiveAloneR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap
+
+theorem replyRecvReceiveAloneR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    replyRecvReceiveAloneR ctx tid replyAddr executingCore cap =
+      endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap := rfl
+
 /-- **The state a reply-receive arm's refusal reports**: the receive arm's
 (`receiveArmReport`) when the reply half is skipped, by an extra capability
 that does not look up (WS-SX SX6.1), a reply with no caller to answer (WS-SX
@@ -166,11 +182,11 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
         .error (.flowDenied, st)
       else
         callerExtraCapsFailK st tid mi.extraCaps
-          (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
+          (fun _ => replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st)
           (fun _ =>
         match resolveReplyRecvReplyR st tid replyAddr with
         | .error e => .error (e, st)
-        | .ok none => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st
+        | .ok none => replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st
         | .ok (some (rid, prevCaller, replyBadge, replyGrant)) =>
             let msg : IpcMessage :=
               { registers := extractMessageRegisters regs mi, badge := replyBadge }
@@ -186,7 +202,7 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
               | .ok (summary, st') =>
                   .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
               | .error e => .error (e, st)
-            else endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
+            else replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st)
     | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
@@ -220,7 +236,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
     cases hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps with
     | some xf =>
       simp only []
-      rw [hSkip]
+      rw [replyRecvReceiveAloneR_eq, hSkip]
       simp only [RefusalCarrying.ofKernelReporting, dispatchWithCapChecked,
         dispatchCapabilityOnly, hRR, hTgt, hFlow, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
         hXc, replyRecvArmReport, hRep]
@@ -238,7 +254,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
       cases r with
       | none =>
         simp only [hEq, hS, ↓reduceIte, hRep]
-        rw [hSkip]
+        rw [replyRecvReceiveAloneR_eq, hSkip]
         cases receiveResolvedArm ctx decoded gate tid epId executingCore
           (cancelRecvBusyReply ctx tid gate decoded executingCore st) <;> rfl
       | some r =>
@@ -255,7 +271,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
               _ | ⟨summary, st'⟩ <;> rfl
         · simp only [Bool.not_eq_true] at hAns
           simp only [hAns, Bool.false_eq_true, ↓reduceIte, Bool.not_false, hRep]
-          rw [hSkip]
+          rw [replyRecvReceiveAloneR_eq, hSkip]
           cases receiveResolvedArm ctx decoded gate tid epId executingCore
             (cancelRecvBusyReply ctx tid gate decoded executingCore st) <;> rfl
   | _ =>
@@ -1827,14 +1843,14 @@ receives alone (WS-SX SX7.2). -/
       else
         let replyAddr := SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf layout.replyReg)
         callerExtraCapsFailK st tid extraCaps
-          (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
+          (fun _ => replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st)
           (fun _ =>
             let resolved := fun rcap rid c badge grant =>
               replyRecvResolvedR ctx epId tid c rid badge grant layout rf len label executingCore
                 (replyRecvSignalArmR ctx layout rf len extraCaps label tid executingCore rcap)
-                (endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap) st
+                (replyRecvReceiveAloneR ctx tid replyAddr executingCore cap) st
             resolveReplyRecvK st tid replyAddr (fun e => .error (e, st))
-              (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
+              (fun _ => replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st)
               resolved)
     | _ => .error (.invalidCapability 0, st)
 
@@ -2952,14 +2968,14 @@ replier's overflow words into the caller's buffer
         let replyAddr := SeLe4n.CPtr.ofWord
           (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)
         callerExtraCapsFailK st tid extraCaps
-          (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
+          (fun _ => replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st)
           (fun _ =>
             resolveReplyRecvK st tid replyAddr (fun e => .error (e, st))
-              (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
+              (fun _ => replyRecvReceiveAloneR ctx tid replyAddr executingCore cap st)
               (fun rcap rid c badge grant =>
                 replyRecvLongResolvedR ctx epId tid c rid badge grant rf len label executingCore
                   (replyRecvLongSignalArmR ctx rf len extraCaps label tid executingCore rcap)
-                  (endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap) st))
+                  (replyRecvReceiveAloneR ctx tid replyAddr executingCore cap) st))
     | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)

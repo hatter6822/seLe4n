@@ -4797,6 +4797,17 @@ run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_of_admits($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem replyRecvPopAdmits_of_pop_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 run_check "INVARIANT" rg -n '^theorem Admits\.popAdmits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvBlockComposed.lean
 run_check "INVARIANT" rg -n '^theorem LegAdmits\.popAdmits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean
+# The composite's entry-state reads taken before the reply leg (WS-SX SX33): the reads-first form
+# hands the out-of-line body the recorded server, the reply's request and the caller's receive
+# target, all read off the entry state, which goes to the leg alone; the body's transfer reads
+# those values, and the form is the composite with no assumption.
+run_check "INVARIANT" rg -n -U '^def endpointReplyRecvAnsweringOnCoreChecked [^\n]*(\n([ \t][^\n]*)?)*\n  endpointReplyRecvAnsweringBody answer epId tid rid prevCaller msg executingCore\n    \(\(recordedReplyServer\? st prevCaller\)\.getD tid\)\n    \(if answer\.isSome then none else replyCapRequest st tid grant\)\n    \(receiverCapTarget\? st prevCaller\) st\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def endpointReplyRecvAnsweringBody [^\n]*(\n([ \t][^\n]*)?)*\n    match endpointReplyOnCore tid prevCaller msg executingCore st with\n(\n|[ \t][^\n]*\n)*        match receiveTransferCaps req none target st1q with\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[csimp\] theorem endpointReplyRecvAnsweringOnCore_eq_checked :\n    @endpointReplyRecvAnsweringOnCore = @endpointReplyRecvAnsweringOnCoreChecked :=' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+# The receive half alone, out of line (WS-SX SX33): every reply-receive arm that skips its reply
+# half calls one copy of the receive arm, and no arm in the module inlines the receive arm itself.
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvReceiveAloneR [^\n]*(\n([ \t][^\n]*)?)*\n  endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_negative_check "INVARIANT" rg -n 'endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 run_check "INVARIANT" rg -n '^theorem ReplyRecvArm\.faultTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_arm_faultTake($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean

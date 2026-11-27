@@ -803,6 +803,60 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
                   executingCore)
 
+/-- **The composite after its entry-state reads** (WS-SX SX33, checks first): the
+reply-receive composite with the three values it reads off its entry state
+handed in -- the recorded server, the reply's capability request and the
+answered caller's receive target -- so that nothing reads the entry state once
+the reply leg has written.  Out of line, so its arguments are computed before
+the leg runs and the entry state is handed to the leg alone. -/
+@[noinline] def endpointReplyRecvAnsweringBody (answer : Option Architecture.FaultReplyOutcome)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : Concurrency.CoreId) (recordedServer : SeLe4n.ThreadId)
+    (req : Option (Capability × Array SeLe4n.CPtr)) (target : Option (TCB × Option CSpaceAddr))
+    (st : SystemState) : Except KernelError (CapTransferSummary × SystemState) :=
+    match endpointReplyOnCore tid prevCaller msg executingCore st with
+    | (_, .error e) => .error e
+    | (st1, .ok _replySgi) =>
+        match replyRecvPopDonation rid prevCaller st1 with
+        | .error e => .error e
+        | .ok (returnedSc?, st1q) =>
+        match receiveTransferCaps req none target st1q with
+        | .error e => .error e
+        | .ok (replySummary, st1p) =>
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+            (receiveReturnSchedContext true
+              (replyRecvAnswerCaller answer st1p prevCaller replySummary.capInfo) tid) with
+        | (_, .error e) => .error e
+        | (st2, .ok (nextThread, summary, _)) =>
+            match replyRecvPostReceiveDonation tid recordedServer nextThread executingCore
+                returnedSc? st2 with
+            | .error e => .error e
+            | .ok ((), st3) =>
+                .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
+                  executingCore)
+
+/-- The composite with its entry-state reads taken first, so the reply leg is
+handed the entry state alone (`endpointReplyRecvAnsweringOnCore_eq_checked`). -/
+def endpointReplyRecvAnsweringOnCoreChecked (answer : Option Architecture.FaultReplyOutcome)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    Except KernelError (CapTransferSummary × SystemState) :=
+  endpointReplyRecvAnsweringBody answer epId tid rid prevCaller msg executingCore
+    ((recordedReplyServer? st prevCaller).getD tid)
+    (if answer.isSome then none else replyCapRequest st tid grant)
+    (receiverCapTarget? st prevCaller) st
+
+/-- The reads-first composite is the composite, with no assumption; the compiler
+runs it in the composite's place. -/
+@[csimp] theorem endpointReplyRecvAnsweringOnCore_eq_checked :
+    @endpointReplyRecvAnsweringOnCore = @endpointReplyRecvAnsweringOnCoreChecked := by
+  funext answer epId tid rid prevCaller msg grant executingCore st
+  unfold endpointReplyRecvAnsweringOnCore endpointReplyRecvAnsweringOnCoreChecked
+    endpointReplyRecvAnsweringBody
+  simp only [replyRecvReplyTransfer_eq_receiveTransferCaps]
+
 /-- A reply-receive composite that succeeds found its caller waiting for the
 reply (`replyRecvCallerAwaitsReply`): its reply leg checks that first. -/
 theorem replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok
