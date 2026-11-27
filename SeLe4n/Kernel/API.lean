@@ -8460,6 +8460,66 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
     endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
+/-- **Today's order refuses wherever the entry refuses the receive capability**
+(WS-SX SX36.1): the `.replyRecv` gate and arm on the entry state
+(`syscallInvokeTyped` over `dispatchWithCapChecked`) refuse whenever the receive
+capability's resolution, kind, right or flow gate refuses there
+(`replyRecvReceiveEndpoint`), with nothing written.  Unconditional: no invariant
+of the state is read. -/
+theorem syscallInvokeTyped_replyRecv_refuses_of_endpoint {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
+    {gate : SyscallGate} {st : SystemState} {e : KernelError}
+    (hSid : decoded.syscallId = .replyRecv)
+    (hE : replyRecvReceiveEndpoint ctx gate tid st = .error e) :
+    ∃ e', syscallInvokeTyped .replyRecv gate none
+      (dispatchWithCapChecked ctx decoded tid executingCore gate) st = .error e' := by
+  unfold replyRecvReceiveEndpoint at hE
+  unfold syscallInvokeTyped
+  cases hR : syscallResolveCap gate st with
+  | error e₀ => exact ⟨e₀, rfl⟩
+  | ok v =>
+    obtain ⟨cap, st'⟩ := v
+    have hSt : st' = st := by
+      unfold syscallResolveCap at hR
+      cases hL : gate.lookupSlot st with
+      | error f => rw [hL] at hR; cases hR
+      | ok ref =>
+        rw [hL] at hR
+        dsimp only at hR
+        cases hC : SystemState.lookupSlotCap st ref with
+        | none => rw [hC] at hR; cases hR
+        | some c =>
+          rw [hC] at hR
+          dsimp only at hR
+          by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject c = true
+          · rw [if_pos hRes] at hR; cases hR
+          · rw [if_neg hRes] at hR; cases hR; rfl
+    subst hSt
+    rw [hR] at hE
+    dsimp only at hE ⊢
+    cases hA : syscallTargetAccepted .replyRecv st' cap
+    · exact ⟨_, rfl⟩
+    · rw [hA] at hE
+      cases hRt : cap.hasRight gate.requiredRight
+      · exact ⟨_, by simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]; rfl⟩
+      · rw [hRt] at hE
+        simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hE ⊢
+        cases hT : cap.target with
+        | object epId =>
+          rw [hT] at hE
+          dsimp only at hE
+          cases hF : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid)
+          · have hD : dispatchWithCapChecked ctx decoded tid executingCore gate cap st' =
+                .error .flowDenied := by
+              simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSid, hT, hF]
+            exact ⟨_, hD⟩
+          · rw [hF] at hE; cases hE
+        | _ =>
+          have hD : dispatchWithCapChecked ctx decoded tid executingCore gate cap st' =
+              .error (.invalidCapability 0) := by
+            simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSid, hT]
+          exact ⟨_, hD⟩
+
 -- ============================================================================
 -- W2-C (MED-04): the dispatcher's wildcard arm is unreachable
 -- ============================================================================

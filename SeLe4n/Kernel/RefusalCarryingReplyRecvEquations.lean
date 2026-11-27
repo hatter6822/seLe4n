@@ -1466,6 +1466,49 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
   simp only [hRR] at hArm ⊢
   exact hArm
 
+/-- **The reply-receive's arm refuses a receive capability the entry refuses,
+on the state it was handed** (WS-SX SX36.1): its reserved-object, type and
+right checks and its flow gate (`endpointReplyRecvCheckedArmR`) all run before
+any write, so a capability one of them refuses comes back with the state
+unchanged.  Unconditional. -/
+theorem replyRecvOperandArmThenTaintR_refuses_unchanged (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (st : SystemState)
+    (hRef : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true ∨
+      syscallTargetAccepted .replyRecv st cap = false ∨
+      cap.hasRight (syscallRequiredRight .replyRecv) = false ∨
+      ∀ epId, cap.target = .object epId →
+        endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
+    ∃ e, replyRecvOperandArmThenTaintR ctx layout rf len extraCaps label tid executingCore
+      (syscallRequiredRight .replyRecv) (some cap) st = .error (e, st) := by
+  unfold replyRecvOperandArmThenTaintR
+  dsimp only
+  by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
+  · exact ⟨_, by rw [if_pos hIdle]⟩
+  rw [if_neg hIdle]
+  cases hA : syscallTargetAccepted .replyRecv st cap
+  · exact ⟨_, rfl⟩
+  simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  cases hRt : cap.hasRight (syscallRequiredRight .replyRecv)
+  · exact ⟨_, rfl⟩
+  have hFl : ∀ epId, cap.target = .object epId →
+      endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false := by
+    rcases hRef with h | h | h | h
+    · exact absurd h hIdle
+    · rw [hA] at h; cases h
+    · rw [hRt] at h; cases h
+    · exact h
+  simp only [↓reduceIte, withTaintWordsAt_eq]
+  unfold endpointReplyRecvCheckedArmR
+  cases hT : cap.target with
+  | object epId =>
+    dsimp only
+    rw [hFl epId hT]
+    exact ⟨_, rfl⟩
+  | _ => exact ⟨_, rfl⟩
+
+
 /-! ### The long reply-receive -/
 
 /-- The long take arm is the specification's path, the replier's frame asking
