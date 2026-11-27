@@ -625,6 +625,141 @@ theorem cancelReceiveBusyReply_cases_holder (ctx : LabelingContext)
   have hC := hK gate rfl
   exact Or.inr ⟨tid, ⟨k⟩, hCur, busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hC), h⟩
 
+/-- **Where the reply-receive's composite stops** (WS-SX SX34): on a well-formed
+object table whose pop is admitted, a refusal of the refusal-carrying composite
+reports the reply leg's own state where the reply leg refused, and otherwise the
+nothing-received outcome (`replyRecvNothingReceived`) on the state the receive
+returned -- a refused receive -- or on the state the receive committed, after
+the holder's deschedule where the pop handed a context back -- a refused
+post-receive donation, which refuses only on the state it was handed
+(`applyRendezvousCallDonationR_stops_at_entry`).  A refused pop is impossible
+there (`replyRecvPopDonation_ok_of_admits`). -/
+theorem endpointReplyRecvAnsweringBodyR_stopped {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {core : Concurrency.CoreId}
+    {rs : SeLe4n.ThreadId} {req : Option (Capability × Array SeLe4n.CPtr)}
+    {target : Option (TCB × Option CSpaceAddr)} {st s : SystemState} {e : KernelError}
+    (hInv : st.objects.invExt) (hA : replyRecvPopAdmits st rid prevCaller = true)
+    (h : endpointReplyRecvAnsweringBodyR answer epId tid rid prevCaller msg core rs req target st =
+      .error (e, s)) :
+    ((∃ e', (endpointReplyOnCore tid prevCaller msg core st).2 = .error e') ∧
+        s = (endpointReplyOnCore tid prevCaller msg core st).1) ∨
+      ∃ sgi ret? popped, (endpointReplyOnCore tid prevCaller msg core st).2 = .ok sgi ∧
+        replyRecvPopDonation rid prevCaller (endpointReplyOnCore tid prevCaller msg core st).1 =
+          .ok (ret?, popped) ∧
+        popped.objects.invExt ∧
+        ((s = replyRecvNothingReceived rs core ret?
+            (endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+              (receiveReturnSchedContext true
+                (replyRecvAnswerCaller answer (receiveTransferCapsDone req none target popped).2
+                  prevCaller (receiveTransferCapsDone req none target popped).1.capInfo) tid)).1) ∨
+         ∃ st2 next summary sgi',
+          endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+              (receiveReturnSchedContext true
+                (replyRecvAnswerCaller answer (receiveTransferCapsDone req none target popped).2
+                  prevCaller (receiveTransferCapsDone req none target popped).1.capInfo) tid) =
+            (st2, .ok (next, summary, sgi')) ∧
+          (s = replyRecvNothingReceived rs core ret? st2 ∨
+            ∃ sc holder, ret? = some (sc, holder) ∧
+              s = replyRecvNothingReceived rs core ret? (replyRecvHolderDeschedule tid holder st2))) := by
+  unfold endpointReplyRecvAnsweringBodyR at h
+  generalize hR : endpointReplyOnCore tid prevCaller msg core st = R at h
+  obtain ⟨st1, r1⟩ := R
+  cases r1 with
+  | error e1 => cases h; exact Or.inl ⟨⟨_, rfl⟩, rfl⟩
+  | ok sgi =>
+  have hInv1 : st1.objects.invExt := by
+    have := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg core st hInv
+    rw [hR] at this; exact this
+  obtain ⟨⟨ret?, popped⟩, hPop⟩ := replyRecvPopDonation_ok_of_admits (replier := tid) (msg := msg)
+    (core := core) hInv (by rw [hR]) hA
+  rw [hR] at hPop
+  dsimp only at hPop
+  have hPopR : replyRecvPopDonationR rid prevCaller st1 = .ok (ret?, popped) := by
+    have := replyRecvPopDonationR_eq rid prevCaller st1
+    rw [hPop] at this
+    cases hq : replyRecvPopDonationR rid prevCaller st1 with
+    | error es => rw [hq] at this; cases this
+    | ok r => rw [hq] at this; cases this; rfl
+  have hInvP := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 popped ret? hInv1 hPop
+  dsimp only at h
+  rw [hPopR] at h
+  dsimp only at h
+  refine Or.inr ⟨sgi, ret?, popped, rfl, hPop, hInvP, ?_⟩
+  have hX : (receiveReturnSchedContext true
+      (replyRecvAnswerCaller answer (receiveTransferCapsDone req none target popped).2 prevCaller
+        (receiveTransferCapsDone req none target popped).1.capInfo) tid).objects.invExt :=
+    receiveReturnSchedContext_objects_invExt _ _ _
+      (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _
+        (receiveTransferCaps_objects_invExt hInvP (receiveTransferCaps_eq_done req none target popped)))
+  generalize receiveReturnSchedContext true
+    (replyRecvAnswerCaller answer (receiveTransferCapsDone req none target popped).2 prevCaller
+      (receiveTransferCapsDone req none target popped).1.capInfo) tid = X at h hX ⊢
+  have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid (some rid) core X hX
+  generalize hV : endpointReceiveDualWithCapsOnCore epId tid (some rid) core X = V at h hInv2
+  obtain ⟨st2, r2⟩ := V
+  cases r2 with
+  | error e2 => cases h; exact Or.inl rfl
+  | ok v =>
+  obtain ⟨next, summary, sgi'⟩ := v
+  dsimp only at h
+  refine Or.inr ⟨st2, next, summary, sgi', rfl, ?_⟩
+  split at h
+  · rename_i e3 s3 hD
+    cases h
+    unfold replyRecvPostReceiveDonationR at hD
+    split at hD
+    · split at hD
+      · split at hD
+        · rename_i es hDon
+          obtain ⟨e4, s4⟩ := es
+          have := applyRendezvousCallDonationR_stops_at_entry hInv2 hDon
+          cases hD; subst this; exact Or.inl rfl
+        · cases hD
+      · cases hD
+    · rename_i _ holder
+      split at hD
+      · split at hD
+        · rename_i es hDon
+          obtain ⟨e4, s4⟩ := es
+          have := applyRendezvousCallDonationR_stops_at_entry
+            (by
+              unfold replyRecvHolderDeschedule; split
+              · exact hInv2
+              · exact descheduleAtPlacement_preserves_objects_invExt _ _ hInv2) hDon
+          cases hD; subst this; exact Or.inr ⟨_, holder, rfl, rfl⟩
+        · cases hD
+      · cases hD
+  · cases h
+
+/-- **The state a refused reply-receive transition reports is the state handed
+in, or the composite's stopped state** (WS-SX SX34): the admission's refusal and
+a transition that does not refuse report the state handed in; any other refusal
+is the refusal-carrying composite's, after an admitted pop, which
+`endpointReplyRecvAnsweringBodyR_stopped` resolves. -/
+theorem replyRecvTransferStoppedState_cases (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
+    (grant : Bool) (core : Concurrency.CoreId) (st : SystemState) :
+    replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st = st ∨
+      (replyRecvPopAdmits st rid prevCaller = true ∧
+        ∃ e, endpointReplyRecvAnsweringBodyR (replyRecvCallerFaultAnswer? st prevCaller label msg)
+            epId tid rid prevCaller
+            (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) core
+            ((recordedReplyServer? st prevCaller).getD tid)
+            (if (replyRecvCallerFaultAnswer? st prevCaller label msg).isSome then none
+              else replyCapRequest st tid grant)
+            (receiverCapTarget? st prevCaller) st =
+          .error (e, replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st)) := by
+  unfold replyRecvTransferStoppedState replyRecvTransferOnCoreR
+  by_cases hA : replyRecvPopAdmits st rid prevCaller = true
+  · rw [if_pos hA]
+    dsimp only
+    generalize endpointReplyRecvAnsweringBodyR _ _ _ _ _ _ _ _ _ _ st = B
+    cases B with
+    | error es => obtain ⟨e, s⟩ := es; exact Or.inr ⟨hA, e, rfl⟩
+    | ok _ => exact Or.inl rfl
+  · rw [if_neg hA]; exact Or.inl rfl
+
 /-- The entry routed to a receive: `syscallEntryCheckedR_eq`'s receive case. -/
 theorem syscallEntryCheckedR_eq_of_receive (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)

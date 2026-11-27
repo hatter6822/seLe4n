@@ -4852,6 +4852,10 @@ run_check "INVARIANT" rg -n '^theorem donateSchedContextR_stops_at_entry($|[ ({:
 run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonationR_stops_at_entry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
 run_check "INVARIANT" rg -n '^theorem donationPushRefusal\?_eq_none_of_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
 run_check "INVARIANT" rg -n '^theorem donationPushRefusal\?_some_exact($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+# Where a refused reply-receive stops (WS-SX SX34): the transition's report is the state handed in or the
+# composite's stopped state, which is the reply leg's, or the nothing-received outcome on the receive's state.
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyR_stopped($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_cases($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.
