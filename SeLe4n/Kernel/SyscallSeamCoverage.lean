@@ -242,6 +242,383 @@ theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjI
   exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
     label msg grant e st _ hl
 
+
+-- ----------------------------------------------------------------------------
+-- The refused reply-receive's stopped state (WS-SX SX34)
+-- ----------------------------------------------------------------------------
+--
+-- A refused receive, and a refused post-receive donation, report the
+-- nothing-received outcome on the state the refusing step returned (D60's
+-- option (b)), so the state a refused `.replyRecv` reports is not the state
+-- handed in.  These are its footprint obligations: the run segment
+-- (`replyRecvTransferWriteSet`, whose refusal arms name the nothing-received
+-- cores) and the replenish segment, then the arm's footprint over both.
+
+theorem replyRecvNothingReceived_confinedToCores (rs : SeLe4n.ThreadId) (core : CoreId)
+    (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (s : SystemState) :
+    observableSlotsConfinedToCores s (replyRecvNothingReceived rs core ret? s)
+      (replyRecvNothingReceivedWriteSet rs core ret? s) := by
+  unfold replyRecvNothingReceived replyRecvNothingReceivedWriteSet
+  cases ret? with
+  | none => exact propagatePipChainCrossCore_confinedToCores core s.objects.size s rs
+  | some p =>
+    obtain ⟨_, holder⟩ := p
+    exact replyRecvDescheduleAndWalk_confinedToCores holder rs core s
+
+theorem replyRecvTransferStoppedState_confinedToCores (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st)
+      (replyRecvTransferWriteSet epId tid rid prevCaller label msg grant core st) := by
+  rcases replyRecvTransferStoppedState_cases epId tid rid prevCaller label msg grant core st with
+    hE | ⟨hA, e, hB⟩
+  · rw [hE]; exact observableSlotsConfinedToCores_refl st _
+  generalize replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st = s
+    at hB ⊢
+  unfold replyRecvTransferWriteSet endpointReplyRecvAnsweringWriteSet
+  simp only [replyRecvReplyTransfer_eq_receiveTransferCaps]
+  revert hB
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = a
+  generalize replyRecvLegMessage a msg = m
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  generalize (if a.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  intro hB
+  unfold endpointReplyRecvAnsweringBodyR at hB
+  have hConfR := endpointReplyOnCore_confinedToCores tid prevCaller m core st hInv
+  have hInvR := endpointReplyOnCore_preserves_objects_invExt tid prevCaller m core st hInv
+  generalize hR : endpointReplyOnCore tid prevCaller m core st = R at hB hConfR hInvR ⊢
+  obtain ⟨st1, r1⟩ := R
+  cases r1 with
+  | error e1 =>
+    have hSt := endpointReplyOnCore_error_state (e := e1) (by rw [hR])
+    rw [hR] at hSt
+    cases hB
+    exact observableSlotsConfinedToCores_of_eq _ hSt
+  | ok sgi =>
+  obtain ⟨⟨ret?, popped⟩, hPop⟩ := replyRecvPopDonation_ok_of_admits (replier := tid) (msg := m)
+    (core := core) hInv (by rw [hR]) hA
+  rw [hR] at hPop
+  dsimp only at hPop hB ⊢
+  have hPopR : replyRecvPopDonationR rid prevCaller st1 = .ok (ret?, popped) := by
+    have := replyRecvPopDonationR_eq rid prevCaller st1
+    rw [hPop] at this
+    cases hq : replyRecvPopDonationR rid prevCaller st1 with
+    | error es => rw [hq] at this; cases this
+    | ok r => rw [hq] at this; cases this; rfl
+  rw [hPopR] at hB
+  rw [hPop]
+  dsimp only at hB ⊢
+  have hInvP := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 popped ret?
+    hInvR hPop
+  have hXo := receiveTransferCaps_eq_done req none target popped
+  rw [hXo]
+  generalize receiveTransferCapsDone req none target popped = D at hB hXo
+  obtain ⟨xs, st1p⟩ := D
+  dsimp only at hB ⊢
+  have hPopConf : observableSlotsConfinedToCores st1 st1p [] := by
+    have hQ := replyRecvPopDonation_confinedToCores rid prevCaller st1 popped ret? hPop
+    have hXc : observableSlotsConfinedToCores popped st1p [] :=
+      observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (receiveTransferCaps_scheduler_eq hXo) (receiveTransferCaps_preserves_machine hXo)
+    simpa using observableSlotsConfinedToCores_trans hQ hXc
+  have hInv1p : st1p.objects.invExt := receiveTransferCaps_objects_invExt hInvP hXo
+  have hAnsConf := replyRecvAnswerCaller_confinedToCores a st1p prevCaller xs.capInfo
+  have hInv1a := replyRecvAnswerCaller_preserves_objects_invExt a st1p prevCaller xs.capInfo
+    hInv1p
+  have hPopAns := observableSlotsConfinedToCores_trans hPopConf hAnsConf
+  simp only [List.nil_append] at hPopAns
+  generalize replyRecvAnswerCaller a st1p prevCaller xs.capInfo = st1a at hAnsConf hInv1a hPopAns hB ⊢
+  have hRetConf := receiveReturnSchedContext_confinedToCores true st1a tid
+  have hInv1r := receiveReturnSchedContext_objects_invExt true st1a tid hInv1a
+  have hRecvConf := endpointReceiveDualWithCapsOnCore_confinedToCores epId tid (some rid) core
+    (receiveReturnSchedContext true st1a tid) hInv1r
+  have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid (some rid)
+    core _ hInv1r
+  have hRetRecv := observableSlotsConfinedToCores_trans hRetConf hRecvConf
+  simp only [List.nil_append] at hRetRecv
+  generalize hV : endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+    (receiveReturnSchedContext true st1a tid) = V at hB hRetRecv hInv2 ⊢
+  obtain ⟨st2, r2⟩ := V
+  cases r2 with
+  | error e2 =>
+    cases hB
+    dsimp only
+    exact observableSlotsConfinedToCores_trans hConfR (observableSlotsConfinedToCores_trans hPopAns
+      (observableSlotsConfinedToCores_trans hRetRecv
+        (replyRecvNothingReceived_confinedToCores rs core ret? st2)))
+  | ok v =>
+  obtain ⟨next, summary, sgi'⟩ := v
+  dsimp only at hB hRetRecv hInv2 ⊢
+  unfold replyRecvPostReceiveDonationR at hB
+  unfold replyRecvPostReceiveDonationWriteSet replyRecvPostDonationTailCores
+  cases ret? with
+  | none =>
+    dsimp only at hB ⊢
+    by_cases hCall : rendezvousDequeuedCall st2 next = true
+    · rw [if_pos hCall] at hB
+      cases hDon : applyRendezvousCallDonationR tid next st2 with
+      | ok st3 => rw [hDon] at hB; cases hB
+      | error es =>
+        obtain ⟨e4, s4⟩ := es
+        have hS4 := applyRendezvousCallDonationR_stops_at_entry hInv2 hDon
+        have hSpec : applyRendezvousCallDonation st2 tid next = .error e4 := by
+          rw [← applyRendezvousCallDonationR_eq, hDon]; rfl
+        rw [hDon] at hB
+        cases hB
+        subst hS4
+        simp only [replyRecvPostReceiveDonation, replyRecvRendezvousChainCores, hCall, if_true,
+          hSpec, List.append_nil]
+        exact observableSlotsConfinedToCores_trans hConfR
+          (observableSlotsConfinedToCores_trans hPopAns
+          (observableSlotsConfinedToCores_trans hRetRecv
+            (replyRecvNothingReceived_confinedToCores rs core none s4)))
+    · rw [if_neg hCall] at hB; cases hB
+  | some p =>
+    obtain ⟨sc, holder⟩ := p
+    dsimp only at hB ⊢
+    by_cases hCall : rendezvousDequeuedCall st2 next = true
+    · rw [if_pos hCall] at hB
+      have hInvH : (replyRecvHolderDeschedule tid holder st2).objects.invExt := by
+        unfold replyRecvHolderDeschedule; split
+        · exact hInv2
+        · exact descheduleAtPlacement_preserves_objects_invExt _ _ hInv2
+      cases hDon : applyRendezvousCallDonationR tid next (replyRecvHolderDeschedule tid holder st2) with
+      | ok st3 => rw [hDon] at hB; cases hB
+      | error es =>
+        obtain ⟨e4, s4⟩ := es
+        have hS4 := applyRendezvousCallDonationR_stops_at_entry hInvH hDon
+        have hSpec : applyRendezvousCallDonation (replyRecvHolderDeschedule tid holder st2) tid next
+            = .error e4 := by
+          rw [← applyRendezvousCallDonationR_eq, hDon]; rfl
+        rw [hDon] at hB
+        cases hB
+        subst hS4
+        simp only [replyRecvPostReceiveDonation, replyRecvRendezvousChainCores, hCall, if_true,
+          hSpec, List.append_nil]
+        exact observableSlotsConfinedToCores_trans hConfR
+          (observableSlotsConfinedToCores_trans hPopAns
+          (observableSlotsConfinedToCores_trans hRetRecv
+            (observableSlotsConfinedToCores_trans
+              (replyRecvHolderDeschedule_confinedToCores tid holder st2)
+              (replyRecvNothingReceived_confinedToCores rs core (some (sc, holder)) _))))
+    · rw [if_neg hCall] at hB; cases hB
+
+/-- A refused blocking receive returns the state it was handed. -/
+theorem endpointReceiveDualOnCore_blocked_error_state (epId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (ec : CoreId)
+    (st s : SystemState) (e : KernelError) (ep : Endpoint)
+    (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = none)
+    (h : endpointReceiveDualOnCore epId receiver replyId ec st = (s, .error e)) : s = st := by
+  unfold endpointReceiveDualOnCore at h
+  rw [hEp] at h
+  simp only [hHead] at h
+  repeat' (first | (cases h; rfl) | (simp at h; done) | split at h)
+
+/-- **The receive leg writes no replenish queue outside its block-path segment,
+on either outcome**: a refused leg returns the state it was handed, except a
+refused capability transfer after a committed leg, whose scheduler is the leg's. -/
+theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne_any (epId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (ec : CoreId)
+    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt)
+    (hne : c ∉ receivePreReturnReplenishCores st epId receiver) :
+    (endpointReceiveDualWithCapsOnCore epId receiver replyId ec st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  rw [endpointReceiveDualWithCapsOnCore_scheduler_eq]
+  cases hEp : st.getEndpoint? epId with
+  | none => rw [endpointReceiveDualOnCore_state_of_no_endpoint epId receiver replyId ec st hEp]
+  | some ep =>
+    cases hHead : ep.sendQ.head with
+    | some sender =>
+      exact endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous epId receiver replyId ec
+        st ep sender hEp hHead c
+    | none =>
+      cases hL : endpointReceiveDualOnCore epId receiver replyId ec st with
+      | mk sL r =>
+        cases r with
+        | error e =>
+          rw [endpointReceiveDualOnCore_blocked_error_state epId receiver replyId ec st sL e ep hEp
+            hHead hL]
+        | ok v =>
+          obtain ⟨stClean, hClean, hRepl⟩ := endpointReceiveDualOnCore_replenishQueueOnCore_of_blocked
+            epId receiver replyId ec st sL v ep hEp hHead hL
+          rw [hRepl c]
+          exact cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne st stClean epId receiver c
+            hObjInv (receiveRendezvousSender?_of_blocked st epId ep hEp hHead) hne hClean
+
+/-- The nothing-received outcome writes no replenish queue. -/
+theorem replyRecvNothingReceived_replenishQueueOnCore (rs : SeLe4n.ThreadId) (core : CoreId)
+    (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (s : SystemState)
+    (hInv : s.objects.invExt) (c : CoreId) :
+    (replyRecvNothingReceived rs core ret? s).scheduler.replenishQueueOnCore c
+      = s.scheduler.replenishQueueOnCore c := by
+  unfold replyRecvNothingReceived
+  cases ret? with
+  | none => exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings s rs core
+      s.objects.size hInv).1 c
+  | some p =>
+    obtain ⟨_, holder⟩ := p
+    rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings _ rs core _
+      (descheduleAtPlacement_preserves_objects_invExt s holder hInv)).1 c,
+      descheduleAtPlacement_replenishQueueOnCore]
+
+/-- **A refused reply-receive writes no replenish queue outside the arm's
+replenish segment** (WS-SX SX34): each leg it ran before it stopped keeps the
+queues outside its own sub-segment, the refused receive returns its state, and
+the nothing-received outcome writes none. -/
+theorem replyRecvTransferStoppedState_replenishQueueOnCore_ne (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) (d : CoreId)
+    (hne : d ∉ replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      epId tid rid prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant core
+      st) :
+    (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core
+        st).scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d := by
+  rcases replyRecvTransferStoppedState_cases epId tid rid prevCaller label msg grant core st with
+    hE | ⟨hA, e, hB⟩
+  · rw [hE]
+  generalize replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st = s
+    at hB ⊢
+  unfold replyRecvHandoffReplenishCores at hne
+  simp only [replyRecvReplyTransfer_eq_receiveTransferCaps] at hne
+  revert hB hne
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = a
+  generalize replyRecvLegMessage a msg = m
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  generalize (if a.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  intro hB hne
+  unfold endpointReplyRecvAnsweringBodyR at hB
+  have hR1 := endpointReplyOnCore_replenishQueueOnCore tid prevCaller m core st d
+  have hInvR := endpointReplyOnCore_preserves_objects_invExt tid prevCaller m core st hInv
+  generalize hR : endpointReplyOnCore tid prevCaller m core st = R at hB hne hR1 hInvR
+  obtain ⟨st1, r1⟩ := R
+  cases r1 with
+  | error e1 =>
+    have hSt := endpointReplyOnCore_error_state (e := e1) (by rw [hR])
+    rw [hR] at hSt
+    cases hB
+    exact hR1
+  | ok sgi =>
+  obtain ⟨⟨ret?, popped⟩, hPop⟩ := replyRecvPopDonation_ok_of_admits (replier := tid) (msg := m)
+    (core := core) hInv (by rw [hR]) hA
+  rw [hR] at hPop
+  dsimp only at hPop hB hne hR1 hInvR
+  have hPopR : replyRecvPopDonationR rid prevCaller st1 = .ok (ret?, popped) := by
+    have := replyRecvPopDonationR_eq rid prevCaller st1
+    rw [hPop] at this
+    cases hq : replyRecvPopDonationR rid prevCaller st1 with
+    | error es => rw [hq] at this; cases this
+    | ok r => rw [hq] at this; cases this; rfl
+  rw [hPopR] at hB
+  rw [hPop] at hne
+  dsimp only at hB hne
+  have hInvP := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 popped ret?
+    hInvR hPop
+  have hXo := receiveTransferCaps_eq_done req none target popped
+  rw [hXo] at hne
+  generalize receiveTransferCapsDone req none target popped = D at hB hXo hne
+  obtain ⟨xs, st1p⟩ := D
+  dsimp only at hB hne
+  simp only [List.mem_append, not_or] at hne
+  obtain ⟨hnePop, hneRet, hnePre, hnePost⟩ := hne
+  have hRP := replyRecvPopDonation_replenishQueueOnCore_ne rid prevCaller st1 popped ret? d hInvR
+    hnePop hPop
+  have hInv1p : st1p.objects.invExt := receiveTransferCaps_objects_invExt hInvP hXo
+  have hRX : st1p.scheduler = popped.scheduler := receiveTransferCaps_scheduler_eq hXo
+  have hInv1a := replyRecvAnswerCaller_preserves_objects_invExt a st1p prevCaller xs.capInfo
+    hInv1p
+  have hRa := replyRecvAnswerCaller_replenishQueueOnCore a st1p prevCaller xs.capInfo d
+  generalize replyRecvAnswerCaller a st1p prevCaller xs.capInfo = st1a
+    at hInv1a hRa hB hneRet hnePre hnePost
+  have hInv1r := receiveReturnSchedContext_objects_invExt true st1a tid hInv1a
+  have hRr := receiveReturnSchedContext_replenishQueueOnCore_ne true st1a tid hInv1a d hneRet
+  have hRv := endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne_any epId tid (some rid)
+    core _ d hInv1r hnePre
+  have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid (some rid)
+    core _ hInv1r
+  have hPre2 : st.scheduler.replenishQueueOnCore d =
+      (endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+        (receiveReturnSchedContext true st1a tid)).1.scheduler.replenishQueueOnCore d := by
+    rw [hRv, hRr, hRa, hRX, hRP, hR1]
+  generalize hV : endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+    (receiveReturnSchedContext true st1a tid) = V at hB hInv2 hPre2 hnePost
+  obtain ⟨st2, r2⟩ := V
+  cases r2 with
+  | error e2 =>
+    cases hB
+    rw [replyRecvNothingReceived_replenishQueueOnCore rs core ret? st2 hInv2 d, hPre2]
+  | ok v =>
+  obtain ⟨next, summary, sgi'⟩ := v
+  dsimp only at hB hInv2 hPre2
+  unfold replyRecvPostReceiveDonationR at hB
+  cases ret? with
+  | none =>
+    dsimp only at hB
+    by_cases hCall : rendezvousDequeuedCall st2 next = true
+    · rw [if_pos hCall] at hB
+      cases hDon : applyRendezvousCallDonationR tid next st2 with
+      | ok st3 => rw [hDon] at hB; cases hB
+      | error es =>
+        obtain ⟨e4, s4⟩ := es
+        have hS4 := applyRendezvousCallDonationR_stops_at_entry hInv2 hDon
+        rw [hDon] at hB
+        cases hB
+        subst hS4
+        rw [replyRecvNothingReceived_replenishQueueOnCore rs core none _ hInv2 d, hPre2]
+    · rw [if_neg hCall] at hB; cases hB
+  | some p =>
+    obtain ⟨sc, holder⟩ := p
+    dsimp only at hB
+    by_cases hCall : rendezvousDequeuedCall st2 next = true
+    · rw [if_pos hCall] at hB
+      have hInvH : (replyRecvHolderDeschedule tid holder st2).objects.invExt := by
+        unfold replyRecvHolderDeschedule; split
+        · exact hInv2
+        · exact descheduleAtPlacement_preserves_objects_invExt _ _ hInv2
+      cases hDon : applyRendezvousCallDonationR tid next (replyRecvHolderDeschedule tid holder st2) with
+      | ok st3 => rw [hDon] at hB; cases hB
+      | error es =>
+        obtain ⟨e4, s4⟩ := es
+        have hS4 := applyRendezvousCallDonationR_stops_at_entry hInvH hDon
+        rw [hDon] at hB
+        cases hB
+        subst hS4
+        rw [replyRecvNothingReceived_replenishQueueOnCore rs core _ _ hInvH d,
+          replyRecvHolderDeschedule_replenishQueueOnCore, hPre2]
+    · rw [if_neg hCall] at hB; cases hB
+
+/-- **A refused reply-receive is covered by the arm's footprint** (WS-SX SX34):
+the state its refusal reports stays inside the transition's declared run and
+replenish segments, which the arm's footprint contains. -/
+theorem schedLockSet_replyRecvArmOnCore_coversStopped (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool) (e : CoreId) (st : SystemState)
+    (S : LockSet) (hObjInv : st.objects.invExt)
+    (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
+      prevCaller label msg grant e st) = some S) :
+    footprintCoversWrites S st
+      (replyRecvTransferStoppedState endpointId receiver replyId prevCaller label msg grant e st) := by
+  obtain ⟨S0, hS0⟩ := schedFootprintOfCores_ofList?_isSome
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant e st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      endpointId receiver replyId prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant e st)
+  refine footprintCoversWrites_mono S0 S st _ (fun l hl => ?_)
+    (footprintCoversWrites_of_confined S0 _ _ st _ (LockSet.ofList?_pairs hS0)
+      (replyRecvTransferStoppedState_confinedToCores endpointId receiver replyId prevCaller label
+        msg grant e st hObjInv)
+      (fun d hd => replyRecvTransferStoppedState_replenishQueueOnCore_ne endpointId receiver
+        replyId prevCaller label msg grant e st hObjInv d hd))
+  rw [LockSet.ofList?_pairs hS]
+  rw [LockSet.ofList?_pairs hS0] at hl
+  exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
+    label msg grant e st _ hl
+
 /-- ...and so is the notification the receive's lock operands name. -/
 theorem cancelRecvBusyReply_receiverBoundNotification? (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)

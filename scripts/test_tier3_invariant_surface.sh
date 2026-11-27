@@ -4874,6 +4874,12 @@ run_check "INVARIANT" rg -n '^theorem LendersStep\.replyRecvTransferStoppedState
 # reply-receive's footprint names that outcome's cores on both error arms (WS-SX SX34).
 run_check "INVARIANT" rg -n -U '               \| \(sE, \.error _\) =>\n                  replyRecvNothingReceivedWriteSet\n                    \(\(recordedReplyServer\? st prevCaller\)\.getD receiver\) executingCore\n                    returnedSc\? sE' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -n -U '  match applyRendezvousCallDonation st tid nextThread with\n  \| \.error _ => replyRecvNothingReceivedWriteSet recordedServer serverCore returned\? st\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+# A refused reply-receive's stopped state stays inside the arm's declared run and replenish segments,
+# so the arm's footprint covers it (WS-SX SX34).
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne_any($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n -U '^theorem schedLockSet_replyRecvArmOnCore_coversStopped [^\n]*\n(    [^\n]*\n)*    footprintCoversWrites S st\n      \(replyRecvTransferStoppedState endpointId receiver replyId prevCaller label msg grant e st\) := by' SeLe4n/Kernel/SyscallSeamCoverage.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.
