@@ -4863,6 +4863,13 @@ run_check "INVARIANT" rg -n -F "((∃ e', (endpointReplyOnCore tid prevCaller ms
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_induct($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Entry.lean
+# The receive leg composes as the transition runs it, so the queue labels' growth at the server on its
+# endpoint, and the lending labels on a well-formed chain, hold across a refused reply-receive (WS-SX SX34).
+run_check "INVARIANT" rg -n -F 'R s (endpointReceiveDualWithCapsOnCore epId tid (some rid) core s).1)' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferStoppedState_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^theorem QueueLabelsGrowFrame\.replyRecvTransferStoppedState [^\n]*\n(    [^\n]*\n)*    QueueLabelsGrowFrame tid epId st\n      \(replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st\)' SeLe4n/Kernel/QueueLabels/Entry.lean
+run_check "INVARIANT" rg -n '^theorem QueueLabelsStage\.replyRecvTransferStoppedState($|[ ({:\[\]])' SeLe4n/Kernel/QueueLabels/Entry.lean
+run_check "INVARIANT" rg -n '^theorem LendersStep\.replyRecvTransferStoppedState($|[ ({:\[\]])' SeLe4n/Kernel/ContextLenders/SyscallEntry.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.

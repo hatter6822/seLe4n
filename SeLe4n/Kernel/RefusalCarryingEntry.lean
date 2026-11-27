@@ -781,8 +781,13 @@ reply leg, the pop, the reply's capability transfer, the caller's answer, the
 receiver's context return, the receive leg, a placement deschedule and the
 priority-inheritance walk -- holds from the state handed in to the state a
 refused reply-receive transition reports.  Each family states its own legs and
-this composes them. -/
-theorem replyRecvTransferStoppedState_induct (R : SystemState → SystemState → Prop)
+this composes them.  The receive leg is asked only as the transition runs it,
+the server receiving on its own endpoint with its own reply, so a relation that
+names them (a growth of that endpoint's waiters by that server) composes too. -/
+theorem replyRecvTransferStoppedState_induct {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {core : Concurrency.CoreId} {st : SystemState}
+    (R : SystemState → SystemState → Prop)
     (hRefl : ∀ s : SystemState, s.objects.invExt → R s s)
     (hTrans : ∀ a b c : SystemState, a.objects.invExt → R a b → R b c → R a c)
     (hReply : ∀ (r t : SeLe4n.ThreadId) (m : IpcMessage) (c : Concurrency.CoreId) (s : SystemState),
@@ -797,16 +802,13 @@ theorem replyRecvTransferStoppedState_induct (R : SystemState → SystemState �
       (capInfo : Nat), s.objects.invExt → R s (replyRecvAnswerCaller a s t capInfo))
     (hRrsc : ∀ (s : SystemState) (t : SeLe4n.ThreadId), s.objects.invExt →
       R s (receiveReturnSchedContext true s t))
-    (hRecv : ∀ (ep : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-      (c : Concurrency.CoreId) (s : SystemState), s.objects.invExt →
-      R s (endpointReceiveDualWithCapsOnCore ep t (some rid) c s).1)
+    (hRecv : ∀ s : SystemState, s.objects.invExt →
+      R s (endpointReceiveDualWithCapsOnCore epId tid (some rid) core s).1)
     (hDesched : ∀ (s : SystemState) (t : SeLe4n.ThreadId), s.objects.invExt →
       R s (descheduleAtPlacement s t))
     (hPip : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (c : Concurrency.CoreId), s.objects.invExt →
       R s (PriorityInheritance.propagatePipChainCrossCore s t c).1)
-    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
-    {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
-    {core : Concurrency.CoreId} {st : SystemState} (hInv : st.objects.invExt) :
+    (hInv : st.objects.invExt) :
     R st (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st) := by
   have hNR : ∀ (rs : SeLe4n.ThreadId) (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
       (s : SystemState), s.objects.invExt → R s (replyRecvNothingReceived rs core ret? s) := by
@@ -846,7 +848,7 @@ theorem replyRecvTransferStoppedState_induct (R : SystemState → SystemState �
   generalize receiveReturnSchedContext true (replyRecvAnswerCaller a D.2 prevCaller D.1.capInfo) tid
     = X at hTail h5 hInvX
   have hInvV := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid (some rid) core X hInvX
-  have h6 := hTrans _ _ _ hInv h5 (hRecv epId tid rid core X hInvX)
+  have h6 := hTrans _ _ _ hInv h5 (hRecv X hInvX)
   rcases hTail with hS | ⟨st2, next, summary, sgi', hV, hS⟩
   · rw [hS]; exact hTrans _ _ _ hInv h6 (hNR _ _ _ hInvV)
   rw [hV] at h6 hInvV
@@ -859,6 +861,25 @@ theorem replyRecvTransferStoppedState_induct (R : SystemState → SystemState �
     · exact ⟨hRefl _ hInvV, hInvV⟩
     · exact ⟨hDesched _ _ hInvV, descheduleAtPlacement_preserves_objects_invExt _ _ hInvV⟩
   exact hTrans _ _ _ hInv (hTrans _ _ _ hInv h6 hHD.1) (hNR _ _ _ hHD.2)
+
+/-- **A refused reply-receive keeps the object table well formed** (WS-SX SX34):
+every leg it ran before it stopped does. -/
+theorem replyRecvTransferStoppedState_objects_invExt {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {core : Concurrency.CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st).objects.invExt :=
+  replyRecvTransferStoppedState_induct (fun _ b => b.objects.invExt) (fun _ h => h)
+    (fun _ _ _ _ _ h => h)
+    (fun r t m c s h => endpointReplyOnCore_preserves_objects_invExt r t m c s h)
+    (fun rid t s s' r h hP => replyRecvPopDonation_preserves_objects_invExt rid t s s' r h hP)
+    (fun _ _ _ _ _ h hX => receiveTransferCaps_objects_invExt h hX)
+    (fun a s t n h => replyRecvAnswerCaller_preserves_objects_invExt a s t n h)
+    (fun s t h => receiveReturnSchedContext_objects_invExt true s t h)
+    (fun s h => endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid (some rid) core s h)
+    (fun s t h => descheduleAtPlacement_preserves_objects_invExt s t h)
+    (fun s t c h => PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt s t c _ h)
+    hInv
 
 /-- The entry routed to a receive: `syscallEntryCheckedR_eq`'s receive case. -/
 theorem syscallEntryCheckedR_eq_of_receive (ctx : LabelingContext)

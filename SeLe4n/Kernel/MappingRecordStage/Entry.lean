@@ -344,7 +344,7 @@ theorem replyRecvTransferStoppedState_mappingStage {epId : SeLe4n.ObjId} {tid : 
     (fun _ _ _ _ _ _ h => receiveTransferCaps_mappingStage h)
     (fun a s t n _ => replyRecvAnswerCaller_mappingStage a s t n)
     (fun s t _ => receiveReturnSchedContext_mappingStage true s t)
-    (fun _ _ _ _ _ _ => endpointReceiveDualWithCapsOnCore_mappingStage)
+    (fun _ _ => endpointReceiveDualWithCapsOnCore_mappingStage)
     (fun s t _ => descheduleAtPlacement_mappingStage s t)
     (fun _ _ _ _ => propagatePipChainCrossCore_mappingStage) hInv hInv
 

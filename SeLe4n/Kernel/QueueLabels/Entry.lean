@@ -218,6 +218,51 @@ theorem QueueLabelsFrame.cancelReceiveBusyReply (ctx : LabelingContext) (e : Cor
   · exact QueueLabelsFrame.refl hInv
   · exact QueueLabelsFrame.cancelReplyHolder st holder e hInv
 
+/-- **A refused reply-receive blocks at most its server, on its endpoint**
+(WS-SX SX34): every leg it ran before it stopped is a frame but the receive,
+which blocks at most the server on the endpoint, whether it returned or
+refused (`QueueLabelsGrowFrame.endpointReceiveDualWithCapsOnCore`). -/
+theorem QueueLabelsGrowFrame.replyRecvTransferStoppedState {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {core : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) :
+    QueueLabelsGrowFrame tid epId st
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st) :=
+  replyRecvTransferStoppedState_induct (QueueLabelsGrowFrame tid epId)
+    (fun _ h => .refl h)
+    (fun _ _ _ _ G G' => G.trans G')
+    (fun r t m c _ h => (QueueLabelsFrame.endpointReplyOnCore (replier := r) (target := t)
+      (msg := m) (c := c) h).growAt tid epId)
+    (fun _ _ _ _ _ h hP => (QueueLabelsFrame.of_frame (RecordsFrame.replyRecvPopDonation h hP)).growAt
+      tid epId)
+    (fun _ _ _ _ _ h hX => (QueueLabelsFrame.of_frame (RecordsFrame.receiveTransferCaps h hX)).growAt
+      tid epId)
+    (fun a s t n h => by
+      refine QueueLabelsFrame.growAt ?_ tid epId
+      cases a with
+      | none => exact .of_frame (RecordsFrame.stageDeliveredMessage s t n h)
+      | some o => exact QueueLabelsFrame.faultReplyApplyOnCore s t o h)
+    (fun s t h => (QueueLabelsFrame.of_frame (receiveReturnSchedContext_induct
+      (fun a b => RecordsFrame a b) true s t (RecordsFrame.refl h)
+      (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS t h))).growAt tid epId)
+    (fun _ h => QueueLabelsGrowFrame.endpointReceiveDualWithCapsOnCore h)
+    (fun s t h => (QueueLabelsFrame.of_frame (RecordsFrame.descheduleAtPlacement s t h)).growAt
+      tid epId)
+    (fun s t c h => (QueueLabelsFrame.of_frame
+      (RecordsFrame.propagatePipChainCrossCore s t c _ h)).growAt tid epId) hInv
+
+/-- **A refused reply-receive admitted by its gate carries the waiters' labels**:
+the receive leg's gate, two-way, gives the server the endpoint's label. -/
+theorem QueueLabelsStage.replyRecvTransferStoppedState {ctx : LabelingContext}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool} {core : CoreId}
+    {st : SystemState} (hInv : st.objects.invExt)
+    (hGate : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
+    QueueLabelsStage ctx st
+      (replyRecvTransferStoppedState epId tid rid prevCaller label msg grant core st) :=
+  (QueueLabelsGrowFrame.replyRecvTransferStoppedState hInv).stage
+    (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm
+
 /-- **The checked syscall entry keeps the endpoint waiters' labels**: the
 dispatch of the request the running caller's registers decode to. -/
 theorem syscallEntryChecked_queueLabelsStage {ctx : LabelingContext}

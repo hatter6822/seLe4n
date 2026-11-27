@@ -233,7 +233,7 @@ theorem replyRecvTransferStoppedState_stepCovers (e : CoreId) {epId : SeLe4n.Obj
         exact ⟨hK.stepCovers, hK.2.2⟩
       | some o => exact faultReplyApplyOnCore_stepCovers e s t o h)
     (fun s t h => receiveReturnSchedContext_stepCovers e true s t h)
-    (fun _ _ _ _ _ h => endpointReceiveDualWithCapsOnCore_stepCovers e h)
+    (fun _ h => endpointReceiveDualWithCapsOnCore_stepCovers e h)
     (fun s t h => descheduleAtPlacement_stepCovers e s t h)
     (fun s t c h => propagatePipChainCrossCore_stepCovers e c _ s t h) hInv
 
