@@ -467,19 +467,6 @@ theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
     (dispatchSyscallChecked_runQueueEntryStage ctx decoded tid e _ st'
       ((E.of_ipcFrame hF (IpcFrame.of_frame rfl fun _ => rfl)).arm hCur (hNI tid hCur)) h)
 
-/-- The nothing-received outcome is a run-queue stage: a placement deschedule
-where the pop handed a context back, then the priority-inheritance walk. -/
-theorem replyRecvNothingReceived_runQueueStage (rs : SeLe4n.ThreadId) (c : CoreId)
-    (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (s : SystemState) :
-    RunQueueStage s (replyRecvNothingReceived rs c ret? s) := by
-  unfold replyRecvNothingReceived
-  cases ret? with
-  | none => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _
-  | some p =>
-    obtain ⟨_, holder⟩ := p
-    exact (descheduleAt_runQueueStage _ _ _).trans
-      (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
-
 /-- **The run queues agree across a refused reply-receive** (WS-SX SX34): the
 legs the transition ran before it stopped are the success path's prefix -- the
 reply leg, the pop, the transfer, the caller's answer, the context return and

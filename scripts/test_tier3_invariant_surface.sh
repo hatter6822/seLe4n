@@ -4891,6 +4891,9 @@ run_check "INVARIANT" rg -n -U '^theorem replyRecvTransferStoppedState_runQueueE
 # A refused reply-receive's stopped state keeps the kernel records (WS-SX SX34).
 run_check "INVARIANT" rg -n -U '^theorem RecordsStage\.replyRecvTransferStoppedState [^\n]*\n(    [^\n]*\n)*    RecordsStage st \(_root_\.SeLe4n\.Kernel\.replyRecvTransferStoppedState epId tid rid prevCaller\n      label msg grant c st\) := by' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
 run_check "INVARIANT" rg -n '^theorem RecordsFrame\.replyRecvNothingReceived($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
+# A refused reply-receive's stopped state blocks no thread but its caller (WS-SX SX34).
+run_check "INVARIANT" rg -n -U '^theorem replyRecvTransferStoppedState_readyKeptStage [^\n]*\n(    [^\n]*\n)*    readyKeptStage \(· = tid\) st\n      \(replyRecvTransferStoppedState epId tid rid prevCaller label msg grant c st\) := by' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvNothingReceived_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.
