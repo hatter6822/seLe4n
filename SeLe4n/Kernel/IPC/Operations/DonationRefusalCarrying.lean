@@ -645,6 +645,201 @@ theorem donateSchedContextR_stops_at_entry {clientTid serverTid : SeLe4n.ThreadI
   rw [lookupTcb_of_objects_of_not_reserved S3 serverTid x hX hSNR] at h
   cases h
 
+
+/-- A key that holds no thread holds none after a store of anything but a thread. -/
+theorem withObjectStored_noTcb {S : SystemState} (hInv : S.objects.invExt) {id k : SeLe4n.ObjId}
+    {obj : KernelObject} (hObj : ∀ t, obj ≠ .tcb t)
+    (h : ∀ t, S.objects[k]? ≠ some (KernelObject.tcb t)) :
+    ∀ t, (S.withObjectStored id obj).objects[k]? ≠ some (KernelObject.tcb t) := by
+  intro t
+  rw [withObjectStored_get_eq hInv]
+  split
+  · intro h'; cases h'; exact hObj t rfl
+  · exact h t
+
+/-- The frame push writes Replies only, so a key holding no thread holds none after it. -/
+theorem storeDonationFramePushR_noTcb {S S2 : SystemState} {scId : SeLe4n.SchedContextId}
+    {pushRid : SeLe4n.ReplyId} {pushReply : Reply} {oldHead? : Option SeLe4n.ReplyId}
+    (hInv : S.objects.invExt) (hP : storeDonationFramePushR scId pushRid pushReply oldHead? S = .ok S2)
+    {k : SeLe4n.ObjId} (h : ∀ t, S.objects[k]? ≠ some (KernelObject.tcb t)) :
+    ∀ t, S2.objects[k]? ≠ some (KernelObject.tcb t) := by
+  unfold storeDonationFramePushR at hP
+  split at hP
+  · cases hP
+  have hA := withObjectStored_noTcb (id := pushRid.toObjId)
+    (obj := .reply { pushReply with prev := oldHead?, next := some (.head scId) }) hInv
+    (fun _ h' => by cases h') h
+  cases oldHead? with
+  | none => cases hP; exact hA
+  | some old =>
+    dsimp only at hP
+    split at hP
+    · cases hP
+    · cases hP
+      exact withObjectStored_noTcb (SystemState.withObjectStored_preserves_objects_invExt _ _ _ hInv)
+        (fun _ h' => by cases h') hA
+
+/-- A key holding no thread looks no thread up. -/
+theorem lookupTcb_none_of_noTcb {S : SystemState} {tid : SeLe4n.ThreadId}
+    (h : ∀ t, S.objects[tid.toObjId]? ≠ some (KernelObject.tcb t)) : lookupTcb S tid = none := by
+  cases hL : lookupTcb S tid with
+  | none => rfl
+  | some t => exact absurd (lookupTcb_some_objects S tid t hL) (h t)
+
+/-- **The admission refuses exactly where the checks after the stores would**
+(WS-SX SX34, D62's converse): on a well-formed object table, where the donation's
+checks before the admission pass and the admission refuses, the donation as it was
+before the admission -- the context's store, the frame push, the donor's lookup and
+store, the server's lookup, then anything at all -- refuses with the same error.
+So the admission changes no answer of `donateSchedContext` on such a state: the
+`.call` and `.receive` donations it is shared with refuse as they did. -/
+theorem donationPushRefusal?_some_exact {clientTid serverTid : SeLe4n.ThreadId}
+    {clientScId : SeLe4n.SchedContextId} {st : SystemState} {sc : SchedContext} {donor : TCB}
+    {pushRid : SeLe4n.ReplyId} {pr : Reply} {e : KernelError}
+    (hInv : st.objects.invExt) (hSc : st.getSchedContext? clientScId = some sc)
+    (hD : lookupTcb st clientTid = some donor)
+    (hPF : donationPushFrame? st donor = .ok (pushRid, pr))
+    (hAd : donationPushRefusal? st serverTid sc.scReply pushRid = some e)
+    (k : TCB → SystemState → Except KernelError SystemState) :
+    (match storeObject clientScId.toObjId (.schedContext
+        { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
+                  scReply := some pushRid }) st with
+     | .error e => .error e
+     | .ok ((), st1) =>
+       match storeDonationFramePush clientScId pushRid pr sc.scReply st1 with
+       | .error e => .error e
+       | .ok st2 =>
+         match lookupTcb st2 clientTid with
+         | none => .error .objectNotFound
+         | some clientTcb =>
+           match storeObject clientTid.toObjId
+               (.tcb { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) st2 with
+           | .error e => .error e
+           | .ok ((), st3) =>
+             match lookupTcb st3 serverTid with
+             | none => .error .objectNotFound
+             | some serverTcb => k serverTcb st3 : Except KernelError SystemState) = .error e := by
+  simp only [SystemState.storeObject_eq_withObjectStored, ← storeDonationFramePushR_eq]
+  obtain ⟨-, hPR, -⟩ := donationPushFrame?_ok st donor pushRid pr hPF
+  have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+  have hPRO := (SystemState.getReply?_eq_some_iff _ _ _).mp hPR
+  have hDO := lookupTcb_some_objects st clientTid donor hD
+  have hDNR := lookupTcb_some_not_reserved st clientTid donor hD
+  generalize hS1 : st.withObjectStored clientScId.toObjId (.schedContext
+    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
+              scReply := some pushRid }) = S1
+  have hInv1 : S1.objects.invExt := hS1 ▸ SystemState.withObjectStored_preserves_objects_invExt _ _ _ hInv
+  have hK1 : ∀ k, k ≠ clientScId.toObjId → S1.objects[k]? = st.objects[k]? := fun k hk => by
+    rw [← hS1, withObjectStored_get_eq hInv, if_neg hk]
+  have hPR1 : S1.objects[pushRid.toObjId]? = some (.reply pr) :=
+    (hK1 _ (objKey_ne_of_kinds hPRO hScO (by simp [KernelObject.objectType]))).trans hPRO
+  -- The server refusal, the admission's last, met after the donor's store.
+  have hServer : sc.scReply ≠ some pushRid →
+      (∀ old, sc.scReply = some old → (st.getReply? old).isSome = true) →
+      lookupTcb st serverTid = none →
+      (match (storeDonationFramePushR clientScId pushRid pr sc.scReply S1).mapError Prod.fst with
+       | .error e => .error e
+       | .ok st2 =>
+         match lookupTcb st2 clientTid with
+         | none => .error .objectNotFound
+         | some clientTcb =>
+           match (Except.ok ((), st2.withObjectStored clientTid.toObjId
+               (.tcb { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) :
+               Except KernelError (Unit × SystemState)) with
+           | .error e => .error e
+           | .ok ((), st3) =>
+             match lookupTcb st3 serverTid with
+             | none => .error .objectNotFound
+             | some serverTcb => k serverTcb st3 : Except KernelError SystemState) =
+        .error .objectNotFound := by
+    intro hNe hOld hTn
+    have hOld1 : ∀ old, sc.scReply = some old → (S1.getReply? old).isSome = true := by
+      intro old hO
+      obtain ⟨oR, hOR⟩ := Option.isSome_iff_exists.mp (hOld old hO)
+      have hOO := (SystemState.getReply?_eq_some_iff _ _ _).mp hOR
+      have hOO1 := (hK1 _ (objKey_ne_of_kinds hOO hScO (by simp [KernelObject.objectType]))).trans hOO
+      rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hOO1]; rfl
+    obtain ⟨S2, hP, hInv2, hK2⟩ := storeDonationFramePushR_admitted (scId := clientScId)
+      (pushReply := pr) hInv1 hPR1 hNe hOld1
+    rw [hP]
+    dsimp only [refusalCarrying_mapError_ok]
+    have hD1 : ∀ r, S1.objects[clientTid.toObjId]? ≠ some (KernelObject.reply r) := by
+      intro r hr
+      rw [hK1 _ (objKey_ne_of_kinds hDO hScO (by simp [KernelObject.objectType])), hDO] at hr
+      cases hr
+    have hD2 : S2.objects[clientTid.toObjId]? = some (.tcb donor) := by
+      rw [hK2 _ hD1, hK1 _ (objKey_ne_of_kinds hDO hScO (by simp [KernelObject.objectType])), hDO]
+    rw [lookupTcb_of_objects_of_not_reserved S2 clientTid donor hD2 hDNR]
+    dsimp only
+    have hL : lookupTcb (S2.withObjectStored clientTid.toObjId
+        (.tcb { donor with scBindingScCode := 0, scBindingOwnerCode := 0 })) serverTid = none := by
+      by_cases hRes : serverTid.isReserved
+      · unfold lookupTcb; rw [if_pos hRes]
+      have h0 : ∀ t, st.objects[serverTid.toObjId]? ≠ some (KernelObject.tcb t) := fun t ht => by
+        rw [lookupTcb_of_objects_of_not_reserved st serverTid t ht hRes] at hTn; cases hTn
+      have hne : serverTid.toObjId ≠ clientTid.toObjId := fun hE => by
+        rw [SeLe4n.ThreadId.toObjId_injective _ _ hE, hD] at hTn; cases hTn
+      have h1 : ∀ t, S1.objects[serverTid.toObjId]? ≠ some (KernelObject.tcb t) := by
+        rw [← hS1]; exact withObjectStored_noTcb hInv (fun _ h' => by cases h') h0
+      have h2 := storeDonationFramePushR_noTcb hInv1 hP h1
+      apply lookupTcb_none_of_noTcb
+      intro t
+      rw [withObjectStored_get_eq hInv2, if_neg hne]
+      exact h2 t
+    rw [hL]
+  -- The admission's three refusals, in its order.
+  unfold donationPushRefusal? at hAd
+  cases hOH : sc.scReply with
+  | none =>
+    rw [hOH] at hAd hServer
+    cases hT : lookupTcb st serverTid with
+    | some _ => simp [hT] at hAd
+    | none =>
+      simp [hT] at hAd
+      subst hAd
+      exact hServer (by simp) (by simp) hT
+  | some old =>
+    rw [hOH] at hAd hServer
+    by_cases hE : old = pushRid
+    · subst hE
+      simp only [beq_self_eq_true, ↓reduceIte, Option.some.injEq] at hAd
+      subst hAd
+      rw [show storeDonationFramePushR clientScId old pr (some old) S1 =
+        .error (.invalidArgument 0, S1) by simp [storeDonationFramePushR]]
+      rfl
+    have hB : (old == pushRid) = false := by simpa using hE
+    simp only [hB, Bool.false_eq_true, ↓reduceIte] at hAd
+    cases hR : st.getReply? old with
+    | none =>
+      simp only [hR, Option.isNone_none, ↓reduceIte, Option.some.injEq] at hAd
+      subst hAd
+      have hne : old.toObjId ≠ pushRid.toObjId := fun h' => hE (SeLe4n.ReplyId.toObjId_injective _ _ h')
+      have hR1 : S1.getReply? old = none := by
+        unfold SystemState.getReply? at hR ⊢
+        by_cases hk : old.toObjId = clientScId.toObjId
+        · rw [← hS1, withObjectStored_get_eq hInv, if_pos hk]
+        · rw [hK1 _ hk]; exact hR
+      have hRA : (S1.withObjectStored pushRid.toObjId
+          (.reply { pr with prev := some old, next := some (.head clientScId) })).getReply? old = none := by
+        unfold SystemState.getReply? at hR1 ⊢
+        rw [withObjectStored_get_eq hInv1, if_neg hne]; exact hR1
+      have hB' : (some old == some pushRid) = false := by simpa using hE
+      rw [show storeDonationFramePushR clientScId pushRid pr (some old) S1 =
+        .error (.objectNotFound, _) by
+          unfold storeDonationFramePushR
+          rw [hB']
+          simp only [Bool.false_eq_true, ↓reduceIte]
+          rw [hRA]]
+      rfl
+    | some oR =>
+      simp only [hR, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at hAd
+      cases hT : lookupTcb st serverTid with
+      | some _ => simp [hT] at hAd
+      | none =>
+        simp [hT] at hAd
+        subst hAd
+        exact hServer (by simpa using hE) (fun o hO => by cases hO; rw [hR]; rfl) hT
+
 end DonationAdmissionExact
 
 /-- `applyCallDonationOnCore` (the receiver handed the caller's context where it

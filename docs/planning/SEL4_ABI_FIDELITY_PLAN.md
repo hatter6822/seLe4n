@@ -1071,8 +1071,11 @@ A different answer changes only the rows that cite it.
     exactly where a later check would have, with the same error, because the
     stores before those checks write a context, Replies and the donor's thread
     at keys that hold no Reply the admission reads and no thread but the donor.
-    That argument is not yet a theorem: the converse of the pair, stated
-    against the stores, is open.
+    That is a theorem (`donationPushRefusal?_some_exact`): on an
+    `objects.invExt` state whose earlier checks pass and whose admission
+    refuses, the donation as it stood before the admission (the context's
+    store, the frame push, the donor's lookup and store, the server's lookup,
+    then any continuation) refuses with the admission's error.
 
 ## 4. Rows
 

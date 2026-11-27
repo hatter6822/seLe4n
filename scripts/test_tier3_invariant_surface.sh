@@ -4851,6 +4851,7 @@ run_check "INVARIANT" rg -n -U '^  rw \[donationPushRefusal\?_eq_none hNe$' SeLe
 run_check "INVARIANT" rg -n '^theorem donateSchedContextR_stops_at_entry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
 run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonationR_stops_at_entry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
 run_check "INVARIANT" rg -n '^theorem donationPushRefusal\?_eq_none_of_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
+run_check "INVARIANT" rg -n '^theorem donationPushRefusal\?_some_exact($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationRefusalCarrying.lean
 # A refused reply takes the receive half the arms already run for a reply with no caller (WS-SX SX33):
 # the reply's resolution answers only a caller the reply answers, so each arm has one receive site
 # for both, and no arm tests the reply again after it.
