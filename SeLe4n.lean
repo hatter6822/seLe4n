@@ -12,6 +12,7 @@ import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Model.State
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.CNodeSlotsKept
 -- WS-RR RR8.10: the cancellation's arm-complete IPC bundle and its cross-core
 -- lift.  Its three arm theorems live in three different modules, so the
 -- composite has no natural home among them; putting it in the production import
