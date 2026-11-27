@@ -4903,6 +4903,8 @@ run_check "INVARIANT" rg -n -U '        let stA := replyRecvAnswerCaller answer 
 run_check "INVARIANT" rg -n -U '    \| some \(rid, prevCaller, replyBadge, replyGrant\) =>\n      replyRecvAnsweringThen ctx \(replyRecvReceiveEndpoint ctx gate tid\) decoded tid executingCore' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_of_cnodeSlotsKept($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
 run_check "INVARIANT" rg -n '^theorem dispatchReplyRecvAfterReply_eq_of_entryResolved($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem dispatchReplyRecvAfterReply_ok($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvReceiveEndpoint_flow($|[ ({:\[\]])' SeLe4n/Kernel/ReplyRecvReceiveAfterReply.lean
 run_check "INVARIANT" rg -n -U '      match recvEp stA with\n      \| \.error e =>\n          \.error \(e, replyRecvNothingReceived recordedServer executingCore returnedSc\? stA\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '  \| \.ok \(\(\), st1\) =>\n      match recvEp st1 with\n      \| \.error e => \.error \(e, st1\)' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyThenR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
