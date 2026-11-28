@@ -161,8 +161,10 @@ theorem popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId} {target
 
 /-- **The reply's donation return keeps every record view.** -/
 theorem applyReplyDonationOnCore {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} {keep : Bool} {executingCore : CoreId}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.applyReplyDonationOnCore st rid targetVtid ownerHome keep executingCore
+      = .ok st') :
     RecordsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.applyReplyDonationOnCore at h
   dsimp only at h
@@ -176,7 +178,8 @@ theorem applyReplyDonationOnCore {st st' : SystemState} {rid : SeLe4n.ReplyId}
           cases h
           have F1 := returnDonatedSchedContextResolved hInv hRet
           refine F1.trans ((settleReturnedContext _ _ _ F1.invExt).trans
-            (descheduleAtPlacement _ _ ?_))
+            (descheduleReturnedHolder_induct (fun a b => a.objects.invExt → RecordsFrame a b) keep
+              executingCore _ _ (fun h => .refl h) (descheduleAtPlacement _ _) ?_))
           exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _ F1.invExt
       · exact keepDonatedSchedContextResolved hInv h
     · cases h
@@ -320,9 +323,9 @@ theorem endpointReplyOnCore {replier target : SeLe4n.ThreadId} {msg : IpcMessage
 
 
 theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg : IpcMessage}
-    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
+    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (keep : Bool := false) :
     ReplyLegStep target st
-      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have hRefl : ReplyLegStep target st st := of_step (RecordsStep.refl hInv)
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch
   have A := endpointReplyOnCore (replier := replier) (target := target) (msg := msg) (c := c) hInv
@@ -347,12 +350,13 @@ theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg :
 
 theorem endpointReplyCrossCoreDispatchChecked {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {c : CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) :
+    (hInv : st.objects.invExt) (keep : Bool := false) :
     ReplyLegStep target st
-      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st
+        keep).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch hInv
+  · exact endpointReplyCrossCoreDispatch hInv keep
   · exact of_step (RecordsStep.refl hInv)
 
 end ReplyLegStep
@@ -387,8 +391,9 @@ theorem faultReplyApplyOnCore (st : SystemState) (t : SeLe4n.ThreadId)
 /-- **The fault reply keeps the records**: the reply chain unparks the faulted
 thread and the outcome clears its record. -/
 theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
-    {regs : Array SeLe4n.RegValue} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    RecordsStep st (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st).1 := by
+    {regs : Array SeLe4n.RegValue} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (keep : Bool := false) :
+    RecordsStep st (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st keep).1 := by
   unfold _root_.SeLe4n.Kernel.faultReplyOnCore
   split
   · exact refl hInv
@@ -396,9 +401,9 @@ theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     · exact refl hInv
     · dsimp only
       have A := ReplyLegStep.endpointReplyCrossCoreDispatch (replier := replier) (target := faulted)
-        (msg := IpcMessage.empty) (c := c) hInv
+        (msg := IpcMessage.empty) (c := c) hInv keep
       generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier faulted
-        IpcMessage.empty c st = r at A
+        IpcMessage.empty c st keep = r at A
       obtain ⟨st1, res⟩ := r
       dsimp only at A ⊢
       cases res with
@@ -413,14 +418,14 @@ reply, any other through the checked reply leg from a state where it carries no
 fault record. -/
 theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
-    {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    {c : CoreId} {st st' : SystemState} {keep : Bool} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
-      st = .ok ((), st')) : RecordsStep st st' := by
+      st keep = .ok ((), st')) : RecordsStep st st' := by
   unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
   split at h
   · have S := faultReplyOnCore (replier := replier) (faulted := callerTid) (mi := mi)
-      (regs := regs) (c := c) hInv
-    generalize _root_.SeLe4n.Kernel.faultReplyOnCore replier callerTid mi regs c st = r at S h
+      (regs := regs) (c := c) hInv keep
+    generalize _root_.SeLe4n.Kernel.faultReplyOnCore replier callerTid mi regs c st keep = r at S h
     obtain ⟨st1, res⟩ := r
     cases res with
     | error _ => cases h
@@ -431,9 +436,9 @@ theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : 
       rw [hx] at hNF
       simpa using hNF
     have A := ReplyLegStep.endpointReplyCrossCoreDispatchChecked (ctx := ctx) (replier := replier)
-      (target := callerTid) (msg := msg) (c := c) hInv
+      (target := callerTid) (msg := msg) (c := c) hInv keep
     generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier callerTid
-      msg c st = r at A h
+      msg c st keep = r at A h
     obtain ⟨st1, res⟩ := r
     cases res with
     | error _ => cases h

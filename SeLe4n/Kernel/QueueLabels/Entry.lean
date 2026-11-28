@@ -209,21 +209,43 @@ theorem unknownSyscallEntryState_queueLabelsStage (ctx : LabelingContext) (coreI
 
 /-! ### The syscall entry -/
 
-/-- **A refused receive's busy-reply cancel**, where the refusal reported the
-state handed to it or its busy reply's cancel (as one that raises a capability
-fault does, `cancelReceiveBusyReply_cases_of_fault`): nothing, or a reply
-holder's cancel. -/
+/-- **A refused receive's busy-reply cancel whose refusal raises a capability
+fault** (`cancelReceiveBusyReply_cases_of_fault`): nothing, a reply holder's
+cancel, or a reply-receive's after-reply stop where the fault fires
+(`ReplyRecvAfterReplyEntry.fault_stop`): the state handed in, the state the
+signal arm's reply left, or the nothing-received state after the reply step,
+each a chain of frames (WS-SX SX36.1). -/
 theorem QueueLabelsFrame.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt)
-    (hC : _root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st = st ∨
-      ∃ (tid holder : SeLe4n.ThreadId), st.scheduler.currentOnCore e = some tid ∧
-        holder ≠ tid ∧
-        _root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st =
-          _root_.SeLe4n.Kernel.cancelReplyHolder st holder e) :
+    (st : SystemState) (hInv : st.objects.invExt) {ke : KernelError} {t : SeLe4n.ThreadId}
+    {f : Fault} (hCur : st.scheduler.currentOnCore e = some t)
+    (hE : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout e 32 st = .error ke)
+    (hF : Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout st
+      (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) t ke = some f) :
     QueueLabelsFrame st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
-  rcases hC with hE | ⟨_, holder, -, -, hE⟩ <;> rw [hE]
+  rcases cancelReceiveBusyReply_cases_of_fault hInv hCur hE hF with hE' | ⟨_, holder, -, -, hE'⟩ | hB
+  · rw [hE']; exact QueueLabelsFrame.refl hInv
+  · rw [hE']; exact QueueLabelsFrame.cancelReplyHolder st holder e hInv
+  rcases hB.fault_stop hInv hCur hE hF with ⟨s0, hTS, hS | ⟨prev, mi, regs, msg, grant, st1, hR,
+      hS⟩ | ⟨rid, prev, label, msg, grant, st1, popped, st1p, sgi, ret?, xs, hR, hPop, hX, hS⟩⟩ <;>
+    refine hTS (QueueLabelsFrame st) (fun _ _ x hx => hx.trans (.of_frame
+      (RecordsFrame.of_agreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+        (by rw [applySyscallTaint_frame]) (applySyscallTaint_invExt hx.invExt)
+        (by rw [applySyscallTaint_machine])))) ?_ <;> rw [hS]
   · exact QueueLabelsFrame.refl hInv
-  · exact QueueLabelsFrame.cancelReplyHolder st holder e hInv
+  · exact QueueLabelsFrame.replyTransferOnCoreChecked hInv hR
+  have F1 : QueueLabelsFrame st st1 := (QueueLabelsFrame.endpointReplyOnCore (replier := t)
+    (target := prev) (msg := replyRecvLegMessage (replyRecvCallerFaultAnswer? st prev label msg) msg)
+    (c := e) hInv).of_fst_eq hR
+  have F2 := F1.trans (QueueLabelsFrame.of_frame (RecordsFrame.replyRecvPopDonation F1.invExt hPop))
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have F3 := F2.trans (QueueLabelsFrame.of_frame (RecordsFrame.receiveTransferCaps F2.invExt hX))
+  have F4 : QueueLabelsFrame st (replyRecvAnswerCaller (replyRecvCallerFaultAnswer? st prev label msg)
+      st1p prev xs.capInfo) := by
+    refine F3.trans ?_
+    cases replyRecvCallerFaultAnswer? st prev label msg with
+    | none => exact .of_frame (RecordsFrame.stageDeliveredMessage st1p prev xs.capInfo F3.invExt)
+    | some o => exact QueueLabelsFrame.faultReplyApplyOnCore st1p prev o F3.invExt
+  exact F4.trans (.of_frame (RecordsFrame.replyRecvNothingReceived _ e ret? _ F4.invExt))
 
 /-- **A refused reply-receive blocks at most its server, on its endpoint**
 (WS-SX SX34): every leg it ran before it stopped is a frame but the receive,
@@ -270,6 +292,71 @@ theorem QueueLabelsStage.replyRecvTransferStoppedState {ctx : LabelingContext}
   (QueueLabelsGrowFrame.replyRecvTransferStoppedState hInv).stage
     (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm
 
+/-- **A reply-receive whose receive is read after its reply carries the
+waiters' labels where it stops** (WS-SX SX36.1): every leg before the receive
+is a frame, and the receive, where it ran, ran on the endpoint the read on the
+answered state admitted through its gate, so it blocks at most the server there,
+whose label is the endpoint's. -/
+theorem QueueLabelsStage.replyRecvTransferThenStoppedState {ctx : LabelingContext}
+    {gate : SyscallGate} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool} {c : CoreId}
+    {st : SystemState} (hInv : st.objects.invExt) :
+    QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+      (replyRecvTransferThenR (replyRecvReceiveEndpoint ctx gate tid) tid rid prevCaller label msg
+        grant c) st) ∧
+      (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+        (replyRecvTransferThenR (replyRecvReceiveEndpoint ctx gate tid) tid rid prevCaller label msg
+          grant c) st).objects.invExt := by
+  rcases replyRecvTransferThenR_stoppedState_cases (replyRecvReceiveEndpoint ctx gate tid) tid rid
+      prevCaller label msg grant c st with hE | ⟨hA, e, hB⟩
+  · rw [hE]; exact ⟨QueueLabelsStage.refl _, hInv⟩
+  generalize _root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+    (replyRecvTransferThenR (replyRecvReceiveEndpoint ctx gate tid) tid rid prevCaller label msg
+      grant c) st = s at hB ⊢
+  revert hB
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = answer
+  generalize replyRecvLegMessage answer msg = m
+  generalize (if answer.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  intro hB
+  rcases endpointReplyRecvAnsweringBodyThenR_stopped hInv hA hB with
+    ⟨-, hS⟩ | ⟨sgi, ret?, popped, -, hPop1, -, hTail⟩
+  · rw [hS]; exact ⟨QueueLabelsStage.refl _, hInv⟩
+  have F1 := QueueLabelsFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
+    (msg := m) (c := c) hInv
+  have F2 := F1.trans (QueueLabelsFrame.of_frame (RecordsFrame.replyRecvPopDonation F1.invExt hPop1))
+  have hX := receiveTransferCaps_eq_done req none target popped
+  generalize receiveTransferCapsDone req none target popped = Dn at hX hTail
+  obtain ⟨xs, st1p⟩ := Dn
+  dsimp only at hTail
+  have F3 := F2.trans (QueueLabelsFrame.of_frame (RecordsFrame.receiveTransferCaps F2.invExt hX))
+  have F4 : QueueLabelsFrame st (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) := by
+    refine F3.trans ?_
+    cases answer with
+    | none => exact .of_frame (RecordsFrame.stageDeliveredMessage st1p prevCaller xs.capInfo F3.invExt)
+    | some o => exact QueueLabelsFrame.faultReplyApplyOnCore st1p prevCaller o F3.invExt
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at F4 hTail
+  rcases hTail with ⟨-, -, hS⟩ | ⟨epId, hEok, hTail⟩
+  · rw [hS]
+    have F := F4.trans (.of_frame (RecordsFrame.replyRecvNothingReceived rs c ret? _ F4.invExt))
+    exact ⟨F.stage, F.invExt⟩
+  have F5 := F4.trans (QueueLabelsFrame.of_frame (receiveReturnSchedContext_induct
+    (fun a b => RecordsFrame a b) true st1a tid (RecordsFrame.refl F4.invExt)
+    (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS tid F4.invExt)))
+  have G := (F5.growAt tid epId).trans
+    (QueueLabelsGrowFrame.endpointReceiveDualWithCapsOnCore (replyId := some rid) (c := c) F5.invExt)
+  have hL := (endpointFlowGate_implies_eq ctx epId _ _ (replyRecvReceiveEndpoint_flow hEok)).symm
+  suffices hG : QueueLabelsGrowFrame tid epId st s from ⟨hG.stage hL, hG.invExt⟩
+  rcases hTail with hS | ⟨st2, next, summary, sgi', hRv, hS | ⟨sc, holder, -, hS⟩⟩
+  · rw [hS]
+    exact G.thenFrame (.of_frame (RecordsFrame.replyRecvNothingReceived rs c ret? _ G.invExt))
+  · rw [hRv] at G; rw [hS]
+    exact G.thenFrame (.of_frame (RecordsFrame.replyRecvNothingReceived rs c ret? _ G.invExt))
+  · rw [hRv] at G; rw [hS]
+    have H := RecordsFrame.replyRecvHolderDeschedule tid holder st2 G.invExt
+    exact G.thenFrame (.of_frame (H.trans (RecordsFrame.replyRecvNothingReceived rs c ret? _ H.invExt)))
+
 /-- **The state a refusal of the checked entry reports carries the waiters'
 labels** (WS-SX SX34): the state itself, its busy reply's holder cancelled, or
 a reply-receive's stopped state, admitted by its receive gate. -/
@@ -277,15 +364,31 @@ theorem QueueLabelsStage.cancelReceiveBusyReply (ctx : LabelingContext) (e : Cor
     (st : SystemState) (hInv : st.objects.invExt) :
     QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) ∧
       (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st).objects.invExt := by
-  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | hE | hA
-  · have F := QueueLabelsFrame.cancelReceiveBusyReply ctx e st hInv (Or.inl hE)
-    exact ⟨F.stage, F.invExt⟩
-  · have F := QueueLabelsFrame.cancelReceiveBusyReply ctx e st hInv (Or.inr hE)
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ | hA | hB
+  · rw [hE]; exact ⟨QueueLabelsStage.refl _, hInv⟩
+  · rw [hE]
+    have F := QueueLabelsFrame.cancelReplyHolder st holder e hInv
     exact ⟨F.stage, F.invExt⟩
   · obtain ⟨_, _, _, _, _, _, _, -, -, hFlow, hS⟩ := hA.stopped
     rw [hS]
     exact ⟨QueueLabelsStage.replyRecvTransferStoppedState hInv hFlow,
       replyRecvTransferStoppedState_objects_invExt hInv⟩
+  · obtain ⟨tid, -, decoded, gate, rid, prevCaller, replyBadge, replyGrant, -, -, -, -, -, -, hS⟩ := hB
+    rw [hS]
+    refine replyRecvAfterReplyRefusalTaint_induct
+      (fun x => QueueLabelsStage ctx st x ∧ x.objects.invExt)
+      (fun _ _ x hx =>
+        have F := RecordsFrame.of_agreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+          (by rw [applySyscallTaint_frame]) (applySyscallTaint_invExt hx.2)
+          (by rw [applySyscallTaint_machine])
+        ⟨hx.1.trans (QueueLabelsStage.of_frame F), F.invExt⟩) ?_
+    rcases replyRecvAnsweringThenR_stoppedState_cases ctx (replyRecvReceiveEndpoint ctx gate tid)
+        decoded tid e rid prevCaller replyBadge replyGrant st with hE | ⟨st1, hR, hE⟩ | hE
+    · rw [hE]; exact ⟨QueueLabelsStage.refl _, hInv⟩
+    · rw [hE]
+      have F := QueueLabelsFrame.replyTransferOnCoreChecked hInv hR
+      exact ⟨F.stage, F.invExt⟩
+    · rw [hE]; exact QueueLabelsStage.replyRecvTransferThenStoppedState hInv
 
 /-- **The checked syscall entry keeps the endpoint waiters' labels**: the
 dispatch of the request the running caller's registers decode to. -/

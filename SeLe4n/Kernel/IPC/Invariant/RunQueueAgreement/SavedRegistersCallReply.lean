@@ -613,7 +613,8 @@ theorem endpointReplyOnCore_savedRegsUnwritten (replier target : SeLe4n.ThreadId
 settle and the holder's deschedule. -/
 theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} (hInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {keep : Bool} {ec : CoreId}
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep ec = .ok st') :
     savedRegsUnwritten st st' := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
@@ -627,7 +628,8 @@ theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid 
           cases h
           have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
           exact h1.trans ((savedRegsUnwritten.of_settle _ _ _ h1.2).trans
-            (savedRegsUnwritten.of_descheduleAt _ _ _
+            ((descheduleReturnedHolder_induct (fun a b => a.objects.invExt → savedRegsUnwritten a b)
+              _ _ _ _ (fun hI => .refl hI) (fun hI => savedRegsUnwritten.of_descheduleAt _ _ _ hI))
               (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1.2)))
       · exact savedRegsUnwritten.of_keepDonatedSchedContextResolved hInv h
     · cases h
@@ -635,8 +637,8 @@ theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid 
 /-- The live reply writes no saved register: the reply leg, the donation
 return and the chain walk from the recorded server. -/
 theorem endpointReplyCrossCoreDispatch_savedRegsUnwritten (replier target : SeLe4n.ThreadId)
-    (msg : IpcMessage) (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+    (msg : IpcMessage) (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) (keep : Bool := false) :
+    savedRegsUnwritten st (endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have h0 := endpointReplyOnCore_savedRegsUnwritten replier target msg c hInv
   unfold endpointReplyCrossCoreDispatch
   generalize endpointReplyOnCore replier target msg c st = r at h0
@@ -658,11 +660,11 @@ theorem endpointReplyCrossCoreDispatch_savedRegsUnwritten (replier target : SeLe
 
 theorem endpointReplyCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId) {st : SystemState}
-    (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+    (hInv : st.objects.invExt) (keep : Bool := false) :
+    savedRegsUnwritten st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st keep).1 := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv
+  · exact endpointReplyCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv keep
   · exact .refl hInv
 
 /-! ### ReplyRecv's donation legs -/
@@ -764,8 +766,9 @@ theorem endpointReplyOnCore_ok_target_notReady {replier target : SeLe4n.ThreadId
   cases hx; rw [hS]; intro h; cases h
 
 theorem endpointReplyCrossCoreDispatch_ok_target_notReady {replier target : SeLe4n.ThreadId}
+    {keep : Bool}
     {msg : IpcMessage} {c : CoreId} {st s1 : SystemState} {x : Option (CoreId × Concurrency.SgiKind)}
-    (h : endpointReplyCrossCoreDispatch replier target msg c st = (s1, .ok x)) :
+    (h : endpointReplyCrossCoreDispatch replier target msg c st keep = (s1, .ok x)) :
     ∀ y, st.getTcb? target = some y → y.ipcState ≠ .ready := by
   unfold endpointReplyCrossCoreDispatch at h
   revert h
@@ -777,8 +780,8 @@ theorem endpointReplyCrossCoreDispatch_ok_target_notReady {replier target : SeLe
 
 theorem endpointReplyCrossCoreDispatchChecked_ok_target_notReady {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {c : CoreId} {st s1 : SystemState}
-    {x : Option (CoreId × Concurrency.SgiKind)}
-    (h : endpointReplyCrossCoreDispatchChecked ctx replier target msg c st = (s1, .ok x)) :
+    {x : Option (CoreId × Concurrency.SgiKind)} {keep : Bool}
+    (h : endpointReplyCrossCoreDispatchChecked ctx replier target msg c st keep = (s1, .ok x)) :
     ∀ y, st.getTcb? target = some y → y.ipcState ≠ .ready := by
   unfold endpointReplyCrossCoreDispatchChecked at h
   split at h
@@ -851,7 +854,8 @@ theorem faultReplyOnCore_savedRegsWrittenFree {replier faulted : SeLe4n.ThreadId
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {ec e : CoreId} {st s' : SystemState}
     {x : Architecture.FaultReplyOutcome × Option (CoreId × Concurrency.SgiKind)}
     (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
-    (hInv : st.objects.invExt) (h : faultReplyOnCore replier faulted mi regs ec st = (s', .ok x)) :
+    (hInv : st.objects.invExt) {keep : Bool}
+    (h : faultReplyOnCore replier faulted mi regs ec st keep = (s', .ok x)) :
     savedRegsWrittenFree e st st s' := by
   unfold faultReplyOnCore at h
   split at h
@@ -860,7 +864,7 @@ theorem faultReplyOnCore_savedRegsWrittenFree {replier faulted : SeLe4n.ThreadId
   · cases h
   dsimp only at h
   revert h
-  generalize hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty ec st = r
+  generalize hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty ec st keep = r
   obtain ⟨s1, res⟩ := r
   cases res with
   | error _ => intro h; cases h
@@ -869,7 +873,7 @@ theorem faultReplyOnCore_savedRegsWrittenFree {replier faulted : SeLe4n.ThreadId
     cases h
     have hB := endpointReplyCrossCoreDispatch_ok_target_notReady hR
     have h1 := endpointReplyCrossCoreDispatch_savedRegsUnwritten replier faulted IpcMessage.empty
-      ec hInv
+      ec hInv keep
     rw [hR] at h1
     refine h1.writtenFree.trans (.of_kept (W := (· = faulted)) ?_ fun _ e =>
       e ▸ offCoreFree_of_notReady hD hRT hBNR hB)
@@ -887,19 +891,19 @@ theorem replyTransferOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
     {msg : IpcMessage} {grant : Bool} {ec e : CoreId} {st st' : SystemState}
     (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
-    (hInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant ec st = .ok ((), st')) :
+    (hInv : st.objects.invExt) {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant ec st keep = .ok ((), st')) :
     savedRegsWrittenFree e st st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
   · revert h
-    generalize hF : faultReplyOnCore replier callerTid mi regs ec st = r
+    generalize hF : faultReplyOnCore replier callerTid mi regs ec st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h; cases h
     | ok _ => intro h; cases h; exact faultReplyOnCore_savedRegsWrittenFree hD hRT hBNR hInv hF
   · revert h
-    generalize hR : endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg ec st = r
+    generalize hR : endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg ec st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h; cases h
@@ -913,7 +917,7 @@ theorem replyTransferOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
         rw [hX] at h
         cases h
         have h1 := endpointReplyCrossCoreDispatchChecked_savedRegsUnwritten ctx replier callerTid
-          msg ec hInv
+          msg ec hInv keep
         rw [hR] at h1
         have h2 := h1.trans (receiveTransferCaps_savedRegsUnwritten h1.2 hX)
         exact h2.writtenFree.trans (.of_kept (stageDeliveredMessage_savedRegsKeptExcept sX
@@ -1118,6 +1122,80 @@ theorem replyRecvTransferStoppedState_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   have hAw : savedRegsWrittenFree e st st (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) :=
     h1.writtenFree.trans (.of_kept k5 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR hPC)
   generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hAw i5 hTail
+  have h1r := savedRegsUnwritten.receiveReturn true st1a tid i5
+  have h2 := h1r.trans (endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
+    ec h1r.2)
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+    (receiveReturnSchedContext true st1a tid) = q at h2 hTail
+  rcases hTail with hS | ⟨st2, next, summary, sgi', hV, hS⟩
+  · rw [hS]
+    have h3 := h2.trans (replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ h2.2)
+    exact ⟨hAw.trans h3.writtenFree, h3.2⟩
+  subst hV
+  rcases hS with hS | ⟨sc, holder, -, hS⟩
+  · rw [hS]
+    have h3 := h2.trans (replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ h2.2)
+    exact ⟨hAw.trans h3.writtenFree, h3.2⟩
+  rw [hS]
+  have hH : savedRegsUnwritten st2 (replyRecvHolderDeschedule tid holder st2) := by
+    unfold replyRecvHolderDeschedule
+    split
+    · exact .refl h2.2
+    · exact savedRegsUnwritten.of_descheduleAt _ _ _ h2.2
+  have h3 := (h2.trans hH).trans (replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ hH.2)
+  exact ⟨hAw.trans h3.writtenFree, h3.2⟩
+
+/-- **The after-reply composite's stop writes only the answered caller's saved
+registers** (WS-SX SX36.1): `replyRecvTransferStoppedState_savedRegsWrittenFree`
+for the composite whose receive capability is read after the reply, with its one
+further stop, the nothing-received outcome on the answered state. -/
+theorem replyRecvTransferThenStoppedState_savedRegsWrittenFree
+    {recvEp : SystemState → Except KernelError SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {ec e : CoreId} {st : SystemState}
+    (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hInv : st.objects.invExt) :
+    savedRegsWrittenFree e st st (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+        (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant ec) st) ∧
+      (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+        (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant ec) st).objects.invExt
+    := by
+  rcases replyRecvTransferThenR_stoppedState_cases recvEp tid rid prevCaller label msg grant ec st
+    with hE | ⟨hA, er, hB⟩
+  · rw [hE]; exact ⟨.refl _, hInv⟩
+  generalize _root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+    (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant ec) st = s at hB ⊢
+  revert hB
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = answer
+  generalize replyRecvLegMessage answer msg = m
+  generalize (if answer.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  intro hB
+  rcases endpointReplyRecvAnsweringBodyThenR_stopped hInv hA hB with
+    ⟨-, hS⟩ | ⟨sgi, ret?, popped, hR1, hPop1, hInvP, hTail⟩
+  · rw [hS]; exact ⟨.refl _, hInv⟩
+  have h0 := endpointReplyOnCore_savedRegsUnwritten tid prevCaller m ec hInv
+  generalize hRl : endpointReplyOnCore tid prevCaller m ec st = p at h0 hR1 hPop1 hTail
+  obtain ⟨st1, r⟩ := p
+  dsimp only at h0 hR1 hPop1 hTail
+  subst hR1
+  have hPC := endpointReplyOnCore_ok_target_notReady (sgi := sgi) (by rw [hRl])
+  have hX := receiveTransferCaps_eq_done req none target popped
+  generalize receiveTransferCapsDone req none target popped = Dn at hX hTail
+  obtain ⟨xs, st1p⟩ := Dn
+  dsimp only at hTail
+  have h1q := h0.trans (replyRecvPopDonation_savedRegsUnwritten h0.2 hPop1)
+  have h1 := h1q.trans (receiveTransferCaps_savedRegsUnwritten h1q.2 hX)
+  obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer st1p prevCaller xs.capInfo h1.2
+  have hAw : savedRegsWrittenFree e st st (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) :=
+    h1.writtenFree.trans (.of_kept k5 fun _ e => e ▸ offCoreFree_of_notReady hD hRT hBNR hPC)
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a at hAw i5 hTail
+  rcases hTail with ⟨-, -, hS⟩ | ⟨epId, -, hTail⟩
+  · -- the receive's endpoint, read on the answered state, refused
+    rw [hS]
+    have h3 := replyRecvNothingReceived_savedRegsUnwritten rs ec ret? _ i5
+    exact ⟨hAw.trans h3.writtenFree, h3.2⟩
   have h1r := savedRegsUnwritten.receiveReturn true st1a tid i5
   have h2 := h1r.trans (endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
     ec h1r.2)

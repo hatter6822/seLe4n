@@ -1606,9 +1606,10 @@ theorem faultReplyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemSt
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyAnswer st c server rid core ct.faultKind mi.label ct.faultIp
         ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
         ct.faultX6 ct.faultX7 layout rf (min mi.length layout.msgRegs.size)) := by
@@ -1618,7 +1619,7 @@ theorem faultReplyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemSt
   have hHas : threadHasPendingFault st c = true := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_some]
   obtain ⟨sgi, hD⟩ := replyDispatch_inPlace st replier c server ct ep rid IpcMessage.empty core
-    (by simp [IpcMessage.empty]) hT hIpc hRO hSRes hG
+    (by simp [IpcMessage.empty]) hT hIpc hRO hSRes hG keep
   unfold replyTransferOnCoreChecked
   rw [hHas]
   simp only [↓reduceIte]

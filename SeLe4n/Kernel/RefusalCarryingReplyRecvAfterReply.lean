@@ -58,210 +58,6 @@ theorem RefusalCarrying.eq_reporting_of_mapError {α : Type} {r : RefusalCarryin
   | error es => obtain ⟨e, s⟩ := es; rfl
   | ok a => rfl
 
-/-- **The composite in seL4's order, each refusal carrying the state its step
-stopped in**: `endpointReplyRecvAnsweringBodyThen` with the pop and the
-post-receive donation in their refusal-carrying forms and the reply's transfer
-as its result; a refusal of the receive's endpoint (`recvEp`), of the receive
-leg or of the post-receive donation reports the nothing-received outcome
-(`replyRecvNothingReceived`) on the state that step was handed or returned. -/
-@[noinline] def endpointReplyRecvAnsweringBodyThenR
-    (answer : Option Architecture.FaultReplyOutcome)
-    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) (recordedServer : SeLe4n.ThreadId)
-    (req : Option (Capability × Array SeLe4n.CPtr)) (target : Option (TCB × Option CSpaceAddr)) :
-    RefusalCarrying CapTransferSummary := fun st =>
-  match endpointReplyOnCore tid prevCaller msg executingCore st with
-  | (s, .error e) => .error (e, s)
-  | (st1, .ok _replySgi) =>
-    match replyRecvPopDonationR rid prevCaller st1 with
-    | .error es => .error es
-    | .ok (returnedSc?, st1q) =>
-      match receiveTransferCapsDone req none target st1q with
-      | (replySummary, st1p) =>
-      let stA := replyRecvAnswerCaller answer st1p prevCaller replySummary.capInfo
-      match recvEp stA with
-      | .error e =>
-          .error (e, replyRecvNothingReceived recordedServer executingCore returnedSc? stA)
-      | .ok epId =>
-      match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
-          (receiveReturnSchedContext true stA tid) with
-      | (s, .error e) =>
-          .error (e, replyRecvNothingReceived recordedServer executingCore returnedSc? s)
-      | (st2, .ok (nextThread, summary, _)) =>
-          match replyRecvPostReceiveDonationR tid recordedServer nextThread executingCore
-              returnedSc? st2 with
-          | .error (e, s) =>
-              .error (e, replyRecvNothingReceived recordedServer executingCore returnedSc? s)
-          | .ok ((), st3) =>
-              .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer
-                executingCore)
-
-/-- The refusal-carrying composite is the composite with the refusal's state
-forgotten, with no assumption. -/
-theorem endpointReplyRecvAnsweringBodyThenR_eq (answer : Option Architecture.FaultReplyOutcome)
-    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : Concurrency.CoreId) (recordedServer : SeLe4n.ThreadId)
-    (req : Option (Capability × Array SeLe4n.CPtr)) (target : Option (TCB × Option CSpaceAddr))
-    (st : SystemState) :
-    (endpointReplyRecvAnsweringBodyThenR answer recvEp tid rid prevCaller msg executingCore
-        recordedServer req target st).mapError Prod.fst =
-      endpointReplyRecvAnsweringBodyThen answer recvEp tid rid prevCaller msg executingCore
-        recordedServer req target st := by
-  unfold endpointReplyRecvAnsweringBodyThenR endpointReplyRecvAnsweringBodyThen
-  cases hL : endpointReplyOnCore tid prevCaller msg executingCore st with
-  | mk st1 r1 =>
-    cases r1 with
-    | error e => rfl
-    | ok sgi =>
-      dsimp only
-      rw [← replyRecvPopDonationR_eq]
-      cases hP : replyRecvPopDonationR rid prevCaller st1 with
-      | error es => rfl
-      | ok p =>
-        obtain ⟨ret, st1q⟩ := p
-        rw [refusalCarrying_mapError_ok]
-        dsimp only
-        rw [receiveTransferCaps_eq_done]
-        generalize receiveTransferCapsDone req none target st1q = d
-        obtain ⟨sum, st1p⟩ := d
-        dsimp only
-        cases hE : recvEp (replyRecvAnswerCaller answer st1p prevCaller sum.capInfo) with
-        | error e => rfl
-        | ok epId =>
-          dsimp only
-          cases hR : endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
-              (receiveReturnSchedContext true
-                (replyRecvAnswerCaller answer st1p prevCaller sum.capInfo) tid) with
-          | mk st2 r2 =>
-            cases r2 with
-            | error e => rfl
-            | ok q =>
-              obtain ⟨nextThread, summary, x⟩ := q
-              dsimp only
-              rw [← replyRecvPostReceiveDonationR_eq]
-              cases replyRecvPostReceiveDonationR tid recordedServer nextThread executingCore
-                  ret st2 with
-              | error es => obtain ⟨e, s⟩ := es; rfl
-              | ok u => obtain ⟨⟨⟩, st3⟩ := u; rfl
-
-/-- **The arm's transition in seL4's order, each refusal carrying the state its
-step stopped in**: `replyRecvTransferThen` over the refusal-carrying composite.
-A refused pop admission carries the state handed in, since it precedes every
-write. -/
-def replyRecvTransferThenR (recvEp : SystemState → Except KernelError SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat)
-    (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) :
-    RefusalCarrying CapTransferSummary := fun st =>
-  if replyRecvPopAdmits st rid prevCaller then
-    let answer := replyRecvCallerFaultAnswer? st prevCaller label msg
-    endpointReplyRecvAnsweringBodyThenR answer recvEp tid rid prevCaller
-      (replyRecvLegMessage answer msg) executingCore ((recordedReplyServer? st prevCaller).getD tid)
-      (if answer.isSome then none else replyCapRequest st tid grant)
-      (receiverCapTarget? st prevCaller) st
-  else .error (.invalidArgument 0, st)
-
-theorem replyRecvTransferThenR_eq (recvEp : SystemState → Except KernelError SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat)
-    (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) :
-    (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant executingCore st).mapError
-        Prod.fst =
-      replyRecvTransferThen recvEp tid rid prevCaller label msg grant executingCore st := by
-  unfold replyRecvTransferThenR replyRecvTransferThen
-  by_cases hAd : replyRecvPopAdmits st rid prevCaller = true
-  · rw [if_pos hAd, if_pos hAd]
-    exact endpointReplyRecvAnsweringBodyThenR_eq _ _ _ _ _ _ _ _ _ _ st
-  · rw [if_neg hAd, if_neg hAd]; rfl
-
-/-- **The reply-receive that completes a signal, in seL4's order, each refusal
-carrying the state its step stopped in**: a refusal of the `.reply` arm's
-transition carries the state handed in, as the entry order's report does; a
-refusal after it (the receive's endpoint, or the completion of the bound
-notification) carries the state the reply left, which is already the
-nothing-received outcome (the transition's pop deschedules the holder and its
-tail reverts the recorded server's priority inheritance). -/
-def replyRecvCompletesSignalArmThenR (ctx : LabelingContext)
-    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) :
-    RefusalCarrying Unit := fun st =>
-  match replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
-      msg.registers msg grant executingCore st with
-  | .error e => .error (e, st)
-  | .ok ((), st1) =>
-      match recvEp st1 with
-      | .error e => .error (e, st1)
-      | .ok _ =>
-        if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
-          match completeSignalArm ctx tid (receiverBoundNotification st1 tid) executingCore st1 with
-          | .ok r => .ok r
-          | .error e => .error (e, st1)
-        else .ok ((), st1)
-
-theorem replyRecvCompletesSignalArmThenR_eq (ctx : LabelingContext)
-    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId)
-    (st : SystemState) :
-    (replyRecvCompletesSignalArmThenR ctx recvEp tid prevCaller label msg grant executingCore
-        st).mapError Prod.fst =
-      replyRecvCompletesSignalArmThen ctx recvEp tid prevCaller label msg grant executingCore st := by
-  unfold replyRecvCompletesSignalArmThenR replyRecvCompletesSignalArmThen
-  cases replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
-      msg.registers msg grant executingCore st with
-  | error e => rfl
-  | ok p =>
-    obtain ⟨⟨⟩, st1⟩ := p
-    dsimp only
-    cases recvEp st1 with
-    | error e => rfl
-    | ok epId =>
-      dsimp only
-      by_cases hC : (receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid) = true
-      · rw [if_pos hC, if_pos hC]
-        cases completeSignalArm ctx tid (receiverBoundNotification st1 tid) executingCore st1 <;>
-          rfl
-      · rw [if_neg hC, if_neg hC]; rfl
-
-/-- **An answering reply-receive in seL4's order, each refusal carrying the
-state its step stopped in**: `replyRecvAnsweringThen` over the refusal-carrying
-signal arm and transition. -/
-def replyRecvAnsweringThenR (ctx : LabelingContext)
-    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge) (replyGrant : Bool) :
-    RefusalCarrying Unit := fun st =>
-  let msg : IpcMessage :=
-    { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := replyBadge }
-  if receiveCompletesSignal ctx st tid then
-    replyRecvCompletesSignalArmThenR ctx recvEp tid prevCaller decoded.msgInfo.label msg
-      replyGrant executingCore st
-  else
-    match replyRecvTransferThenR recvEp tid rid prevCaller decoded.msgInfo.label msg replyGrant
-        executingCore st with
-    | .ok (summary, st') => .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
-    | .error es => .error es
-
-theorem replyRecvAnsweringThenR_eq (ctx : LabelingContext)
-    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (decoded : SyscallDecodeResult)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (rid : SeLe4n.ReplyId)
-    (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge) (replyGrant : Bool)
-    (st : SystemState) :
-    (replyRecvAnsweringThenR ctx recvEp decoded tid executingCore rid prevCaller replyBadge
-        replyGrant st).mapError Prod.fst =
-      replyRecvAnsweringThen ctx recvEp decoded tid executingCore rid prevCaller replyBadge
-        replyGrant st := by
-  unfold replyRecvAnsweringThenR replyRecvAnsweringThen
-  dsimp only
-  by_cases hSig : receiveCompletesSignal ctx st tid = true
-  · rw [if_pos hSig, if_pos hSig]
-    exact replyRecvCompletesSignalArmThenR_eq _ _ _ _ _ _ _ _ st
-  · rw [if_neg hSig, if_neg hSig, ← replyRecvTransferThenR_eq]
-    cases replyRecvTransferThenR recvEp tid rid prevCaller decoded.msgInfo.label
-        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-          badge := replyBadge } replyGrant executingCore st with
-    | error es => obtain ⟨e, s⟩ := es; rfl
-    | ok r => obtain ⟨summary, st'⟩ := r; rfl
-
 /-- **The state an answering reply-receive's refusal reports, in seL4's
 order**: keyed on the reply it answers (`replyRecvAnsweringReply?`), the state
 the refusing step stopped in, the receive's endpoint read after the reply
@@ -298,5 +94,275 @@ theorem replyRecvAnsweringThenR_eq_reporting {ctx : LabelingContext} {gate : Sys
   unfold replyRecvAfterReplyAnsweringReport
   rw [hAns]
   rfl
+
+/-! ### The routed reply-receive, its receive capability refused on entry
+
+The routed entry checks a reply-receive's receive capability on entry, as every
+operand route does.  Where the reply answers a caller and that check refuses,
+seL4 has already replied (`handleInvocation` before `handleRecv`), so the route
+runs the reply step and reads the receive capability on the state it left
+(`replyRecvRoutedR`); every other case runs the operand route `k` handed in. -/
+
+/-- **A reply-receive whose reply answers and whose receive capability the
+entry refuses**: the caller's gate and the reply it answers, or `none`. -/
+def replyRecvRefusedOnEntry? (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (st : SystemState) :
+    Option (SyscallGate × SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge × Bool) :=
+  match st.getObject? tid.toObjId with
+  | some (.tcb tcb) =>
+    match replyRecvAnsweringReply? ctx (replyRecvCallerGate decoded tid tcb) decoded tid st with
+    | some (rid, prevCaller, replyBadge, replyGrant) =>
+      match replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid st with
+      | .ok _ => none
+      | .error _ => some (replyRecvCallerGate decoded tid tcb, rid, prevCaller, replyBadge, replyGrant)
+    | none => none
+  | _ => none
+
+/-- **A routed reply-receive in seL4's order**: where the reply answers and the
+entry refuses the receive capability (`replyRecvRefusedOnEntry?`), the caller's
+currency check, the reply step and the receive capability read after it
+(`replyRecvAnsweringThenR`); `k` otherwise.  A completed route takes the taint
+step of a receive capability read after the reply (`replyRecvAfterReplyTaint`);
+a refused one reports each leg's edge where that leg delivered
+(`replyRecvAfterReplyRefusalTaint`).  A specification: the compiled route runs it out of
+line. -/
+noncomputable def replyRecvRoutedR (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (k : RefusalCarrying Unit) :
+    RefusalCarrying Unit := fun st =>
+  match replyRecvRefusedOnEntry? ctx decoded tid st with
+  | none => k st
+  | some (gate, rid, prevCaller, replyBadge, replyGrant) =>
+    if !(st.scheduler.currentOnCore executingCore).isEqSome tid then .error (.illegalState, st)
+    else
+    match replyRecvAnsweringThenR ctx (replyRecvReceiveEndpoint ctx gate tid) decoded tid
+        executingCore rid prevCaller replyBadge replyGrant st with
+    | .error (e, s) =>
+      .error (e, replyRecvAfterReplyRefusalTaint ctx decoded tid executingCore gate rid prevCaller
+        replyBadge replyGrant st s)
+    | .ok ((), stPost) =>
+      .ok ((), replyRecvAfterReplyTaint ctx decoded tid executingCore gate rid prevCaller replyBadge
+        replyGrant st stPost)
+
+/-- **The state a routed reply-receive's refusal reports**: the after-reply
+route's (`replyRecvAfterReplyAnsweringReport`) where it runs, `kReport`'s
+otherwise. -/
+def replyRecvRoutedReport (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (kReport : SystemState → SystemState) (st : SystemState) : SystemState :=
+  match replyRecvRefusedOnEntry? ctx decoded tid st with
+  | none => kReport st
+  | some (gate, rid, prevCaller, replyBadge, replyGrant) =>
+    if st.scheduler.currentOnCore executingCore ≠ some tid then st
+    else replyRecvAfterReplyRefusalTaint ctx decoded tid executingCore gate rid prevCaller
+      replyBadge replyGrant st
+      (replyRecvAfterReplyAnsweringReport ctx gate decoded tid executingCore st)
+
+/-- No after-reply route: the entry's order holds for every caller TCB. -/
+theorem replyRecvRefusedOnEntry?_none {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {st : SystemState}
+    (h : replyRecvRefusedOnEntry? ctx decoded tid st = none) (tcb : TCB)
+    (hT : st.getObject? tid.toObjId = some (.tcb tcb)) :
+    replyRecvAnsweringReply? ctx (replyRecvCallerGate decoded tid tcb) decoded tid st = none ∨
+      ∃ epId, replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid st =
+        .ok epId := by
+  unfold replyRecvRefusedOnEntry? at h
+  rw [hT] at h
+  dsimp only at h
+  cases hA : replyRecvAnsweringReply? ctx (replyRecvCallerGate decoded tid tcb) decoded tid st with
+  | none => exact .inl rfl
+  | some q =>
+    rw [hA] at h
+    obtain ⟨rid, prevCaller, replyBadge, replyGrant⟩ := q
+    dsimp only at h
+    cases hE : replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid st with
+    | ok ep => exact .inr ⟨ep, rfl⟩
+    | error e => rw [hE] at h; cases h
+
+/-- An after-reply route: the caller is a TCB, its reply answers, and the entry
+refuses its receive capability. -/
+theorem replyRecvRefusedOnEntry?_some {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {st : SystemState} {gate : SyscallGate} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {replyBadge : Option SeLe4n.Badge} {replyGrant : Bool}
+    (h : replyRecvRefusedOnEntry? ctx decoded tid st =
+      some (gate, rid, prevCaller, replyBadge, replyGrant)) :
+    ∃ tcb e, st.getObject? tid.toObjId = some (.tcb tcb) ∧
+      gate = replyRecvCallerGate decoded tid tcb ∧
+      replyRecvAnsweringReply? ctx gate decoded tid st =
+        some (rid, prevCaller, replyBadge, replyGrant) ∧
+      replyRecvReceiveEndpoint ctx gate tid st = .error e := by
+  unfold replyRecvRefusedOnEntry? at h
+  cases hT : st.getObject? tid.toObjId with
+  | none => rw [hT] at h; cases h
+  | some o =>
+    rw [hT] at h
+    cases o with
+    | tcb tcb =>
+      dsimp only at h
+      cases hA : replyRecvAnsweringReply? ctx (replyRecvCallerGate decoded tid tcb) decoded tid st with
+      | none => rw [hA] at h; cases h
+      | some q =>
+        rw [hA] at h
+        obtain ⟨rid', prevCaller', replyBadge', replyGrant'⟩ := q
+        dsimp only at h
+        cases hE : replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid st with
+        | ok ep => rw [hE] at h; cases h
+        | error e =>
+          rw [hE] at h
+          cases h
+          exact ⟨tcb, e, rfl, rfl, hA, hE⟩
+    | _ => cases h
+
+/-- **The routed reply-receive is the checked dispatch, reporting the state its
+refusing step stopped in**, given that `k` is, wherever the entry's order holds
+(`hk`): the after-reply route is `dispatchSyscallChecked`'s answering arm whose
+entry refuses the receive capability (`dispatchReplyRecvAfterReply`), and its
+refusal reports `replyRecvAfterReplyAnsweringReport`. -/
+theorem replyRecvRoutedR_eq {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId} {k : RefusalCarrying Unit}
+    {kReport : SystemState → SystemState} {st : SystemState}
+    (hRR : decoded.syscallId = .replyRecv)
+    (hk : (∀ tcb, st.getObject? tid.toObjId = some (.tcb tcb) →
+        replyRecvAnsweringReply? ctx (replyRecvCallerGate decoded tid tcb) decoded tid st = none ∨
+        ∃ epId, replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid st =
+          .ok epId) →
+      k st = RefusalCarrying.ofKernelReporting kReport
+        (dispatchSyscallChecked ctx decoded tid executingCore) st) :
+    replyRecvRoutedR ctx decoded tid executingCore k st =
+      RefusalCarrying.ofKernelReporting
+        (replyRecvRoutedReport ctx decoded tid executingCore kReport)
+        (dispatchSyscallChecked ctx decoded tid executingCore) st := by
+  unfold replyRecvRoutedR
+  cases hR : replyRecvRefusedOnEntry? ctx decoded tid st with
+  | none =>
+    dsimp only
+    rw [hk (replyRecvRefusedOnEntry?_none hR)]
+    unfold RefusalCarrying.ofKernelReporting replyRecvRoutedReport
+    rw [hR]
+  | some q =>
+    obtain ⟨gate, rid, prevCaller, replyBadge, replyGrant⟩ := q
+    obtain ⟨tcb, e, hT, hG, hA, hE⟩ := replyRecvRefusedOnEntry?_some hR
+    dsimp only
+    unfold RefusalCarrying.ofKernelReporting replyRecvRoutedReport dispatchSyscallChecked
+    rw [hR]
+    dsimp only
+    by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+    · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
+        (threadId_isEqSome_iff _ _).2 hCur
+      have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
+      have hNY : decoded.syscallId ≠ .yield := by rw [hRR]; decide
+      rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
+        if_neg hNot, if_neg hNot, if_neg hNY, hT]
+      dsimp only
+      rw [dispatchSyscallArmChecked_replyRecv hRR]
+      subst hG
+      unfold replyRecvCallerGate at hA hE ⊢
+      unfold dispatchReplyRecvAfterReply
+      rw [hA]
+      dsimp only
+      rw [hE]
+      dsimp only
+      rw [replyRecvAnsweringThenR_eq_reporting hA]
+      have hT : ∀ stPost, checkedArmTaint ctx decoded tid executingCore
+          { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+            requiredRight := syscallRequiredRight decoded.syscallId } st stPost =
+          replyRecvAfterReplyTaint ctx decoded tid executingCore
+            { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+              requiredRight := syscallRequiredRight decoded.syscallId }
+            rid prevCaller replyBadge replyGrant st stPost := by
+        intro stPost
+        unfold checkedArmTaint
+        rw [if_pos hRR, hA]
+        dsimp only
+        rw [hE]
+      simp only [hT]
+      unfold RefusalCarrying.ofKernelReporting
+      generalize replyRecvAnsweringThen ctx _ decoded tid executingCore rid prevCaller replyBadge
+        replyGrant st = X
+      cases X with
+      | error e => rfl
+      | ok p => obtain ⟨⟨⟩, stPost⟩ := p; rfl
+    · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
+        cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
+        · rfl
+        · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
+      rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur, if_pos hCur]
+
+/-- A decode in the fields a reply-receive's after-reply route reads: the
+operand and reply addresses, the message registers, and the message info's
+length, extra-capability count and label. -/
+def replyRecvDecodeNorm (d : SyscallDecodeResult) : SyscallDecodeResult :=
+  { capAddr := d.capAddr,
+    msgInfo := { length := d.msgInfo.length, extraCaps := d.msgInfo.extraCaps,
+                 label := d.msgInfo.label },
+    syscallId := d.syscallId, msgRegs := d.msgRegs, replyCPtr := d.replyCPtr }
+
+/-- **The decode a routed reply-receive stands for**, built from its routed
+operands. -/
+def replyRecvRoutedDecode (capAddr : SeLe4n.CPtr) (msgRegs : Array SeLe4n.RegValue)
+    (replyCPtr : SeLe4n.CPtr) (len extraCaps label : Nat) : SyscallDecodeResult :=
+  { capAddr := capAddr, msgInfo := { length := len, extraCaps := extraCaps, label := label },
+    syscallId := .replyRecv, msgRegs := msgRegs, replyCPtr := replyCPtr }
+
+theorem replyRecvRoutedDecode_eq_norm {decoded : SyscallDecodeResult}
+    (hRR : decoded.syscallId = .replyRecv) :
+    replyRecvRoutedDecode decoded.capAddr decoded.msgRegs decoded.replyCPtr
+        decoded.msgInfo.length decoded.msgInfo.extraCaps decoded.msgInfo.label =
+      replyRecvDecodeNorm decoded := by
+  unfold replyRecvRoutedDecode replyRecvDecodeNorm
+  rw [hRR]
+
+/-- The after-reply route reads the decode only in its normal fields. -/
+theorem replyRecvRoutedR_norm (ctx : LabelingContext) (d : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (k : RefusalCarrying Unit) :
+    replyRecvRoutedR ctx (replyRecvDecodeNorm d) tid executingCore k =
+      replyRecvRoutedR ctx d tid executingCore k := rfl
+
+/-- The after-reply route's report reads the decode only in its normal fields. -/
+theorem replyRecvRoutedReport_norm (ctx : LabelingContext) (d : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (kReport : SystemState → SystemState) :
+    replyRecvRoutedReport ctx (replyRecvDecodeNorm d) tid executingCore kReport =
+      replyRecvRoutedReport ctx d tid executingCore kReport := rfl
+
+/-- **Whether a reply-receive's receive capability was looked up after its
+reply** (WS-SX SX36.1): the decode is a reply-receive whose reply answers and
+whose receive capability the entry refuses (`replyRecvRefusedOnEntry?`), so the
+lookup the capability fault reads ran on the state the reply step left, not on
+the entry's. -/
+def replyRecvLooksUpAfterReply (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (st : SystemState) : Bool :=
+  if decoded.syscallId = .replyRecv then (replyRecvRefusedOnEntry? ctx decoded tid st).isSome
+  else false
+
+theorem replyRecvLooksUpAfterReply_of_ne {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {st : SystemState} (h : decoded.syscallId ≠ .replyRecv) :
+    replyRecvLooksUpAfterReply ctx decoded tid st = false := by
+  unfold replyRecvLooksUpAfterReply
+  rw [if_neg h]
+
+theorem replyRecvLooksUpAfterReply_of_none {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {st : SystemState}
+    (h : replyRecvRefusedOnEntry? ctx decoded tid st = none) :
+    replyRecvLooksUpAfterReply ctx decoded tid st = false := by
+  unfold replyRecvLooksUpAfterReply
+  rw [h]
+  by_cases hR : decoded.syscallId = .replyRecv
+  · rw [if_pos hR]; rfl
+  · rw [if_neg hR]
+
+theorem replyRecvLooksUpAfterReply_of_some {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {tid : SeLe4n.ThreadId} {st : SystemState} {q}
+    (hRR : decoded.syscallId = .replyRecv)
+    (h : replyRecvRefusedOnEntry? ctx decoded tid st = some q) :
+    replyRecvLooksUpAfterReply ctx decoded tid st = true := by
+  unfold replyRecvLooksUpAfterReply
+  rw [if_pos hRR, h]
+  rfl
+
+/-- The after-reply lookup's test reads the decode only in its normal fields. -/
+theorem replyRecvRefusedOnEntry?_norm (ctx : LabelingContext) (d : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (st : SystemState) :
+    replyRecvRefusedOnEntry? ctx (replyRecvDecodeNorm d) tid st =
+      replyRecvRefusedOnEntry? ctx d tid st := rfl
 
 end SeLe4n.Kernel

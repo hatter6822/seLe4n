@@ -376,7 +376,8 @@ theorem propagatePipChainCrossCore_cnodeSlotsKept (st : SystemState) (tid : SeLe
 /-- The reply's donation pop keeps every CNode. -/
 theorem applyReplyDonationOnCore_cnodeSlotsKept {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {targetVtid : SeLe4n.ValidThreadId} {ownerHome : Concurrency.CoreId}
-    (hInv : st.objects.invExt) (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {keep : Bool} {executingCore : Concurrency.CoreId} (hInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep executingCore = .ok st') :
     CNodeSlotsKept st st' := by
   rcases applyReplyDonationOnCore_ok_decompose _ _ _ _ _ h with
     ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩ | ⟨_, _, _, -, -, -, hK⟩
@@ -384,7 +385,8 @@ theorem applyReplyDonationOnCore_cnodeSlotsKept {st st' : SystemState} {rid : Se
   · exact ((CNodeSlotsKept.of_kindPreservingWrite
       (returnDonatedSchedContext_kindPreservingWrite hInv hR)).trans
       (settleReturnedContext_cnodeSlotsKept _ _ _)).trans
-      (descheduleAtPlacement_cnodeSlotsKept _ holderVtid.val)
+      (descheduleReturnedHolder_induct (fun a b => CNodeSlotsKept a b) keep executingCore _ _
+        (.refl _) (descheduleAtPlacement_cnodeSlotsKept _ holderVtid.val))
   · exact .of_kindPreservingWrite (keepDonatedSchedContext_kindPreservingWrite hInv hK)
 
 /-- **The cross-core reply keeps every CNode**: the reply leg, the donation's
@@ -392,8 +394,8 @@ pop and the priority reversion each keep every kind.  Read off its
 discriminants. -/
 theorem endpointReplyCrossCoreDispatch_cnodeSlotsKept {replier target : SeLe4n.ThreadId}
     {msg : IpcMessage} {executingCore : Concurrency.CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) :
-    CNodeSlotsKept st (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
+    (hInv : st.objects.invExt) (keep : Bool := false) :
+    CNodeSlotsKept st (endpointReplyCrossCoreDispatch replier target msg executingCore st keep).1 := by
   have k1 := endpointReplyOnCore_cnodeSlotsKept (replier := replier) (target := target)
     (msg := msg) (executingCore := executingCore) hInv
   have hI1 := endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hInv
@@ -406,7 +408,8 @@ theorem endpointReplyCrossCoreDispatch_cnodeSlotsKept {replier target : SeLe4n.T
     | ok sgi =>
       dsimp only
       have hDon : ∀ (rid : SeLe4n.ReplyId) (tv : SeLe4n.ValidThreadId) (s2 : SystemState),
-          applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) = .ok s2 →
+          applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) keep executingCore
+            = .ok s2 →
           CNodeSlotsKept st s2 ∧ s2.objects.invExt := fun _ _ _ hD =>
         ⟨k1.trans (applyReplyDonationOnCore_cnodeSlotsKept hI1 hD),
           applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hI1 hD⟩
@@ -425,7 +428,8 @@ theorem endpointReplyCrossCoreDispatch_cnodeSlotsKept {replier target : SeLe4n.T
             | none => exact .refl _
             | some tv =>
               dsimp only
-              cases hD : applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) with
+              cases hD : applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target)
+                  keep executingCore with
               | error _ => exact .refl _
               | ok s2 =>
                 exact (hDon rid tv s2 hD).1.trans
@@ -440,7 +444,8 @@ theorem endpointReplyCrossCoreDispatch_cnodeSlotsKept {replier target : SeLe4n.T
           | none => exact .refl _
           | some tv =>
             dsimp only
-            cases hD : applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target) with
+            cases hD : applyReplyDonationOnCore st1 rid tv (determineTargetCore st1 target)
+                keep executingCore with
             | error _ => exact .refl _
             | ok s2 => exact (hDon rid tv s2 hD).1
 
@@ -448,12 +453,12 @@ theorem endpointReplyCrossCoreDispatch_cnodeSlotsKept {replier target : SeLe4n.T
 outcome. -/
 theorem faultReplyOnCore_cnodeSlotsKept {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {executingCore : Concurrency.CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) :
-    CNodeSlotsKept st (faultReplyOnCore replier faulted mi regs executingCore st).1 := by
+    (hInv : st.objects.invExt) (keep : Bool := false) :
+    CNodeSlotsKept st (faultReplyOnCore replier faulted mi regs executingCore st keep).1 := by
   have k1 := endpointReplyCrossCoreDispatch_cnodeSlotsKept (replier := replier)
-    (target := faulted) (msg := IpcMessage.empty) (executingCore := executingCore) hInv
+    (target := faulted) (msg := IpcMessage.empty) (executingCore := executingCore) hInv keep
   have hI1 := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
-    IpcMessage.empty executingCore st hInv
+    IpcMessage.empty executingCore st hInv keep
   unfold faultReplyOnCore
   cases hT : st.getTcb? faulted with
   | none => exact .refl _
@@ -463,7 +468,8 @@ theorem faultReplyOnCore_cnodeSlotsKept {replier faulted : SeLe4n.ThreadId} {mi 
     | none => exact .refl _
     | some tf =>
       dsimp only
-      cases hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st with
+      cases hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st
+          keep with
       | mk s1 res =>
         rw [hR] at k1 hI1
         cases res with
@@ -475,16 +481,16 @@ cross-core reply, the reply's capability transfer and the staged message. -/
 theorem replyTransferOnCoreChecked_cnodeSlotsKept {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
     {msg : IpcMessage} {grant : Bool} {executingCore : Concurrency.CoreId} {st st' : SystemState}
-    (hInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st
+    {keep : Bool} (hInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st keep
       = .ok ((), st')) :
     CNodeSlotsKept st st' := by
   unfold replyTransferOnCoreChecked at h
   by_cases hF : threadHasPendingFault st callerTid = true
   · rw [if_pos hF] at h
     have k := faultReplyOnCore_cnodeSlotsKept (replier := replier) (faulted := callerTid)
-      (mi := mi) (regs := regs) (executingCore := executingCore) hInv
-    cases hR : faultReplyOnCore replier callerTid mi regs executingCore st with
+      (mi := mi) (regs := regs) (executingCore := executingCore) hInv keep
+    cases hR : faultReplyOnCore replier callerTid mi regs executingCore st keep with
     | mk s res =>
       rw [hR] at h k
       cases res with
@@ -495,10 +501,10 @@ theorem replyTransferOnCoreChecked_cnodeSlotsKept {ctx : LabelingContext}
     by_cases hFl : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf callerTid) = true
     · rw [if_pos hFl] at h
       have k := endpointReplyCrossCoreDispatch_cnodeSlotsKept (replier := replier)
-        (target := callerTid) (msg := msg) (executingCore := executingCore) hInv
+        (target := callerTid) (msg := msg) (executingCore := executingCore) hInv keep
       have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid msg
-        executingCore st hInv
-      cases hR : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+        executingCore st hInv keep
+      cases hR : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st keep with
       | mk s res =>
         rw [hR] at h k hI
         cases res with
@@ -516,5 +522,68 @@ theorem replyTransferOnCoreChecked_cnodeSlotsKept {ctx : LabelingContext}
                 (Architecture.stageDeliveredMessage_kindPreservingWrite sX callerTid summary.capInfo
                   (receiveTransferCaps_objects_invExt hI hX)))
     · rw [if_neg hFl] at h; cases h
+
+/-! ### The receive legs (WS-SX SX36.1)
+
+A reply-receive whose receive capability looks up after its reply runs the
+receive legs on the answered state; they keep every CNode too, so a lookup that
+resolved before them resolves after. -/
+
+/-- **The receive leg keeps every CNode**: the state itself, or the receive's
+kind-preserving write followed by scheduler links alone. -/
+theorem endpointReceiveDualOnCore_cnodeSlotsKept {endpointId : SeLe4n.ObjId}
+    {receiver : SeLe4n.ThreadId} {replyId : Option SeLe4n.ReplyId}
+    {executingCore : Concurrency.CoreId} {st : SystemState} (hInv : st.objects.invExt) :
+    CNodeSlotsKept st (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 := by
+  rcases endpointReceiveDualOnCore_post_agrees endpointId receiver replyId executingCore st hInv
+    with h | ⟨_, r1, hS, hA⟩
+  · rw [h]; exact .refl _
+  · exact CNodeSlotsKept.of_kindPreservingWriteAt fun oid =>
+      ((endpointReceiveDual_kindPreservingWrite _ _ _ _ _ _ hInv hS) oid).trans
+        (hA.objects.kindPreservingAt oid)
+
+/-- **The capability-carrying receive leg keeps every CNode**: the receive leg,
+then the rendezvous transfer (`receiveTransferCaps_cnodeSlotsKept`). -/
+theorem endpointReceiveDualWithCapsOnCore_cnodeSlotsKept {endpointId : SeLe4n.ObjId}
+    {receiver : SeLe4n.ThreadId} {replyId : Option SeLe4n.ReplyId}
+    {executingCore : Concurrency.CoreId} {st : SystemState} (hInv : st.objects.invExt) :
+    CNodeSlotsKept st
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 := by
+  unfold endpointReceiveDualWithCapsOnCore
+  have hRcv := endpointReceiveDualOnCore_cnodeSlotsKept (endpointId := endpointId)
+    (receiver := receiver) (replyId := replyId) (executingCore := executingCore) hInv
+  have hI1 := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
+    executingCore st hInv
+  generalize endpointReceiveDualOnCore endpointId receiver replyId executingCore st = r at hRcv hI1
+  obtain ⟨st1, res⟩ := r
+  dsimp only at hRcv hI1 ⊢
+  cases res with
+  | error _ => exact hRcv
+  | ok p =>
+    obtain ⟨senderId, sgi⟩ := p
+    dsimp only
+    repeat' split
+    all_goals first
+      | exact hRcv
+      | (rename_i hU; exact hRcv.trans (receiveTransferCaps_cnodeSlotsKept hI1 hU))
+
+/-- **The receive's return of a bound notification's context keeps every
+CNode**: it rewrites the receiver's TCB and the context alone
+(`receiveReturnSchedContext_objects`), neither a CNode. -/
+theorem receiveReturnSchedContext_cnodeSlotsKept (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    CNodeSlotsKept st (receiveReturnSchedContext blocks st tid) := by
+  refine ⟨fun id => ?_, fun id cn hC => ⟨cn, ?_, rfl, fun _ c hL => ⟨c, hL, rfl, fun _ => rfl⟩⟩⟩
+  · rcases receiveReturnSchedContext_objects blocks st tid hInv id with
+      e | ⟨tcb, hp, hq⟩ | ⟨sc, sc', hp, hq⟩
+    · rw [e]
+    · rw [hp, hq]; rfl
+    · rw [hp, hq]; rfl
+  · rw [SystemState.getCNode?_eq_some_iff] at hC ⊢
+    rcases receiveReturnSchedContext_objects blocks st tid hInv id with
+      e | ⟨tcb, hp, -⟩ | ⟨sc, sc', hp, -⟩
+    · rw [e]; exact hC
+    · rw [hC] at hp; cases hp
+    · rw [hC] at hp; cases hp
 
 end SeLe4n.Kernel

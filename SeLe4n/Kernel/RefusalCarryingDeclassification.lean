@@ -462,7 +462,7 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel, hSid,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     declassifyTaintStep_eq st tid decoded hSid,
     declassifyPlanOperand?_of_resolved st tid decoded.capAddr decoded.msgInfo.extraCaps tcb ref hTcb hRef]
@@ -909,7 +909,8 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
         else auditGeneralR ctx decoded.syscallId regs decoded.capAddr tid executingCore cap st := by
   have hR : routedAudited decoded.syscallId = true := by
     rcases hSid with h | h <;> rw [h] <;> rfl
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded)
+      (by rcases hSid with h | h <;> rw [h] <;> decide), RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef, auditTaintStep_eq st tid decoded hSid]
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
@@ -3488,7 +3489,7 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } none
         (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
         st.declassificationAudit.length st.declassificationTaint) st := by
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hSid,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel, hSid,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     declassifySignalTaintStep_eq st tid decoded hSid _ _ _ _ _ (decode_taintWordsAt st tid.toObjId)
       (decode_taintWordsAt st _),
@@ -3559,6 +3560,7 @@ theorem dispatchAuditedCheckedR_eq (ctx : LabelingContext) (decoded : SyscallDec
   have hNotYield : decoded.syscallId ≠ .yield := by
     intro h; rw [h] at hRouted; cases hRouted
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := fun h => by rw [h] at hRouted; cases hRouted)
   intro st tcb ref hTcb hRef
   rcases hs : decoded.syscallId <;> rw [hs] at hRouted <;>
     simp only [routedAudited, Bool.false_eq_true] at hRouted <;>

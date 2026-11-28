@@ -1456,8 +1456,10 @@ theorem dispatchSyscallChecked_recordsStage (ctx : LabelingContext)
   · cases h
   rename_i stPost hD
   cases h
-  refine RecordsStage.trans (b := stPost) ?_ (applySyscallTaint_recordsStage _ _ _)
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  refine RecordsStage.trans (b := stPost) ?_ (checkedArmTaint_induct (fun x => RecordsStage stPost x)
+    (fun _ _ _ h => RecordsStage.trans h (applySyscallTaint_recordsStage _ _ _))
+    (RecordsStage.refl stPost))
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact dispatchWithCapChecked_recordsStage ctx decoded tid executingCore _ cap _ stPost P
     hCaller hD
 

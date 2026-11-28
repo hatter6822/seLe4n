@@ -67,9 +67,9 @@ theorem endpointReplyOnCore {replier target : SeLe4n.ThreadId} {msg : IpcMessage
     · exact hRefl
 
 theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg : IpcMessage}
-    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
+    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (keep : Bool := false) :
     QueueLabelsFrame st
-      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have hRefl : QueueLabelsFrame st st := refl hInv
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch
   have A := endpointReplyOnCore (replier := replier) (target := target) (msg := msg) (c := c) hInv
@@ -94,12 +94,13 @@ theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg :
 
 theorem endpointReplyCrossCoreDispatchChecked {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {c : CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) :
+    (hInv : st.objects.invExt) (keep : Bool := false) :
     QueueLabelsFrame st
-      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st
+        keep).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch hInv
+  · exact endpointReplyCrossCoreDispatch hInv keep
   · exact refl hInv
 
 /-- The decoded fault outcome applied: a restart or an abandon, neither writing
@@ -118,8 +119,10 @@ theorem faultReplyApplyOnCore (st : SystemState) (t : SeLe4n.ThreadId)
 
 /-- **The fault reply**: the reply chain, then the outcome. -/
 theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
-    {regs : Array SeLe4n.RegValue} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    QueueLabelsFrame st (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st).1 := by
+    {regs : Array SeLe4n.RegValue} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (keep : Bool := false) :
+    QueueLabelsFrame st
+      (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st keep).1 := by
   unfold _root_.SeLe4n.Kernel.faultReplyOnCore
   split
   · exact refl hInv
@@ -127,9 +130,9 @@ theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     · exact refl hInv
     · dsimp only
       have A := endpointReplyCrossCoreDispatch (replier := replier) (target := faulted)
-        (msg := IpcMessage.empty) (c := c) hInv
+        (msg := IpcMessage.empty) (c := c) hInv keep
       generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier faulted
-        IpcMessage.empty c st = r at A
+        IpcMessage.empty c st keep = r at A
       obtain ⟨st1, res⟩ := r
       dsimp only at A ⊢
       cases res with
@@ -142,22 +145,22 @@ theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
 its capability transfer and its message stage. -/
 theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
-    {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    {c : CoreId} {st st' : SystemState} {keep : Bool} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
-      st = .ok ((), st')) : QueueLabelsFrame st st' := by
+      st keep = .ok ((), st')) : QueueLabelsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
   split at h
   · have S := faultReplyOnCore (replier := replier) (faulted := callerTid) (mi := mi)
-      (regs := regs) (c := c) hInv
-    generalize _root_.SeLe4n.Kernel.faultReplyOnCore replier callerTid mi regs c st = r at S h
+      (regs := regs) (c := c) hInv keep
+    generalize _root_.SeLe4n.Kernel.faultReplyOnCore replier callerTid mi regs c st keep = r at S h
     obtain ⟨st1, res⟩ := r
     cases res with
     | error _ => cases h
     | ok _ => cases h; exact S
   · have S := endpointReplyCrossCoreDispatchChecked (ctx := ctx) (replier := replier)
-      (target := callerTid) (msg := msg) (c := c) hInv
+      (target := callerTid) (msg := msg) (c := c) hInv keep
     generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier callerTid
-      msg c st = r at S h
+      msg c st keep = r at S h
     obtain ⟨st1, res⟩ := r
     cases res with
     | error _ => cases h

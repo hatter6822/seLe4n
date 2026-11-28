@@ -155,6 +155,20 @@ DECLARED_TAINT_WRITERS = {
     "SeLe4n.Kernel.originationPass",
     "SeLe4n.Kernel.seedWords",
     "SeLe4n.Kernel.seedWordsFrom",
+    # WS-SX SX36: the reply-receive's after-reply steps.  The commit's step
+    # (`checkedArmTaint`: the entry plan's, or the after-reply route's
+    # `replyRecvAfterReplyTaint`), and a refusal's, decided on the state the
+    # refusal reports: the reply leg's edge where the caller no longer waits
+    # (`replyRecvRefusalTaint`), the receive leg's where the sender no longer
+    # waits (`replyRecvReceiveLegRefusalTaint`); and those two without the plan
+    # (`replyRecvRefusalTaintStep`, `receiveLegRefusalTaintStep`), the compiled
+    # route's (`replyRecvAfterReplyRunR_eq`).
+    "SeLe4n.Kernel.checkedArmTaint",
+    "SeLe4n.Kernel.replyRecvAfterReplyTaint",
+    "SeLe4n.Kernel.replyRecvRefusalTaint",
+    "SeLe4n.Kernel.replyRecvReceiveLegRefusalTaint",
+    "SeLe4n.Kernel.replyRecvRefusalTaintStep",
+    "SeLe4n.Kernel.receiveLegRefusalTaintStep",
 }
 
 # **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
@@ -212,6 +226,16 @@ DECLARED_TAINT_CONSUMERS = {
     # (`dispatchSyscallChecked_eq_impl`; the refusal-carrying signal and wait
     # arms', `waitOperandArmThenTaintR_eq`).
     "SeLe4n.Kernel.dispatchCheckedArmThenTaint",
+    # WS-SX SX36: the after-reply route, compiled and specified: its one
+    # compiled form (`replyRecvAfterReplyRunR`, proven the specification's by
+    # `replyRecvAfterReplyRunR_eq`) and a refusal's taint, the receive leg's
+    # step then the reply leg's (`replyRecvAfterReplyRefusalTaint`).
+    "SeLe4n.Kernel.replyRecvAfterReplyRunR",
+    "SeLe4n.Kernel.replyRecvAfterReplyRefusalTaint",
+    # And the routed reply-receive's specification in seL4's order, which takes
+    # those two steps (`replyRecvRoutedR_eq`; the routed arm runs the compiled
+    # route, `replyRecvAfterReplyRoutedOn_eq`).
+    "SeLe4n.Kernel.replyRecvRoutedR",
     # WS-ZA ZA5.12: the declassify arms' fused arm-then-apply steps
     # (`dispatchCheckedArmThenTaintFused_eq`).
     "SeLe4n.Kernel.dispatchCheckedArmThenDeclassifyTaint",

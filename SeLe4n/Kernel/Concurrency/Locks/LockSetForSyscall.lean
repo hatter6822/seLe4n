@@ -179,6 +179,13 @@ structure SyscallLockOperands where
   the arm's scheduler footprint replays that transfer, because its receive leg
   runs on the transfer's post-state. -/
   replyGrant : Option Bool := none
+  /-- Whether an answering `.replyRecv`'s receive capability is refused by the
+  receive's flow gate on entry (seL4-MCS `handleRecv` after `handleInvocation`:
+  the reply answers, then the receive is refused on the state the reply left).
+  The gate reads the labelling context and the capability alone, so this is
+  read on entry; the arm's footprint names the cores that path writes only
+  where it is set. -/
+  replyRecvReceiveRefused : Bool := false
   /-- **Cut C4**: the core `.tcbSetAffinity` pins its target to, which is itself
   an `Option` — `none` unpins — so this field is doubly optional and the two
   layers mean different things: the outer says whether the caller supplied the
@@ -1562,18 +1569,21 @@ one record is that a field added for one domain could silently move the other's
 answer; this says it cannot, so `abiEntryLockOperands` supplying the six below
 left every object-domain footprint exactly where Cut C4 found it.
 
-Stated as a congruence over all six at once (the sixth, `replyGrant`, the
-`.replyRecv` reply capability's grant right), so a seventh field added without
-extending it is a field nothing has checked. -/
+Stated as a congruence over all of them at once (`replyGrant`, the `.replyRecv`
+reply capability's grant right, and `replyRecvReceiveRefused`, its receive's
+flow refusal on entry, among them), so a field added without extending it is a
+field nothing has checked. -/
 theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
     (ops : SyscallLockOperands) (st : SystemState)
     (msg : Option IpcMessage)
     (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
-    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) (grant : Option Bool) :
+    (aff : Option (Option CoreId)) (slot : Option SeLe4n.Slot) (grant : Option Bool)
+    (refused : Bool) :
     lockSetForSyscall sid
         { ops with message := msg,
                    replyMessageInfo := mi, replyRegisters := regs, affinity := aff,
-                   targetSlot := slot, replyGrant := grant } st
+                   targetSlot := slot, replyGrant := grant,
+                   replyRecvReceiveRefused := refused } st
       = lockSetForSyscall sid ops st := by
   cases sid <;> rfl
 

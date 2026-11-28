@@ -80,6 +80,117 @@ theorem descheduleKeepingCurrentOnCore_runQueueStage (st : SystemState) (tid : S
   descheduleKeepingCurrentOnCore_induct (fun a b => SystemState.RunQueueStage a b) st tid c
     (SystemState.RunQueueStage.refl st) (descheduleAt_runQueueStage st tid _)
 
+/-- **The reply return's holder deschedule** (WS-SX SX36.2, the owner ruling
+"seL4 everywhere"): the deschedule a reply runs on the thread its return takes a
+context from.  A `.reply` and a ReplyRecv whose receive runs pass `false`, and it
+is `descheduleAtPlacement`; the reply step of a ReplyRecv whose receive completes
+the bound notification passes `true` with its executing core, and it is the
+holder-only deschedule, so a passive server whose loan the reply returned stays
+current until the scheduling point, as seL4's `rescheduleRequired` leaves
+`ksCurThread`. -/
+@[inline] def descheduleReturnedHolder (keepCurrent : Bool) (c : CoreId) (st : SystemState)
+    (holder : SeLe4n.ThreadId) : SystemState :=
+  if keepCurrent then descheduleKeepingCurrentOnCore st holder c else descheduleAtPlacement st holder
+
+@[simp] theorem descheduleReturnedHolder_false (c : CoreId) (st : SystemState)
+    (holder : SeLe4n.ThreadId) :
+    descheduleReturnedHolder false c st holder = descheduleAtPlacement st holder := rfl
+
+theorem descheduleReturnedHolder_true (c : CoreId) (st : SystemState)
+    (holder : SeLe4n.ThreadId) :
+    descheduleReturnedHolder true c st holder = descheduleKeepingCurrentOnCore st holder c := rfl
+
+/-- **Either flag, one deschedule**: a property the identity and
+`descheduleAtPlacement` both carry, the reply return's holder deschedule carries. -/
+theorem descheduleReturnedHolder_induct (P : SystemState → SystemState → Prop)
+    (keepCurrent : Bool) (c : CoreId) (st : SystemState) (holder : SeLe4n.ThreadId)
+    (hId : P st st) (hD : P st (descheduleAtPlacement st holder)) :
+    P st (descheduleReturnedHolder keepCurrent c st holder) := by
+  cases keepCurrent
+  · exact hD
+  · exact descheduleKeepingCurrentOnCore_induct P st holder c hId hD
+
+/-- **A field neither deschedule moves**: a projection `descheduleAtPlacement`
+leaves alone, the reply return's holder deschedule leaves alone on either flag. -/
+theorem descheduleReturnedHolder_congr_field {α : Sort _} (f : SystemState → α)
+    (keepCurrent : Bool) (c : CoreId) (st : SystemState) (holder : SeLe4n.ThreadId)
+    (hD : f (descheduleAtPlacement st holder) = f st) :
+    f (descheduleReturnedHolder keepCurrent c st holder) = f st :=
+  descheduleReturnedHolder_induct (fun a b => f b = f a) keepCurrent c st holder rfl hD
+
+/-- The reply return's holder deschedule writes no replenish queue. -/
+@[simp] theorem descheduleReturnedHolder_replenishQueueOnCore (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) (c' : CoreId) :
+    (descheduleReturnedHolder keepCurrent c st holder).scheduler.replenishQueueOnCore c' =
+      st.scheduler.replenishQueueOnCore c' :=
+  descheduleReturnedHolder_congr_field (·.scheduler.replenishQueueOnCore c') keepCurrent c st
+    holder (descheduleAtPlacement_replenishQueueOnCore st holder c')
+
+/-- The reply return's holder deschedule writes objects only off their run links. -/
+theorem descheduleReturnedHolder_objectsAgreeOffRunLinks (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).objectsAgreeOffRunLinks st :=
+  descheduleReturnedHolder_induct (fun a b => b.objectsAgreeOffRunLinks a) keepCurrent c st
+    holder (fun _ => rfl) (descheduleAtPlacement_objectsAgreeOffRunLinks st holder)
+
+/-- The reply return's holder deschedule keeps the derivation tree. -/
+@[simp] theorem descheduleReturnedHolder_cdt (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).cdt = st.cdt :=
+  descheduleReturnedHolder_congr_field (·.cdt) keepCurrent c st holder
+    (descheduleAtPlacement_cdt st holder)
+
+/-- The reply return's holder deschedule keeps the object store's extension
+invariant. -/
+theorem descheduleReturnedHolder_preserves_objects_invExt (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (descheduleReturnedHolder keepCurrent c st holder).objects.invExt :=
+  descheduleReturnedHolder_induct (fun a b => a.objects.invExt → b.objects.invExt) keepCurrent c
+    st holder id (descheduleAtPlacement_preserves_objects_invExt st holder) hInv
+
+/-- The fields the holder deschedule leaves alone, on either flag. -/
+@[simp] theorem descheduleReturnedHolder_objects_capacity (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).objects.capacity = st.objects.capacity :=
+  descheduleReturnedHolder_congr_field (·.objects.capacity) keepCurrent c st holder
+    (descheduleAtPlacement_objects_capacity st holder)
+@[simp] theorem descheduleReturnedHolder_lifecycle (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).lifecycle = st.lifecycle :=
+  descheduleReturnedHolder_congr_field (·.lifecycle) keepCurrent c st holder
+    (descheduleAtPlacement_lifecycle st holder)
+@[simp] theorem descheduleReturnedHolder_objectIndex (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).objectIndex = st.objectIndex :=
+  descheduleReturnedHolder_congr_field (·.objectIndex) keepCurrent c st holder
+    (descheduleAtPlacement_objectIndex st holder)
+@[simp] theorem descheduleReturnedHolder_objectIndexSet (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).objectIndexSet = st.objectIndexSet :=
+  descheduleReturnedHolder_congr_field (·.objectIndexSet) keepCurrent c st holder
+    (descheduleAtPlacement_objectIndexSet st holder)
+@[simp] theorem descheduleReturnedHolder_asidTable (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).asidTable = st.asidTable :=
+  descheduleReturnedHolder_congr_field (·.asidTable) keepCurrent c st holder
+    (descheduleAtPlacement_asidTable st holder)
+@[simp] theorem descheduleReturnedHolder_machine_eq (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).machine = st.machine :=
+  descheduleReturnedHolder_congr_field (·.machine) keepCurrent c st holder
+    (descheduleAtPlacement_machine_eq st holder)
+@[simp] theorem descheduleReturnedHolder_releaseSlots (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder : SeLe4n.ThreadId) :
+    (descheduleReturnedHolder keepCurrent c st holder).scheduler.releaseSlots = st.scheduler.releaseSlots :=
+  descheduleReturnedHolder_congr_field (·.scheduler.releaseSlots) keepCurrent c st holder
+    (descheduleAtPlacement_releaseSlots st holder)
+@[simp] theorem descheduleReturnedHolder_determineTargetCore (keepCurrent : Bool) (c : CoreId)
+    (st : SystemState) (holder x : SeLe4n.ThreadId) :
+    determineTargetCore (descheduleReturnedHolder keepCurrent c st holder) x =
+      determineTargetCore st x :=
+  descheduleReturnedHolder_congr_field (determineTargetCore · x) keepCurrent c st holder
+    (descheduleAtPlacement_determineTargetCore st holder x)
+
 /-- Does `t` hold a context on loan (a `.donated` binding)?  Read at the entry
 of a ReplyRecv, before the reply step can return the context. -/
 @[inline] def threadOnLoanAt (st : SystemState) (t : SeLe4n.ThreadId) : Bool :=
@@ -99,10 +210,12 @@ of a ReplyRecv, before the reply step can return the context. -/
 
 /-- **The entry's gate for the drop**: the syscall is a ReplyRecv and its caller
 holds a context on loan.  The ReplyRecv's only step that can unbind its caller is
-the reply step's pop returning that loan (a receive that dequeues a `Call`
-donates to the caller, and no other step writes its binding), so a caller that
-passes this gate and is unbound after the transition is a caller whose context
-the pop returned. -/
+the reply's return of that loan: the reply step's pop on the receive route, and
+the reply leg's own return on the signal route (`replyTransferOnCoreChecked`
+with the keep flag).  A receive that dequeues a `Call` donates to the caller,
+the signal route's completion can only donate the notification's context to it,
+and no other step writes its binding, so a caller that passes this gate and is
+unbound after the transition is a caller whose context the reply returned. -/
 @[inline] def contextReturnableAtEntry (isReplyRecv : Bool) (st : SystemState)
     (caller? : Option SeLe4n.ThreadId) : Bool :=
   isReplyRecv &&

@@ -1187,22 +1187,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointSendDualChecked
   , `SeLe4n.Kernel.endpointSendDualWithCaps
   , `SeLe4n.Kernel.endpointSweepBody
-  -- The operand dispatch's report of an arm's result, in the specification
-  -- forms (`dispatchOperandCheckedK`): every routed arm pushes the result from
-  -- its words (`entryReportPushOk 1`, `entryReportPushErrorW 1`), equal to it
-  -- by `liftReport_entryReportResolved`.
-  , `SeLe4n.Kernel.entryReportResolved
-  -- The reply capability's failed lookup as a report, in the specification
-  -- form (`replyLookupRefusal`): the entry pushes it from the lookup's words
-  -- (`entryReportPushLookupAtW` through `replyLookupRefusalW`), equal to it by
-  -- `liftReport_replyLookupRefusalW`.
-  , `SeLe4n.Kernel.entryReportLookupAt
-  -- The operand dispatch's report of a failed lookup, in the specification
-  -- form (`dispatchOperandCheckedK`'s lookup continuation): every routed arm
-  -- pushes it from the lookup's address and words (`entryReportLookupAtW`) or
-  -- the empty slot's refusal (`entryReportLookup`), equal to it by
-  -- `dispatchOperandCheckedKW_report`.
-  , `SeLe4n.Kernel.entryReportLookupFor
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
@@ -1231,6 +1215,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchCallCheckedR
   , `SeLe4n.Kernel.dispatchReplyCheckedR
   , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  -- WS-SX SX36: the reply-receive's specification route in seL4's order,
+  -- which `dispatchReplyRecvCheckedR` runs; the compiled entry runs the
+  -- continuation form (`replyRecvRoutedK`), proven to hand on what it returns
+  -- (`replyRecvRoutedR_eq`).
+  , `SeLe4n.Kernel.replyRecvRoutedR
   -- The signal's, wait's, receive's, invocation's, audited call's and
   -- five-word invocations' route specifications and their operand dispatch,
   -- which the compiled entry runs as the routed arms and the operand's
@@ -1365,27 +1354,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- answered before the tail and the message staged after it, and the reply
   -- step's state is the one a refused receive reports (SX34); the composite and
   -- its fast forms run both halves inline.
-  -- WS-SX SX36: the `.replyRecv` syscall in seL4's order, its receive
-  -- capability read after the reply (`dispatchReplyRecvAfterReply`), proven
-  -- equal to the entry's order where the entry resolves the capability
-  -- (`dispatchReplyRecvAfterReply_eq_of_entryResolved`); the dispatch takes it
-  -- in place of its `.replyRecv` gate in the next cut of the same row, through
-  -- the arm `dispatchSyscallArmChecked`.
-  -- Their refusal-carrying forms (`*ThenR`, proven equal with the refusal's
-  -- state forgotten) and the report they give (`replyRecvAfterReplyAnsweringReport`,
-  -- over `RefusalCarrying.stoppedState`) go live with it.
-  , `SeLe4n.Kernel.dispatchReplyRecvAfterReply
-  , `SeLe4n.Kernel.dispatchSyscallArmChecked
-  , `SeLe4n.Kernel.endpointReplyRecvAnsweringBodyThen
-  , `SeLe4n.Kernel.endpointReplyRecvAnsweringBodyThenR
-  , `SeLe4n.Kernel.RefusalCarrying.stoppedState
-  , `SeLe4n.Kernel.replyRecvAfterReplyAnsweringReport
-  , `SeLe4n.Kernel.replyRecvAnsweringThen
-  , `SeLe4n.Kernel.replyRecvAnsweringThenR
-  , `SeLe4n.Kernel.replyRecvCompletesSignalArmThen
-  , `SeLe4n.Kernel.replyRecvCompletesSignalArmThenR
-  , `SeLe4n.Kernel.replyRecvTransferThen
-  , `SeLe4n.Kernel.replyRecvTransferThenR
   , `SeLe4n.Kernel.replyRecvFaultFirst
   , `SeLe4n.Kernel.replyRecvReceiveLegState
   , `SeLe4n.Kernel.replyRecvReplyStepState

@@ -139,33 +139,34 @@ theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId
 the delivered frame. -/
 theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
-    {c : CoreId} {st st' : SystemState}
+    {c : CoreId} {st st' : SystemState} {keep : Bool}
     (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
-      st = .ok ((), st')) : RecordsStage st st' := fun hK =>
+      st keep = .ok ((), st')) : RecordsStage st st' := fun hK =>
   have hI := KernelRecords.objects_invExt hK
   RecordsStage.of_step (RecordsStep.replyTransferOnCoreChecked hI h) (fun hC => by
     unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
     split at h
     · have hW := faultReplyOnCore_preserves_replyWaitersConsistent replier callerTid mi regs c st
-        hI hC
+        hI hC keep
       revert h hW
-      generalize faultReplyOnCore replier callerTid mi regs c st = r
+      generalize faultReplyOnCore replier callerTid mi regs c st keep = r
       obtain ⟨s, res⟩ := r
       cases res with
       | error _ => intro h; cases h
       | ok _ => intro h hW; cases h; exact hW
     · have hW : (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier callerTid
-          msg c st).1.replyWaitersConsistent ∧ (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
-          ctx replier callerTid msg c st).1.objects.invExt :=
+          msg c st keep).1.replyWaitersConsistent ∧ (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
+          ctx replier callerTid msg c st keep).1.objects.invExt :=
         ⟨by unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
             split
             · exact endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent _ _ _ _ st hI hC
+                keep
             · exact hC,
          (ReplyLegStep.endpointReplyCrossCoreDispatchChecked (ctx := ctx) (replier := replier)
-            (target := callerTid) (msg := msg) (c := c) hI).1.invExt⟩
+            (target := callerTid) (msg := msg) (c := c) hI keep).1.invExt⟩
       revert h hW
       generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier callerTid
-        msg c st = r
+        msg c st keep = r
       obtain ⟨s, res⟩ := r
       cases res with
       | error _ => intro h; cases h

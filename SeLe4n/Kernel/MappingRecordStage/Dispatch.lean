@@ -1067,10 +1067,10 @@ theorem dispatchSyscallChecked_mappingStage (ctx : LabelingContext)
   rename_i stPost hD
   cases h
   refine MappingStage.trans (st' := stPost) ?_
-    (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
-      (applySyscallTaint_objectsAgreeOffTaint _ _ _)
-      (applySyscallTaint_ghostsKept _ _ _))
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+    (MappingStage.of_objectsAgreeOffTaint checkedArmTaint_invExt
+      (checkedArmTaint_objectsAgreeOffTaint _)
+      (checkedArmTaint_ghostsKept _))
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact dispatchWithCapChecked_mappingStage ctx decoded tid executingCore _ cap _ stPost P hD
 
 end SeLe4n.Kernel

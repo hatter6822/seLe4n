@@ -7,6 +7,8 @@ import SeLe4n.Kernel.Architecture.TaintWordFrame
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersCapabilityDispatch
 import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Kernel.ReplyRecvRefusalErrors
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
+import SeLe4n.Kernel.IPC.Invariant.EndpointsAndIpcStatesBack
 
 /-!
 # The saved-register census over the whole syscall dispatch
@@ -651,9 +653,9 @@ theorem dispatchSyscallChecked_savedRegsKeptOffCore {ctx : LabelingContext}
   cases h
   suffices hP : savedRegsKeptOffCore e st stPost from fun d hd t ht =>
     ((savedRegsKeptExcept.of_objectsAgreeOffTaint (W := fun _ => False)
-      (applySyscallTaint_objectsAgreeOffTaint _ _ _)) t id).trans
-      (hP d hd t (by rwa [applySyscallTaint_scheduler, applySyscallTaint_machine] at ht))
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+      (checkedArmTaint_objectsAgreeOffTaint _)) t id).trans
+      (hP d hd t (by rwa [checkedArmTaint_scheduler, checkedArmTaint_machine] at ht))
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   have hC := (dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD).1
   exact dispatchWithCapChecked_savedRegsKeptOffCore P hRT hN hB hBNR hYA hYN hD
     hC.currentKept hC.residentKept
@@ -881,6 +883,9 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
         offCoreFree e st t := fun _ =>
       offCoreFree_of_frame (fun _ => by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler])
         (by rw [hEq, SystemState.updateTcb_machine])
+    have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+        ).scheduler.currentOnCore e = some tid := by
+      rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
     have hSC : savedRegsWrittenFree e st
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
@@ -890,7 +895,7 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
           ).objects.invExt := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        hX | ⟨_, hd, -, -, hX⟩ | hA
+        hX | ⟨_, hd, -, -, hX⟩ | hA | hB
       · rw [hX]; exact ⟨.refl _, iW⟩
       · rw [hX]
         exact ⟨(cancelReplyHolder_savedRegsWrittenFree iW
@@ -902,10 +907,34 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
         rw [hX]
         obtain ⟨w, i⟩ := replyRecvTransferStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW
         exact ⟨w.rebase hBase, i⟩
+      · -- WS-SX SX36.1: the after-reply stop writes only the answered caller's
+        -- saved registers
+        obtain ⟨t, -, decoded', gate, rid, prev, badge, grant, -, hCt, -, -, -, -, hX⟩ := hB
+        rw [hCur1] at hCt
+        cases hCt
+        rw [hX]
+        refine replyRecvAfterReplyRefusalTaint_induct
+          (fun x => savedRegsWrittenFree e st
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x ∧
+            x.objects.invExt)
+          (fun _ _ x hx => ⟨hx.1.trans (savedRegsWrittenFree.of_kept (W := fun _ => False)
+              (savedRegsKeptExcept.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) fun _ h => h.elim),
+            applySyscallTaint_invExt hx.2⟩) ?_
+        rcases replyRecvAnsweringThenR_stoppedState_cases ctx (replyRecvReceiveEndpoint ctx gate tid)
+            decoded' tid e rid prev badge grant _ with h0 | ⟨st1, hR, h1⟩ | h2
+        · rw [h0]; exact ⟨.refl _, iW⟩
+        · rw [h1]
+          exact ⟨(replyTransferOnCoreChecked_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW
+            hR).rebase hBase, replyTransferOnCoreChecked_objects_invExt iW hR⟩
+        · rw [h2]
+          obtain ⟨w, i⟩ := replyRecvTransferThenStoppedState_savedRegsWrittenFree E1.dequeued hRT1
+            hBNR1 iW
+          exact ⟨w.rebase hBase, i⟩
     -- the fault's delivery names a receive head blocked after the report; a
     -- reply-receive's stopped state raises a fault only where it stopped where
     -- it started (`cancelReceiveBusyReply_cases_of_fault`)
-    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke =
@@ -914,14 +943,41 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           ).getEndpoint? ep).bind (·.receiveQ.head) = some t → offCoreFree e st t := by
       intro f hF
-      rcases cancelReceiveBusyReply_cases_of_fault iW
-          (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur) hE hF with
-        hX | ⟨_, hd, -, -, hX⟩ <;> rw [hX]
-      · exact fun _ _ ht =>
+      rcases cancelReceiveBusyReply_cases_of_fault iW hCur1 hE hF with
+        hX | ⟨_, hd, -, -, hX⟩ | hB
+      · rw [hX]
+        exact fun _ _ ht =>
           hBase _ (offCoreFree_of_receiveHead E1.dequeued E1.queueHeads hRT1 hBNR1 ht)
-      · exact fun _ _ ht =>
+      · rw [hX]
+        exact fun _ _ ht =>
           hBase _ (offCoreFree_of_receiveHead_cancelReplyHolder iW E1.dequeued hRT1 hBNR1
             E1.queueHeadCancelFacts ht)
+      -- WS-SX SX36.1: the after-reply fault reports the entry state, the signal
+      -- arm's reply or the nothing-received state, whose endpoints are all the
+      -- entry state's
+      have hBack : ∀ s : SystemState, (∀ (x : SeLe4n.ObjId) (ep : Endpoint), s.objects[x]? = some (.endpoint ep) →
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects[x]? =
+              some (.endpoint ep)) →
+          ∀ ep t, (s.getEndpoint? ep).bind (·.receiveQ.head) = some t → offCoreFree e st t := by
+        intro s hEB ep t ht
+        refine hBase _ (offCoreFree_of_receiveHead (epId := ep) E1.dequeued E1.queueHeads hRT1 hBNR1 ?_)
+        unfold SystemState.getEndpoint? at ht ⊢
+        cases hO : s.objects[ep]? with
+        | none => rw [hO] at ht; cases ht
+        | some o =>
+          cases o <;> rw [hO] at ht <;> try cases ht
+          rw [hEB _ _ hO]; exact ht
+      rcases hB.fault_stop iW hCur1 hE hF with ⟨s0, hTS, hS | ⟨prev, mi, regs, msg, grant, st1, hR,
+          hS⟩ | ⟨rid, prev, label, msg, grant, st1, popped, st1p, sgi, ret?, xs, hR, hPop, hX, hS⟩⟩ <;>
+        refine hTS (fun x => ∀ ep t, (x.getEndpoint? ep).bind (·.receiveQ.head) = some t →
+            offCoreFree e st t)
+          (fun _ _ x hx ep t ht => hx ep t (by
+            rwa [SystemState.objectsAgreeOffTaint.getEndpoint?_eq
+              (applySyscallTaint_objectsAgreeOffTaint _ _ _)] at ht)) ?_ <;>
+        rw [hS]
+      · exact hBack _ fun _ _ h => h
+      · exact hBack _ (replyTransferOnCoreChecked_endpoint_backward iW hR)
+      · exact hBack _ (replyRecvNothingReceivedAfterReply_endpoint_backward iW hR hPop hX)
     obtain ⟨w0, iR⟩ := hSC
     have w1 := (savedRegsWrittenFree.of_kept hW1 fun _ e => e ▸ hFr).trans w0
     clear hS E1 hRT1 hBNR1 hBase w0

@@ -156,8 +156,10 @@ labelled step: the context the reply heads goes back to the answered caller,
 given that caller is labelled as it (the reply dispatch proves it from the
 answered frame at the pre-reply state). -/
 theorem applyReplyDonationOnCore {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st')
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} {keep : Bool} {executingCore : CoreId}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.applyReplyDonationOnCore st rid targetVtid ownerHome keep executingCore
+      = .ok st')
     (hOwner : ∀ s, replyFrameHeadContext? st rid = some s →
       ctx.threadLabelOf targetVtid.val = ctx.objectLabelOf s.toObjId) :
     LendersStep ctx st st' := by
@@ -175,7 +177,9 @@ theorem applyReplyDonationOnCore {st st' : SystemState} {rid : SeLe4n.ReplyId}
           have hHead := (replyFrameHeadHolder?_eq_some hHH).1
           exact ((returnDonatedSchedContextResolved hInv hRet (hOwner scId hHead)).andThen fun h =>
             of_frame (LendersFrame.settleReturnedContext _ _ _ h)).andThen fun h =>
-              of_frame (LendersFrame.descheduleAtPlacement _ _ h)
+              descheduleReturnedHolder_induct (fun a b => a.objects.invExt → LendersStep ctx a b)
+                keep executingCore _ _ (fun h => refl h)
+                (fun h => of_frame (LendersFrame.descheduleAtPlacement _ _ h)) h
       · exact keepDonatedSchedContextResolved hInv h
     · cases h
 
@@ -228,9 +232,9 @@ linkage (`answeredFrame_labelEq`) and carried across the reply leg's links
 shrink; then the priority walk. -/
 theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg : IpcMessage}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
-    (hLink : replyCallerLinkageReciprocal st) :
+    (hLink : replyCallerLinkageReciprocal st) (keep : Bool := false) :
     LendersStep ctx st
-      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch
   have A := LendersFrame.endpointReplyOnCore (replier := replier) (target := target) (msg := msg)
     (c := c) hInv
@@ -240,7 +244,7 @@ theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg :
   have hPop : ∀ rid targetV st2, answeredReplyObject? st target = some rid →
       SeLe4n.ThreadId.toValid? target = some targetV →
       _root_.SeLe4n.Kernel.applyReplyDonationOnCore st1 rid targetV (determineTargetCore st1 target)
-        = .ok st2 → LendersStep ctx st st2 := fun rid targetV st2 hA hV hD =>
+        keep c = .ok st2 → LendersStep ctx st st2 := fun rid targetV st2 hA hV hD =>
     ⟨fun hL => (applyReplyDonationOnCore A.invExt hD (by
         rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hV]; exact answeredFrame_labelEq hL.1 hLink hA A.links)).stage (A.stage hL),
      (RecordsFrame.applyReplyDonationOnCore A.invExt hD).invExt⟩
@@ -260,18 +264,20 @@ theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg :
 
 theorem endpointReplyCrossCoreDispatchChecked {replier target : SeLe4n.ThreadId} {msg : IpcMessage}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
-    (hLink : replyCallerLinkageReciprocal st) :
+    (hLink : replyCallerLinkageReciprocal st) (keep : Bool := false) :
     LendersStep ctx st
-      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+      (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st
+        keep).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch hInv hLink
+  · exact endpointReplyCrossCoreDispatch hInv hLink keep
   · exact refl hInv
 
 theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
-    (hLink : replyCallerLinkageReciprocal st) :
-    LendersStep ctx st (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st).1 := by
+    (hLink : replyCallerLinkageReciprocal st) (keep : Bool := false) :
+    LendersStep ctx st
+      (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st keep).1 := by
   unfold _root_.SeLe4n.Kernel.faultReplyOnCore
   split
   · exact refl hInv
@@ -279,9 +285,9 @@ theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     · exact refl hInv
     · dsimp only
       have A := endpointReplyCrossCoreDispatch (ctx := ctx) (replier := replier) (target := faulted)
-        (msg := IpcMessage.empty) (c := c) hInv hLink
+        (msg := IpcMessage.empty) (c := c) hInv hLink keep
       generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier faulted
-        IpcMessage.empty c st = r at A
+        IpcMessage.empty c st keep = r at A
       obtain ⟨st1, res⟩ := r
       dsimp only at A ⊢
       cases res with
@@ -296,22 +302,22 @@ capability transfer and the staged frame. -/
 theorem replyTransferOnCoreChecked {replier callerTid : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
-    (hLink : replyCallerLinkageReciprocal st)
+    (hLink : replyCallerLinkageReciprocal st) {keep : Bool}
     (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
-      st = .ok ((), st')) : LendersStep ctx st st' := by
+      st keep = .ok ((), st')) : LendersStep ctx st st' := by
   unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
   split at h
   · have S := faultReplyOnCore (ctx := ctx) (replier := replier) (faulted := callerTid) (mi := mi)
-      (regs := regs) (c := c) hInv hLink
-    generalize _root_.SeLe4n.Kernel.faultReplyOnCore replier callerTid mi regs c st = r at S h
+      (regs := regs) (c := c) hInv hLink keep
+    generalize _root_.SeLe4n.Kernel.faultReplyOnCore replier callerTid mi regs c st keep = r at S h
     obtain ⟨st1, res⟩ := r
     cases res with
     | error _ => cases h
     | ok _ => cases h; exact S
   · have A := endpointReplyCrossCoreDispatchChecked (ctx := ctx) (replier := replier)
-      (target := callerTid) (msg := msg) (c := c) hInv hLink
+      (target := callerTid) (msg := msg) (c := c) hInv hLink keep
     generalize _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier callerTid
-      msg c st = r at A h
+      msg c st keep = r at A h
     obtain ⟨st1, res⟩ := r
     cases res with
     | error _ => cases h

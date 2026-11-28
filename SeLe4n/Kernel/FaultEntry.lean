@@ -1119,7 +1119,7 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         = Except.error ke)
-    (hCap : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+    (hCap : Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx executingCore
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke

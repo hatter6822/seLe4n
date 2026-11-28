@@ -3409,7 +3409,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     -- capability-fault arm, which blocks the caller instead of framing `ke`,
     -- carries what it carries under the fault-flow policy (`FaultFlow`), not
     -- the ledger's.
-    (hNoCapFault : SeLe4n.Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+    (hNoCapFault : SeLe4n.Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
         (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx executingCore
           (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))

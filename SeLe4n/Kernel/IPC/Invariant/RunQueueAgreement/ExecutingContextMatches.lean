@@ -117,7 +117,7 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
           ).objects.invExt := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        hX | ⟨_, hd, -, -, hX⟩ | hA
+        hX | ⟨_, hd, -, -, hX⟩ | hA | hB
       · rw [hX]; exact ⟨hSp, stepCovers_refl _ _, iW⟩
       rotate_left
       · -- WS-SX SX34: a reply-receive's stopped state covers the other cores and
@@ -127,6 +127,30 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
         obtain ⟨c1, i1⟩ := replyRecvTransferStoppedState_stepCovers (otherCore e) iW
         exact ⟨replyRecvTransferStoppedState_contextMatchesCurrentOnCore E1.dequeued
           (by rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT) hBNR1 iW hSp, c1, i1⟩
+      · -- WS-SX SX36.1: the after-reply stop covers the other cores and writes
+        -- only the answered caller's saved registers
+        have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+            ).residentsHaveTcbs := by
+          rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT
+        obtain ⟨c1, i1⟩ := cancelReceiveBusyReply_stepCovers (otherCore e) ctx e _ iW
+        refine ⟨contextMatchesCurrentOnCore_of_stepCovers_writtenFree c1 ?_ hSp, c1, i1⟩
+        obtain ⟨t, -, decoded', gate, rid, prev, badge, grant, -, hCt, -, -, -, -, hX⟩ := hB
+        rw [hC0] at hCt
+        cases hCt
+        rw [hX]
+        refine replyRecvAfterReplyRefusalTaint_induct
+          (fun x => savedRegsWrittenFree (otherCore e)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx => hx.trans (savedRegsWrittenFree.of_kept (W := fun _ => False)
+              (savedRegsKeptExcept.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) fun _ h => h.elim)) ?_
+        rcases replyRecvAnsweringThenR_stoppedState_cases ctx (replyRecvReceiveEndpoint ctx gate tid)
+            decoded' tid e rid prev badge grant _ with h0 | ⟨st1, hR, h1⟩ | h2
+        · rw [h0]; exact .refl _
+        · rw [h1]; exact replyTransferOnCoreChecked_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW hR
+        · rw [h2]
+          exact (replyRecvTransferThenStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW).1
       · rw [hX]
         obtain ⟨c1, i1⟩ := cancelReplyHolder_stepCovers (otherCore e) _ hd e iW
         refine ⟨contextMatchesCurrentOnCore_of_savedRegs

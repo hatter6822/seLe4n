@@ -302,8 +302,8 @@ arms: nothing to return, an unheld context popped back, a donated one returned,
 an unheld one severed, or a held one kept. -/
 theorem applyReplyDonationOnCore_bindingPair (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
-    (hP : schedContextBindingPair st)
-    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    (hP : schedContextBindingPair st) {keep : Bool} {ec : CoreId}
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep ec = .ok st') :
     schedContextBindingPair st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
@@ -320,8 +320,8 @@ theorem applyReplyDonationOnCore_bindingPair (st st' : SystemState) (rid : SeLe4
 donation return and the priority-inheritance revert. -/
 theorem endpointReplyCrossCoreDispatch_bindingPair
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st) :
-    schedContextBindingPair (endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+    (st : SystemState) (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st) (keep : Bool := false) :
+    schedContextBindingPair (endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have hRep := hP.of_bindingLinksAgree (endpointReplyOnCore_bindingLinksAgree replier target msg c st hObjInv)
   have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier target msg c st hObjInv
   unfold endpointReplyCrossCoreDispatch
@@ -357,11 +357,12 @@ theorem endpointReplyCrossCoreDispatch_bindingPair
 
 theorem endpointReplyCrossCoreDispatchChecked_bindingPair (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st) :
-    schedContextBindingPair (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+    (st : SystemState) (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st)
+    (keep : Bool := false) :
+    schedContextBindingPair (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st keep).1 := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch_bindingPair replier target msg c st hObjInv hP
+  · exact endpointReplyCrossCoreDispatch_bindingPair replier target msg c st hObjInv hP keep
   · exact hP
 
 /-- The reply's capability transfer writes CNodes alone. -/
@@ -415,12 +416,12 @@ theorem faultReplyApplyOnCore_scIdLinksAgree (st : SystemState) (faulted : SeLe4
 
 theorem faultReplyOnCore_bindingPair (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st) :
-    schedContextBindingPair (faultReplyOnCore replier faulted mi regs c st).1 := by
+    (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st) (keep : Bool := false) :
+    schedContextBindingPair (faultReplyOnCore replier faulted mi regs c st keep).1 := by
   have hE := endpointReplyCrossCoreDispatch_bindingPair replier faulted IpcMessage.empty c st
-    hObjInv hP
+    hObjInv hP keep
   have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
-    IpcMessage.empty c st hObjInv
+    IpcMessage.empty c st hObjInv keep
   unfold faultReplyOnCore
   split
   · exact hP
@@ -439,26 +440,27 @@ theorem replyTransferOnCoreChecked_bindingPair {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
     {st st' : SystemState} (hObjInv : st.objects.invExt) (hP : schedContextBindingPair st)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     schedContextBindingPair st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
-  · have hF := faultReplyOnCore_bindingPair replier callerTid mi regs c st hObjInv hP
+  · have hF := faultReplyOnCore_bindingPair replier callerTid mi regs c st hObjInv hP keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h
     | ok _ => intro h hF; cases h; exact hF
   · have hE := endpointReplyCrossCoreDispatchChecked_bindingPair ctx replier callerTid msg c st
-      hObjInv hP
-    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st).1.objects.invExt := by
+      hObjInv hP keep
+    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep).1.objects.invExt := by
       unfold endpointReplyCrossCoreDispatchChecked
       split
-      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv
+      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv keep
       · exact hObjInv
     revert h hE hI
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _ _; cases h
@@ -596,7 +598,8 @@ theorem endpointReplyOnCore_homeCoresKept
 arms: the returns rewrite bindings, never an affinity. -/
 theorem applyReplyDonationOnCore_homeCoresKept (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {keep : Bool} {ec : CoreId}
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep ec = .ok st') :
     homeCoresKept st st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
@@ -615,8 +618,8 @@ theorem applyReplyDonationOnCore_homeCoresKept (st st' : SystemState) (rid : SeL
 donation return and the priority-inheritance revert. -/
 theorem endpointReplyCrossCoreDispatch_homeCoresKept
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    homeCoresKept st (endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+    (st : SystemState) (hObjInv : st.objects.invExt) (keep : Bool := false) :
+    homeCoresKept st (endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have hRep := endpointReplyOnCore_homeCoresKept replier target msg c st hObjInv
   have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier target msg c st hObjInv
   unfold endpointReplyCrossCoreDispatch
@@ -653,11 +656,11 @@ theorem endpointReplyCrossCoreDispatch_homeCoresKept
 
 theorem endpointReplyCrossCoreDispatchChecked_homeCoresKept (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    homeCoresKept st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+    (st : SystemState) (hObjInv : st.objects.invExt) (keep : Bool := false) :
+    homeCoresKept st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st keep).1 := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch_homeCoresKept replier target msg c st hObjInv
+  · exact endpointReplyCrossCoreDispatch_homeCoresKept replier target msg c st hObjInv keep
   · exact .refl st
 
 /-- The reply's capability transfer writes CNodes alone. -/
@@ -699,12 +702,12 @@ theorem faultReplyApplyOnCore_homeCoresKept (st : SystemState) (faulted : SeLe4n
 
 theorem faultReplyOnCore_homeCoresKept (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    homeCoresKept st (faultReplyOnCore replier faulted mi regs c st).1 := by
+    (hObjInv : st.objects.invExt) (keep : Bool := false) :
+    homeCoresKept st (faultReplyOnCore replier faulted mi regs c st keep).1 := by
   have hE := endpointReplyCrossCoreDispatch_homeCoresKept replier faulted IpcMessage.empty c st
-    hObjInv
+    hObjInv keep
   have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
-    IpcMessage.empty c st hObjInv
+    IpcMessage.empty c st hObjInv keep
   unfold faultReplyOnCore
   split
   · exact .refl st
@@ -722,27 +725,27 @@ branches. -/
 theorem replyTransferOnCoreChecked_homeCoresKept {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
-    {st st' : SystemState} (hObjInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    {st st' : SystemState} (hObjInv : st.objects.invExt) {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     homeCoresKept st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
-  · have hF := faultReplyOnCore_homeCoresKept replier callerTid mi regs c st hObjInv
+  · have hF := faultReplyOnCore_homeCoresKept replier callerTid mi regs c st hObjInv keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h
     | ok _ => intro h hF; cases h; exact hF
   · have hE := endpointReplyCrossCoreDispatchChecked_homeCoresKept ctx replier callerTid msg c st
-      hObjInv
-    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st).1.objects.invExt := by
+      hObjInv keep
+    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep).1.objects.invExt := by
       unfold endpointReplyCrossCoreDispatchChecked
       split
-      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv
+      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv keep
       · exact hObjInv
     revert h hE hI
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _ _; cases h
@@ -799,25 +802,25 @@ on both of its branches. -/
 theorem replyTransferOnCoreChecked_objects_invExt {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
-    {st st' : SystemState} (hObjInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    {st st' : SystemState} (hObjInv : st.objects.invExt) {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     st'.objects.invExt := by
   unfold replyTransferOnCoreChecked at h
   split at h
-  · have hF := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st hObjInv
+  · have hF := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st hObjInv keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h
     | ok _ => intro h hF; cases h; exact hF
-  · have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st).1.objects.invExt := by
+  · have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep).1.objects.invExt := by
       unfold endpointReplyCrossCoreDispatchChecked
       split
-      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv
+      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv keep
       · exact hObjInv
     revert h hI
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h

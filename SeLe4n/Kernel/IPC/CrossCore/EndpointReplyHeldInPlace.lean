@@ -234,8 +234,10 @@ theorem applyReplyDonationOnCore_eq_held (S : SystemState) (rid : SeLe4n.ReplyId
     (hFsc : S.objects.findsInPlace scId.toObjId = true)
     (hLr : storeLeavesIndexAndTypes S rid.toObjId .reply = true)
     (hFr : S.objects.findsInPlace rid.toObjId = true)
-    (hLh : storeLeavesIndexAndTypes S holder.toObjId .tcb = true) (home : CoreId) :
-    applyReplyDonationOnCore S rid cv home = .ok (keepDonatedSchedContextInPlace S holder scId) := by
+    (hLh : storeLeavesIndexAndTypes S holder.toObjId .tcb = true) (home : CoreId)
+    (keep : Bool := false) (core : CoreId := bootCoreId) :
+    applyReplyDonationOnCore S rid cv home keep core =
+      .ok (keepDonatedSchedContextInPlace S holder scId) := by
   have hHolder : replyFrameHeadHolder? S rid = some (scId, holder) := by
     apply replyFrameHeadHolder?_of_head
     · unfold replyFrameHeadContext?
@@ -344,10 +346,10 @@ theorem replyHeldPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
       st.objects.findsInPlace c.toObjId = true ∧
       storeLeavesIndexAndTypes st rid.toObjId .reply = true ∧
       st.objects.findsInPlace rid.toObjId = true ∧
-      (∀ (cv : SeLe4n.ValidThreadId) (home : CoreId), cv.val = c →
+      (∀ (keep : Bool) (core : CoreId) (cv : SeLe4n.ValidThreadId) (home : CoreId), cv.val = c →
         applyReplyDonationOnCore
             ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg)) rid cv
-            home =
+            home keep core =
           .ok (keepDonatedSchedContextInPlace
             ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg))
             server scId)) ∧
@@ -516,9 +518,9 @@ theorem replyHeldPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
     rw [donationRecipientAcceptable_eq_of_some T c _ hLk, TCB.schedContextBinding_beq_unbound]
     show (tc1.scBindingScCode == 0) = false
     rw [e]; simpa only [bne_iff_ne, ne_eq, beq_eq_false_iff_ne] using hCB
-  exact ⟨fun cv home hcv => applyReplyDonationOnCore_eq_held T rid cv c server hcv scId sc rp.consumed
-    htT hRT hNextC hScT hHead hB hBelowT hOuter hRecip hSRes hHT hHBT
-    (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLS) home,
+  exact ⟨fun keep core cv home hcv => applyReplyDonationOnCore_eq_held T rid cv c server hcv scId sc
+    rp.consumed htT hRT hNextC hScT hHead hB hBelowT hOuter hRecip hSRes hHT hHBT
+    (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLS) home keep core,
     replyRecvPopDonation_eq_held T rid c server hCRes scId sc rp.consumed htT hRT hNextC hScT hHead hB
     hBelowT hOuter hRecip hSRes hHT hHBT
     (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLS)⟩
@@ -563,8 +565,9 @@ theorem replyTransferChecked_held_inPlace (ctx : LabelingContext) (st : SystemSt
     (hG : replyHeldPopsInPlace st c ct.scBindingScCode server rid = true)
     (hNoF : ct.faultWords.isFault = false)
     (hX : replyTransferInert st replier ct grant = true)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st keep =
       .ok ((), performReplyHeldDelivered st c server rid ⟨replyHeadContextCode st rid - 1⟩
         layout rf len badgeWord badged core) := by
   replace hMsg := hMsg.symm
@@ -591,14 +594,14 @@ theorem replyTransferChecked_held_inPlace (ctx : LabelingContext) (st : SystemSt
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   have hNoP := keepDonatedSchedContextInPlace_noResizeDue _ server scId hNoS
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte,
     replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
-    hDon cv _ (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+    hDon keep core cv _ (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performReplyHeldDelivered
   subst hMsg

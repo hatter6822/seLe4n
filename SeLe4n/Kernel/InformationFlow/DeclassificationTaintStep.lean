@@ -249,7 +249,7 @@ theorem declassifySignal_planFields_eq (st : SystemState) (tid : SeLe4n.ThreadId
   unfold contentFlowEdges contentFlowClears contentFlowBypassed
   rw [h]
   cases hO : syscallOperandCap? st tid decoded.capAddr with
-  | none => simp only [declassifyPlanOperand?, hO, and_self]
+  | none => simp only [declassifyPlanOperand?, hO, and_self, replyRecvOperandFreeEdges, h, reduceCtorEq, ↓reduceIte]
   | some _ => exact ⟨rfl, rfl, rfl⟩
 
 /-- The two scalars stand for the plan's `noRelease`. -/

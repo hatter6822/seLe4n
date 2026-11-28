@@ -249,12 +249,13 @@ theorem faultReplyTransferChecked_inPlaceLong (ctx : LabelingContext) (st : Syst
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
           (overflowRegsFrom st replier 0 (len - 4)).toArray) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyAnswerLong st c server rid core ct.faultKind label ct.faultIp
         ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
         ct.faultX6 ct.faultX7 replier rf len) := by
@@ -265,7 +266,7 @@ theorem faultReplyTransferChecked_inPlaceLong (ctx : LabelingContext) (st : Syst
   have hHas : threadHasPendingFault st c = true := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_some]
   obtain ⟨sgi, hD⟩ := replyDispatch_inPlace st replier c server ct ep rid IpcMessage.empty core
-    (by simp [IpcMessage.empty]) hT hIpc hRO hSRes hG
+    (by simp [IpcMessage.empty]) hT hIpc hRO hSRes hG keep
   have hW : ipcWordReadsAgree (PriorityInheritance.propagatePipChainCrossCore
       (storeReplyRendezvous st c server rid IpcMessage.empty) server core).1 st :=
     ((ipcBufferReadsAgree_propagatePipChainCrossCore _ server core
@@ -289,9 +290,10 @@ with no message, the loaned context handed back down the stack in place
 @[noinline] def performFaultReplyDonatedAnswerLong (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (core : CoreId)
     (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (replier : SeLe4n.ThreadId)
-    (rf : SeLe4n.RegisterFile) (len : Nat) : SystemState :=
+    (rf : SeLe4n.RegisterFile) (len : Nat) (keepCurrent : Bool := false) : SystemState :=
   performFaultAnswerLong (PriorityInheritance.propagatePipChainCrossCore
-      (replyDonationPopInPlace (storeFaultReplyRendezvous st c server rid) c server scId home)
+      (replyDonationPopInPlace (storeFaultReplyRendezvous st c server rid) c server scId home
+        keepCurrent core)
       server core).1 c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 replier rf len
 
 /-- **The checked donated long fault reply, in place**: under
@@ -306,16 +308,17 @@ theorem faultReplyTransferChecked_donated_inPlaceLong (ctx : LabelingContext) (s
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
           (overflowRegsFrom st replier 0 (len - 4)).toArray) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyDonatedAnswerLong st c server rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) core ct.faultKind label
         ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4
-        ct.faultX5 ct.faultX6 ct.faultX7 replier rf len) := by
+        ct.faultX5 ct.faultX6 ct.faultX7 replier rf len keep) := by
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid IpcMessage.empty ct hT hSRes hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
@@ -338,10 +341,10 @@ theorem faultReplyTransferChecked_donated_inPlaceLong (ctx : LabelingContext) (s
   have hNoS := storeFaultReplyRendezvous_noResizeDue st c server rid hNo
   have hW0 : ipcWordReadsAgree (PriorityInheritance.propagatePipChainCrossCore
       (replyDonationPopInPlace (storeFaultReplyRendezvous st c server rid) c server scId
-        (determineTargetCore st c)) server core).1 st :=
+        (determineTargetCore st c) keep core) server core).1 st :=
     ((ipcBufferReadsAgree_propagatePipChainCrossCore _ server core
-      (replyDonationPopInPlace_noResizeDue _ c server scId _ hNoS)).trans
-      ((ipcBufferReadsAgree_replyDonationPopInPlace _ c server scId _ hNoS).trans
+      (replyDonationPopInPlace_noResizeDue _ c server scId _ hNoS keep core)).trans
+      ((ipcBufferReadsAgree_replyDonationPopInPlace _ c server scId _ hNoS keep core).trans
         (ipcBufferReadsAgree_storeFaultReplyRendezvous st c server rid hNo))).words
   have hW := hW0
   rw [storeFaultReplyRendezvous_eq, storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hW
@@ -355,7 +358,7 @@ theorem faultReplyTransferChecked_donated_inPlaceLong (ctx : LabelingContext) (s
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
-    hDon cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+    hDon keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performFaultReplyDonatedAnswerLong
   rw [faultReplyApplyOnCore_decode_eq_performFaultAnswerLong _ c ct tf hPF _ _ replier rf len
@@ -384,12 +387,13 @@ theorem faultReplyTransferChecked_unheld_inPlaceLong (ctx : LabelingContext) (st
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
     (hG : replyUnheldPopsInPlace st c rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
           (overflowRegsFrom st replier 0 (len - 4)).toArray) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyUnheldAnswerLong st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) ct.faultKind label ct.faultIp ct.faultSp ct.faultLr
         ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7
@@ -429,7 +433,7 @@ theorem faultReplyTransferChecked_unheld_inPlaceLong (ctx : LabelingContext) (st
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hAns, hcv, SystemState.unlinkReplyWaiterOpt]
-  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performFaultReplyUnheldAnswerLong
   rw [faultReplyApplyOnCore_decode_eq_performFaultAnswerLong _ c ct tf hPF _ _ replier rf len
@@ -458,18 +462,19 @@ theorem faultReplyTransferChecked_unlinked_inPlaceLong (ctx : LabelingContext) (
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
     (hG : replyUnlinkedInPlace st c rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c
         { length := len, extraCaps := extraCaps, label := label }
         (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
           (overflowRegsFrom st replier 0 (len - 4)).toArray) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyUnlinkedAnswerLong st c rid ct.faultKind label ct.faultIp
         ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
         ct.faultX6 ct.faultX7 replier rf len) := by
   have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
   obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid IpcMessage.empty core
-    (by simp [IpcMessage.empty]) hT hIpc hRO hG
+    (by simp [IpcMessage.empty]) hT hIpc hRO hG keep
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf :=
     Option.isSome_iff_exists.mp (by rw [TCB.pendingFault_isSome]; exact hF)

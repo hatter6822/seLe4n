@@ -1631,10 +1631,10 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
   rename_i stPost hD
   cases h
   refine SystemState.RunQueueEntryStageOn.trans (st' := stPost) ?_ ((RunQueueStage.of_objectsAgreeOffTaint
-    (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry.toOn _)
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+    (checkedArmTaint_objectsAgreeOffTaint _) checkedArmTaint_invExt
+    (by rw [checkedArmTaint_scheduler]) (by rw [checkedArmTaint_scheduler])
+    (by rw [checkedArmTaint_scheduler]) (by rw [checkedArmTaint_scheduler])).entry.toOn _)
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _ stPost
     P hD
 

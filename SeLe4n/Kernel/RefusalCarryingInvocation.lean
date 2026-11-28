@@ -2058,8 +2058,9 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   obtain ⟨-, -, hNotYield⟩ := routedInvocation_classic _ hRouted
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := fun h => by rw [h] at hRouted; cases hRouted)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, 
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (fun h => by rw [h] at hRouted; cases hRouted), RefusalCarrying.ofKernel, 
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_routed st tid decoded hRouted]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2249,8 +2250,9 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
   have hXc : syscallExtraCapCount .schedContextConfigure decoded.msgInfo.extraCaps =
       decoded.msgInfo.extraCaps := rfl
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := by rw [hSid]; decide)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, 
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel, 
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_configure st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2597,8 +2599,9 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
   have hXc : syscallExtraCapCount .serviceRegister decoded.msgInfo.extraCaps =
       decoded.msgInfo.extraCaps := rfl
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := by rw [hSid]; decide)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_serviceRegister st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2773,8 +2776,9 @@ theorem dispatchCopyCheckedR_eq (ctx : LabelingContext)
   have hXc : syscallExtraCapCount .cspaceCopy decoded.msgInfo.extraCaps =
       decoded.msgInfo.extraCaps := rfl
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := by rw [hSid]; decide)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_cspaceCopy st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -2973,8 +2977,9 @@ theorem dispatchMintCheckedR_eq (ctx : LabelingContext)
   have hXc : syscallExtraCapCount .cspaceMint decoded.msgInfo.extraCaps =
       decoded.msgInfo.extraCaps := rfl
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := by rw [hSid]; decide)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_cspaceMint st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand
@@ -3191,8 +3196,9 @@ theorem dispatchRetypeCheckedR_eq (ctx : LabelingContext)
   have hXc : syscallExtraCapCount .untypedRetype decoded.msgInfo.extraCaps =
       decoded.msgInfo.extraCaps := rfl
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := by rw [hSid]; decide)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (by rw [hSid]; decide), RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef,
     applySyscallTaintAfter_untypedRetype st tid decoded hSid]
   generalize SystemState.lookupSlotCap st ref = operand

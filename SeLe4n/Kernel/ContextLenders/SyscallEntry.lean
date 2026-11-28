@@ -155,6 +155,95 @@ theorem LendersStep.replyRecvTransferStoppedState {ctx : LabelingContext}
   have HD := LendersFrame.replyRecvHolderDeschedule tid holder st2 hInvV
   exact (hNR _ _ _ HD.invExt).stage (HD.stage h1)
 
+/-- **A reply-receive whose receive is read after its reply carries equal
+lending labels where it stops** (WS-SX SX36.1): the legs before the receive as
+in `LendersStep.replyRecvTransferStoppedState`, then the nothing-received
+outcome on the answered state where the read of the receive's endpoint refused,
+or the receive leg on the endpoint it admitted, whose chain facts the premises
+give at every endpoint (`hP`). -/
+theorem LendersStep.replyRecvTransferThenStoppedState {ctx : LabelingContext}
+    {recvEp : SystemState → Except KernelError SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {core : CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (hC : replyAnsweredCaller? st rid = some prevCaller)
+    (hP : ∀ epId, ReplyRecvLendersPremises st (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      epId tid rid prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant core) :
+    LendersStep ctx st (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+      (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant core) st) := by
+  have hNR : ∀ (rs : SeLe4n.ThreadId) (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+      (s : SystemState), s.objects.invExt →
+      LendersFrame s (replyRecvNothingReceived rs core ret? s) := by
+    intro rs ret? s hS
+    unfold replyRecvNothingReceived
+    cases ret? with
+    | none => exact LendersFrame.propagatePipChainCrossCore s rs core _ hS
+    | some p =>
+      obtain ⟨_, holder⟩ := p
+      try dsimp only
+      by_cases hK : s.scheduler.currentOnCore core = some holder
+      · rw [descheduleKeepingCurrentOnCore_of_current s holder core hK]
+        exact LendersFrame.propagatePipChainCrossCore s rs core _ hS
+      rw [descheduleKeepingCurrentOnCore_of_not_current s holder core hK]
+      exact (LendersFrame.descheduleAtPlacement s holder hS).andThen fun h =>
+        LendersFrame.propagatePipChainCrossCore _ rs core _ h
+  rcases replyRecvTransferThenR_stoppedState_cases recvEp tid rid prevCaller label msg grant core st
+    with hE | ⟨hA, e, hB⟩
+  · rw [hE]; exact LendersStep.refl hInv
+  generalize _root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+    (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant core) st = s at hB ⊢
+  rcases endpointReplyRecvAnsweringBodyThenR_stopped hInv hA hB with
+    ⟨-, hS⟩ | ⟨sgi, ret?, popped, hR1, hPop1, hInvP, hTail⟩
+  · rw [hS]; exact LendersStep.refl hInv
+  have A := LendersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
+    (msg := replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg)
+    (c := core) hInv
+  have hXo := receiveTransferCaps_eq_done
+    (if (replyRecvCallerFaultAnswer? st prevCaller label msg).isSome then none
+      else replyCapRequest st tid grant) none (receiverCapTarget? st prevCaller) popped
+  generalize receiveTransferCapsDone
+    (if (replyRecvCallerFaultAnswer? st prevCaller label msg).isSome then none
+      else replyCapRequest st tid grant) none (receiverCapTarget? st prevCaller) popped = D
+    at hTail hXo
+  have hX : replyRecvReplyTransfer (replyRecvCallerFaultAnswer? st prevCaller label msg) st tid
+      prevCaller grant popped = .ok (D.1, D.2) := by
+    rw [replyRecvReplyTransfer_eq_receiveTransferCaps]; exact hXo
+  have F1 : LendersFrame popped D.2 :=
+    LendersFrame.of_kept (chainObjectsKept.receiveTransferCaps hInvP hXo)
+      (RecordsFrame.receiveTransferCaps hInvP hXo)
+  have FA := LendersFrame.replyRecvAnswerCaller (replyRecvCallerFaultAnswer? st prevCaller label msg)
+    D.2 prevCaller D.1.capInfo F1.invExt
+  have S0 : LendersStage ctx st (replyRecvAnswerCaller
+      (replyRecvCallerFaultAnswer? st prevCaller label msg) D.2 prevCaller D.1.capInfo) := fun hF =>
+    FA.stage (F1.stage ((LendersStep.replyRecvPopDonation (ctx := ctx) A.invExt hPop1
+      (calledFrame_labelEq hF.1 hC A.links)).stage (A.stage hF)))
+  rcases hTail with ⟨-, -, hS⟩ | ⟨epId, -, hTail⟩
+  · rw [hS]
+    have N := hNR ((recordedReplyServer? st prevCaller).getD tid) ret? _ FA.invExt
+    exact ⟨fun hF => N.stage (S0 hF), N.invExt⟩
+  obtain ⟨hChain, -⟩ := hP epId _ sgi (Prod.ext rfl hR1) ret? popped hPop1 D.1 D.2 hX
+  have FR := LendersStep.receiveReturnSchedContext (ctx := ctx) true _ tid FA.invExt
+  have h1 : LendersStage ctx st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId tid
+      (some rid) core (_root_.SeLe4n.Kernel.receiveReturnSchedContext true (replyRecvAnswerCaller
+        (replyRecvCallerFaultAnswer? st prevCaller label msg) D.2 prevCaller D.1.capInfo) tid)).1 :=
+    fun hF => endpointReceiveDualWithCapsOnCore_preserves_lendingLabelsEqual epId tid (some rid)
+      core _ FR.invExt hChain (FR.stage (S0 hF))
+  have hInvV := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid (some rid)
+    core _ FR.invExt
+  rcases hTail with hS | ⟨st2, next, summary, sgi', hV, hS⟩
+  · rw [hS]
+    have N := hNR ((recordedReplyServer? st prevCaller).getD tid) ret? _ hInvV
+    exact ⟨fun hF => N.stage (h1 hF), N.invExt⟩
+  rw [hV] at h1 hInvV
+  rcases hS with hS | ⟨sc, holder, -, hS⟩
+  · rw [hS]
+    have N := hNR ((recordedReplyServer? st prevCaller).getD tid) ret? _ hInvV
+    exact ⟨fun hF => N.stage (h1 hF), N.invExt⟩
+  rw [hS]
+  have HD := LendersFrame.replyRecvHolderDeschedule tid holder st2 hInvV
+  have N := hNR ((recordedReplyServer? st prevCaller).getD tid) ret? _ HD.invExt
+  exact ⟨fun hF => N.stage (HD.stage (h1 hF)), N.invExt⟩
+
 /-- **The state a refusal of the checked entry reports**, a labelled step:
 nothing, a reply holder's cancel (its reply arm's pop to the frame's recorded
 caller), or a reply-receive's stopped state, whose legs the entry's lending
@@ -163,7 +252,7 @@ theorem LendersStep.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
     (st : SystemState) (hInv : st.objects.invExt)
     (P : SyscallEntryLendPremises ctx SeLe4n.arm64DefaultLayout e 32 st) :
     LendersStep ctx st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
-  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ | hA
+  rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ | hA | hB
   · rw [hE]; exact LendersStep.refl hInv
   · rw [hE]; exact LendersStep.cancelReplyHolder st holder e hInv
   · obtain ⟨tid, tcb, decoded, ref, -, hCur, hObj, hDec, -, -, cap, epId, rid, c, badge, grant, -,
@@ -175,6 +264,36 @@ theorem LendersStep.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
         (by simp only [callerCspaceRoot, hObj]), hR])
     rw [hS]
     exact LendersStep.replyRecvTransferStoppedState hInv (resolveReplyRecvReplyR_some_caller hR) hD
+  · -- WS-SX SX36.1: the after-reply stop, its receive read on the answered state
+    obtain ⟨tid, tcb, decoded, gate, rid, prevCaller, replyBadge, replyGrant, -, hCur, hObj, hDec,
+      -, hRO, hS⟩ := hB
+    obtain ⟨tcb', -, hObj', hG, hAns, -⟩ := replyRecvRefusedOnEntry?_some hRO
+    rw [hObj] at hObj'
+    cases hObj'
+    subst hG
+    obtain ⟨-, hRes, -⟩ := replyRecvAnsweringReply?_some hAns
+    have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
+      simp only [lookupThreadRegisterContext, hObj]
+    have hC : replyAnsweredCaller? st rid = some prevCaller :=
+      resolveReplyRecvReplyR_some_caller (by
+        rw [resolveReplyRecvReplyR_eq st tid (replyRecvCallerGate decoded tid tcb) decoded rfl
+          (by simp only [replyRecvCallerGate, callerCspaceRoot, hObj]), hRes])
+    have P0 := P tid _ decoded hCur hRegs hDec tcb hObj
+    rw [hS]
+    refine replyRecvAfterReplyRefusalTaint_induct (fun x => LendersStep ctx st x)
+      (fun _ _ x hx => ⟨hx.stage.trans (LendersStage.of_viewsAgree
+          (contextStackViewsAgree_of_objectsAgreeOffTaint
+            (applySyscallTaint_objectsAgreeOffTaint _ _ _))),
+        applySyscallTaint_invExt hx.invExt⟩) ?_
+    rcases replyRecvAnsweringThenR_stoppedState_cases ctx
+        (replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid) decoded tid e rid
+        prevCaller replyBadge replyGrant st with hE | ⟨st1, hR, hE⟩ | hE <;> rw [hE]
+    · exact LendersStep.refl hInv
+    · exact LendersStep.replyTransferOnCoreChecked hInv
+        (P0 Capability.null).reach.ipcInvariantFull.replyCallerLinkage.1 hR
+    · exact LendersStep.replyRecvTransferThenStoppedState hInv hC fun epId =>
+        (P0 { target := .object epId, rights := AccessRightSet.empty }).replyRecv epId rid prevCaller
+          replyBadge replyGrant rfl hRes
 
 /-- **What the ABI dispatch reads**: for the caller the core runs, the checked
 entry's premises at the state the arguments are spilled to, and a capability
@@ -239,8 +358,7 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
         have W := (W1.andThen fun hI => QueueLabelsFrame.cancelReceiveBusyReply ctx e _ hI
-            (cancelReceiveBusyReply_cases_of_fault hI
-              (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur) hE hF)).andThen
+            (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur) hE hF).andThen
           fun hI => QueueLabelsFrame.writeFaultRegistersToTcb _ tid
             (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) hI
         exact F.stage.trans fun hFl => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid _ _

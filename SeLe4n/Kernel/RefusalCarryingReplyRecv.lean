@@ -805,7 +805,7 @@ matched where it is made. -/
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (rcap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
-    match endpointReplyCheckedArmR ctx layout rf len extraCaps label tid executingCore rcap st with
+    match endpointReplyCheckedArmR ctx layout rf len extraCaps label tid executingCore rcap true st with
     | .error r => .error r
     | .ok ((), st1) =>
         if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
@@ -917,16 +917,6 @@ nothing is built. -/
             | _ => 0
         | none => 0)
 
-/-- The reply leg's caller code for the capability the operand resolved to:
-`replyRecvTaintCallerCode` when it names an endpoint, the only target a
-reply-receive declares edges for, and none otherwise. -/
-@[inline] def replyRecvTaintCallerCodeOf (st : SystemState) (tid : SeLe4n.ThreadId)
-    (cap : Capability) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
-    (extraCaps : Nat) : Nat :=
-  match cap.target with
-  | .object _ => replyRecvTaintCallerCode st tid layout rf extraCaps
-  | _ => 0
-
 /-- The reply-receive's taint step, without the plan: the receive leg's bound
 notification words `wN` and sender words `wS` join the server's, then the server's words `wT` — both captured
 before the arm, so the server's are its pre-state's — join the answered
@@ -952,7 +942,7 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
         else if cap.hasRight requiredRight then
           let signalCode := receiveTaintSignalCode st tid cap
           let sourceCode := receiveTaintSourceCode st cap
-          let callerCode := replyRecvTaintCallerCodeOf st tid cap layout rf extraCaps
+          let callerCode := replyRecvTaintCallerCode st tid layout rf extraCaps
           withTaintWordsAt st (notifObjOfCode signalCode) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           withTaintWordsAt st tid.toObjId fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
@@ -1305,7 +1295,7 @@ completion, as `replyRecvSignalArmR` runs them for a short reply
     (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (rcap : Capability) : RefusalCarrying Unit :=
   fun st =>
-    match endpointReplyLongCheckedArmR ctx rf len extraCaps label tid executingCore rcap st with
+    match endpointReplyLongCheckedArmR ctx rf len extraCaps label tid executingCore rcap true st with
     | .error r => .error r
     | .ok ((), st1) =>
         if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
@@ -1395,7 +1385,7 @@ the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
         else if cap.hasRight requiredRight then
           let signalCode := receiveTaintSignalCode st tid cap
           let sourceCode := receiveTaintSourceCode st cap
-          let callerCode := replyRecvTaintCallerCodeOf st tid cap SeLe4n.arm64DefaultLayout rf
+          let callerCode := replyRecvTaintCallerCode st tid SeLe4n.arm64DefaultLayout rf
             extraCaps
           withTaintWordsAt st (notifObjOfCode signalCode) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>

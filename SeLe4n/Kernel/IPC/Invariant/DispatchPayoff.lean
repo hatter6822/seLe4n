@@ -156,18 +156,18 @@ theorem replyTransferOnCore_preserves_ipcInvariantFull
     (hFaultP : threadHasPendingFault st callerTid = true →
       ReplyLegPremises replier callerTid IpcMessage.empty c st)
     (hReplyP : threadHasPendingFault st callerTid = false →
-      ReplyLegPremises replier callerTid msg c st)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg grant c st = .ok ((), st')) :
+      ReplyLegPremises replier callerTid msg c st) {keep : Bool}
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     ipcInvariantFull st' ∧ st'.objects.invExt := by
   by_cases hF : threadHasPendingFault st callerTid = true
-  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant c st hF] at hStep
+  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant c st hF keep] at hStep
     obtain ⟨hFDon, hFHolderDon, hFStack, hFUnheld⟩ := hFaultP hF
     have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull replier callerTid mi regs c st
       hInv hObjInv hBudgets hFDon hFHolderDon hFStack
-      (unheldReplyPopCoherent_of_answered hFDon hFUnheld)
+      (unheldReplyPopCoherent_of_answered hFDon hFUnheld) keep
     have hFaultObj := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st
-      hObjInv
-    cases hFR : faultReplyOnCore replier callerTid mi regs c st with
+      hObjInv keep
+    cases hFR : faultReplyOnCore replier callerTid mi regs c st keep with
     | mk stF resF =>
       rw [hFR] at hStep hFaultInv hFaultObj
       cases resF with
@@ -178,13 +178,13 @@ theorem replyTransferOnCore_preserves_ipcInvariantFull
         exact ⟨hFaultInv, hFaultObj⟩
   · rw [Bool.not_eq_true] at hF
     obtain ⟨hDon, hHolderDon, hReplyStack, hUnheldB⟩ := hReplyP hF
-    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant c st hF] at hStep
+    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant c st hF keep] at hStep
     have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
       callerTid msg c st hInv hObjInv hDon hHolderDon hBudgets hReplyStack
-      (unheldReplyPopCoherent_of_answered hDon hUnheldB)
+      (unheldReplyPopCoherent_of_answered hDon hUnheldB) keep
     have hReplyObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid
-      msg c st hObjInv
-    cases hReply : endpointReplyCrossCoreDispatch replier callerTid msg c st with
+      msg c st hObjInv keep
+    cases hReply : endpointReplyCrossCoreDispatch replier callerTid msg c st keep with
     | mk st1 res1 =>
       rw [hReply] at hStep hReplyInv hReplyObj
       cases res1 with
@@ -678,7 +678,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
             badge := replyBadge })
         (extractMessageRegisters decoded.msgRegs decoded.msgInfo)
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-          badge := replyBadge } replyGrant executingCore st = .ok ((), st1) →
+          badge := replyBadge } replyGrant executingCore st true = .ok ((), st1) →
       allTimeoutBudgetsNone st1)
   /-- **WS-RR RR8.16 (`v0.35.195`) — the faulted caller's stage.**
 
@@ -948,14 +948,14 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
     (hReplyP : threadHasPendingFault st prevCaller = false →
       ReplyLegPremises tid prevCaller msg c st)
     (hBud1 : ∀ st1, replyTransferOnCore tid prevCaller (replyRecvReplyMessageInfo label msg)
-      msg.registers msg grant c st = .ok ((), st1) → allTimeoutBudgetsNone st1)
+      msg.registers msg grant c st true = .ok ((), st1) → allTimeoutBudgetsNone st1)
     (hStep : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st
       = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
   have hP1 := replyTransferOnCoreChecked_bindingPair hObjInv hP hR
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid prevCaller _ _ _ _ c st
-    hFlow] at hR
+    hFlow true] at hR
   obtain ⟨hInv1, hObj1⟩ := replyTransferOnCore_preserves_ipcInvariantFull tid prevCaller _ _
     msg grant c st st1 hInv hObjInv hBudgets hFaultP hReplyP hR
   rcases hOr with rfl | ⟨st2, badge, _, ⟨tcbC, hTC, hReadyC⟩, hW, _, rfl⟩
@@ -1561,15 +1561,17 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       all_goals cases hStep
 
 /-- The checked top-level dispatcher preserves `ipcInvariantFull`.  The
-dispatcher gates through `syscallInvokeTyped`, and the checked pack is
-conditioned on
-`syscallResolveCap`, which every successful rights-gated lookup implies
+dispatcher runs the arm on the capability its lookup resolved
+(`dispatchSyscallArmChecked_ok`), on the entry state or, for a reply-receive
+whose reply answers a caller, on the state the reply step left (WS-SX SX36.1),
+so the checked pack is conditioned on `syscallResolveCap` on the state the
+lookup ran on, which every successful rights-gated lookup implies
 (`syscallResolveCap_of_lookup`). -/
 theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (hPack : ∀ (gate : SyscallGate) (cap : Capability),
-      syscallResolveCap gate st = .ok (cap, st) →
+    (hPack : ∀ (s : SystemState) (gate : SyscallGate) (cap : Capability),
+      syscallResolveCap gate s = .ok (cap, s) →
       checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
     (hYieldReach : decoded.syscallId = .yield → ipcReachable st)
     (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
@@ -1595,19 +1597,19 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       cases obj with
       | tcb tcb =>
           simp only [hT] at hStep
-          cases hInvk : syscallInvokeTyped decoded.syscallId { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } (decodedExtraCapsFault? st tid decoded) (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }) st with
+          cases hInvk : dispatchSyscallArmChecked ctx decoded tid executingCore { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId } (decodedExtraCapsFault? st tid decoded) st with
           | error e => rw [hInvk] at hStep; cases hStep
           | ok pair =>
               obtain ⟨u, stPost⟩ := pair; cases u
               rw [hInvk] at hStep
               simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-              obtain ⟨cap, hLk, -, hInvk⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hInvk
-              have hRz := syscallResolveCap_of_lookup _ st cap st hLk
+              obtain ⟨s, cap, -, hLk, -, hInvk⟩ := dispatchSyscallArmChecked_ok hInvk
+              have hRz := syscallResolveCap_of_lookup _ s cap s hLk
               have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
-                ctx decoded tid executingCore _ cap st stPost (hPack _ cap hRz) hInvk
+                ctx decoded tid executingCore _ cap st stPost (hPack s _ cap hRz) hInvk
               rw [← hStep]
               exact ipcInvariantFull_of_objectsAgreeOffTaint
-                (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
+                (checkedArmTaint_objectsAgreeOffTaint _) hInvPost
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hT] at hStep; cases hStep
 

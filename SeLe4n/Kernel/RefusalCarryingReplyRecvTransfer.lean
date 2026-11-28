@@ -38,31 +38,6 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- The reply's capability transfer as its result: it never refuses
-(`receiveTransferCaps_ok`). -/
-def receiveTransferCapsDone (req : Option (Capability × Array SeLe4n.CPtr))
-    (ep : Option SeLe4n.ObjId) (tgt : Option (TCB × Option CSpaceAddr)) (st : SystemState) :
-    CapTransferSummary × SystemState :=
-  match h : receiveTransferCaps req ep tgt st with
-  | .ok r => r
-  | .error _ =>
-      False.elim (by
-        obtain ⟨s, Z', hOk⟩ := receiveTransferCaps_ok req ep tgt st
-        rw [hOk] at h
-        cases h)
-
-theorem receiveTransferCaps_eq_done (req : Option (Capability × Array SeLe4n.CPtr))
-    (ep : Option SeLe4n.ObjId) (tgt : Option (TCB × Option CSpaceAddr)) (st : SystemState) :
-    receiveTransferCaps req ep tgt st = .ok (receiveTransferCapsDone req ep tgt st) := by
-  unfold receiveTransferCapsDone
-  split
-  · next _ h => exact h
-  · next _ h =>
-      exfalso
-      obtain ⟨s, Z', hOk⟩ := receiveTransferCaps_ok req ep tgt st
-      rw [hOk] at h
-      cases h
-
 /-- **The reply-receive composite after its entry-state reads, each refusal
 carrying the state its step stopped in**: `endpointReplyRecvAnsweringBody`
 with the pop and the post-receive donation in their refusal-carrying forms,

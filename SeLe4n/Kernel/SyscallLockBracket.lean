@@ -146,7 +146,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
         x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = (match dispatchSyscallChecked ctx decoded tid executingCore stSpilled with
          | .error ke =>
-             match Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+             match Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
                  (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
                  (cancelReceiveBusyReply ctx executingCore
                    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
@@ -534,7 +534,11 @@ dispatch arm names:
   through `resolveRecvReplyId` exactly as the live arm resolves it;
 * reply-directed (`.reply`) — the Reply object the reply capability names;
 * both (`.replyRecv`) — the endpoint it will receive on next *and* the reply
-  object it answers first, resolved through `resolveReplyRecvReply`.
+  object it answers first, resolved through `resolveReplyRecvReply`, and whether
+  the receive's flow gate refuses that endpoint on entry
+  (`replyRecvReceiveRefused`: seL4 then answers the caller and refuses the
+  receive after it).  That gate reads the labelling context, so the builder
+  takes it.
 
 **WS-RR RR8.12 Cut C4b: it serves BOTH domains, and that is one builder rather
 than two.**  `declaredSchedulerLockSetForAbiEntry`
@@ -563,8 +567,8 @@ here gets the fail-closed answer.
 the caller's TCB or any capability is looked up — so its operands are the caller
 alone, answered before the gate rather than through a lookup the yield never
 makes. -/
-def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (s : SystemState) : Option SyscallLockOperands :=
+def abiEntryLockOperands (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) : Option SyscallLockOperands :=
   if decoded.syscallId = .yield then some { caller := tid } else
   -- an extra capability whose lookup fails faults before the invocation's
   -- decode (seL4 `lookupExtraCaps`), so it declares no operands, as a failed
@@ -637,7 +641,10 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                            decoded.msgRegs decoded.msgInfo,
                          badge := replyBadge },
                      replyMessageInfo := some decoded.msgInfo,
-                     replyGrant := some replyGrant }
+                     replyGrant := some replyGrant,
+                     replyRecvReceiveRefused :=
+                       !endpointFlowGate ctx epId (ctx.endpointLabelOf epId)
+                         (ctx.threadLabelOf tid) }
       -- **Cut C4b**: the eight arms the OBJECT domain declares nothing for and
       -- the scheduler domain does.  Each names its target the way its own live
       -- dispatch arm names it — the capability's object read as a thread for the
@@ -725,7 +732,7 @@ def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
-    (abiEntryLockOperands decoded tid stSpilled).bind
+    (abiEntryLockOperands ctx decoded tid stSpilled).bind
       (fun ops => lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled)
 
 /-- **WS-RR RR7.12 (the binding, as a theorem)**: a declared footprint is
@@ -743,7 +750,7 @@ theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
     ∃ tid decoded stSpilled ops,
       abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
         = some (tid, decoded, stSpilled) ∧
-      abiEntryLockOperands decoded tid stSpilled = some ops ∧
+      abiEntryLockOperands ctx decoded tid stSpilled = some ops ∧
       lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled = some S := by
   unfold declaredLockSetForAbiEntry at h
   cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
@@ -752,7 +759,7 @@ theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
     obtain ⟨tid, decoded, stSpilled⟩ := triple
     rw [hPlan] at h
     simp only at h
-    cases hOps : abiEntryLockOperands decoded tid stSpilled with
+    cases hOps : abiEntryLockOperands ctx decoded tid stSpilled with
     | none => rw [hOps] at h; exact absurd h (by simp)
     | some ops =>
       rw [hOps] at h
@@ -761,11 +768,11 @@ theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
 
 /-- **WS-RR RR7.12 (the sentinel guard, as a theorem)**: a capability naming the
 sentinel thread yields no operands, so no footprint is declared for it. -/
-theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeResult)
+theorem abiEntryLockOperands_tcbSuspend_target_valid {ctx : LabelingContext} (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
     (t : SeLe4n.ThreadId)
     (hSid : decoded.syscallId = .tcbSuspend)
-    (h : abiEntryLockOperands decoded tid s = some ops)
+    (h : abiEntryLockOperands ctx decoded tid s = some ops)
     (hT : ops.targetThread = some t) :
     t ≠ SeLe4n.ThreadId.sentinel := by
   unfold abiEntryLockOperands at h
@@ -829,9 +836,9 @@ The footprint's CNode member is that thread's CSpace root and its TCB member is
 that thread's TCB, so a caller field that could name anything else would declare
 a footprint for a different principal.  Trivial by construction, and stated
 because "by construction" is what a refactor removes. -/
-theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
+theorem abiEntryLockOperands_caller {ctx : LabelingContext} (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
-    (h : abiEntryLockOperands decoded tid s = some ops) :
+    (h : abiEntryLockOperands ctx decoded tid s = some ops) :
     ops.caller = tid := by
   unfold abiEntryLockOperands at h
   split at h
@@ -900,10 +907,10 @@ theorem receiveLockOperands_receiveReplyFault? (gate : SyscallGate)
 successful rights-gated lookup of the capability the decode addresses, at the
 very state the operands are read at (the lookup is read-only) — for every
 syscall but the capability-free yield. -/
-theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
+theorem abiEntryLockOperands_gate_lookup {ctx : LabelingContext} (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
     (hNotYield : decoded.syscallId ≠ .yield)
-    (h : abiEntryLockOperands decoded tid s = some ops) :
+    (h : abiEntryLockOperands ctx decoded tid s = some ops) :
     ∃ (tcb : TCB) (gate : SyscallGate) (cap : Capability),
       abiEntryGate decoded tid s = some (tcb, gate) ∧
       syscallLookupCap gate s = .ok (cap, s) ∧
@@ -959,10 +966,10 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
 but the yield declares operands only when none of its extra capabilities'
 lookups fails (`callerExtraCapsFault?`), the failure seL4's `lookupExtraCaps`
 raises as a fault before the invocation's decode. -/
-theorem abiEntryLockOperands_extraCaps (decoded : SyscallDecodeResult)
+theorem abiEntryLockOperands_extraCaps {ctx : LabelingContext} (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
     (hNotYield : decoded.syscallId ≠ .yield)
-    (h : abiEntryLockOperands decoded tid s = some ops) :
+    (h : abiEntryLockOperands ctx decoded tid s = some ops) :
     callerExtraCapsFault? s tid
       (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) = none := by
   unfold abiEntryLockOperands at h
@@ -975,13 +982,13 @@ theorem abiEntryLockOperands_extraCaps (decoded : SyscallDecodeResult)
 gate's lookup and the receive's type gate passed (the operands exist), the
 reply's resolution refused on the busy reply, so the operands name the reply the
 receive's capability names, through which its footprints name the holder. -/
-theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
+theorem abiEntryLockOperands_receive_busy {ctx : LabelingContext} (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands) (tcb : TCB)
     (gate : SyscallGate) (holder : SeLe4n.ThreadId)
     (hRecv : receivesWithoutReply decoded tid s)
     (hGate : abiEntryGate decoded tid s = some (tcb, gate))
     (hB : busyReplyHolder? s tid (recvReplyLookup? gate decoded s) = some holder)
-    (h : abiEntryLockOperands decoded tid s = some ops) :
+    (h : abiEntryLockOperands ctx decoded tid s = some ops) :
     ∃ epId : SeLe4n.ObjId, ops =
       { caller := tid, targetObject := some epId,
         targetReply := recvReplyLookup? gate decoded s } := by

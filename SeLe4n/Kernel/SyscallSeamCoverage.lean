@@ -237,12 +237,12 @@ theorem validThreadId_val_toValid? (v : SeLe4n.ValidThreadId) :
 /-- **The `.replyRecv` arm's composite is covered by the arm's footprint**: the
 composite's own footprint (`schedLockSet_replyRecvTransferOnCore_coversWrites`)
 is contained in the arm's (`schedLockSet_replyRecvTransferOnCore_subset_arm`). -/
-theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_replyRecvArmOnCore_coversTransfer {receiveRefused : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (label : Nat) (msg : IpcMessage) (grant : Bool) (e : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
-      prevCaller label msg grant e st) = some S)
+      prevCaller label msg grant receiveRefused e st) = some S)
     (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
       e st = .ok (summary, st')) :
     footprintCoversWrites S st st' := by
@@ -257,7 +257,7 @@ theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjI
   rw [LockSet.ofList?_pairs hS]
   rw [LockSet.ofList?_pairs hS0] at hl
   exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
-    label msg grant e st _ hl
+    label msg grant receiveRefused e st _ hl
 
 
 -- ----------------------------------------------------------------------------
@@ -620,15 +620,167 @@ theorem replyRecvTransferStoppedState_replenishQueueOnCore_ne (epId : SeLe4n.Obj
           replyRecvHolderDeschedule_replenishQueueOnCore, hPre2]
     · rw [if_neg hCall] at hB; cases hB
 
+-- ----------------------------------------------------------------------------
+-- A reply-receive whose receive is refused after its reply (WS-SX SX36.1)
+-- ----------------------------------------------------------------------------
+--
+-- Where the entry refuses the receive capability (its flow gate) and the reply
+-- answers, the reply runs and the receive capability, read again on the state
+-- the reply left, refuses again (`CNodeSlotsKept`), so the state reported is the
+-- nothing-received outcome on the answer's state.  Its run segment is
+-- `replyRecvAfterReplyStopCores`; its replenish segment the pop's.
+
+/-- **A reply-receive whose receive is refused after its reply is confined to
+the cores `replyRecvAfterReplyStopCores` names**: the reply leg's core, the
+caller's answer, and the nothing-received outcome on the answer's state. -/
+theorem replyRecvTransferThenR_refused_confinedToCores
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
+    (grant : Bool) (core : CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    (hEp : ∀ s, CNodeSlotsKept st s → ∃ e, recvEp s = .error e) :
+    observableSlotsConfinedToCores st
+      (RefusalCarrying.stoppedState
+        (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant core) st)
+      (replyRecvAfterReplyStopCores (replyRecvCallerFaultAnswer? st prevCaller label msg) tid rid
+        prevCaller (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg)
+        grant core st) := by
+  unfold RefusalCarrying.stoppedState replyRecvTransferThenR
+  cases hA : replyRecvPopAdmits st rid prevCaller
+  · simp only [Bool.false_eq_true, ↓reduceIte]; exact observableSlotsConfinedToCores_refl st _
+  simp only [↓reduceIte]
+  try dsimp only
+  unfold replyRecvAfterReplyStopCores
+  simp only [replyRecvReplyTransfer_eq_receiveTransferCaps]
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = a
+  generalize replyRecvLegMessage a msg = m
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  generalize (if a.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  unfold endpointReplyRecvAnsweringBodyThenR
+  have hConfR := endpointReplyOnCore_confinedToCores tid prevCaller m core st hInv
+  have hInvR := endpointReplyOnCore_preserves_objects_invExt tid prevCaller m core st hInv
+  generalize hR : endpointReplyOnCore tid prevCaller m core st = R at hConfR hInvR ⊢
+  obtain ⟨st1, r1⟩ := R
+  cases r1 with
+  | error e1 =>
+    have hSt := endpointReplyOnCore_error_state (e := e1) (by rw [hR])
+    rw [hR] at hSt
+    exact observableSlotsConfinedToCores_of_eq _ hSt
+  | ok sgi =>
+  obtain ⟨⟨ret?, popped⟩, hPop⟩ := replyRecvPopDonation_ok_of_admits (replier := tid) (msg := m)
+    (core := core) hInv (by rw [hR]) hA
+  rw [hR] at hPop
+  dsimp only at hPop ⊢
+  have hPopR : replyRecvPopDonationR rid prevCaller st1 = .ok (ret?, popped) := by
+    have := replyRecvPopDonationR_eq rid prevCaller st1
+    rw [hPop] at this
+    cases hq : replyRecvPopDonationR rid prevCaller st1 with
+    | error es => rw [hq] at this; cases this
+    | ok r => rw [hq] at this; cases this; rfl
+  rw [hPopR, hPop]
+  dsimp only
+  have hXo := receiveTransferCaps_eq_done req none target popped
+  rw [hXo]
+  generalize receiveTransferCapsDone req none target popped = D at hXo
+  obtain ⟨xs, st1p⟩ := D
+  dsimp only
+  have hPopConf : observableSlotsConfinedToCores st1 st1p [] := by
+    have hQ := replyRecvPopDonation_confinedToCores rid prevCaller st1 popped ret? hPop
+    have hXc : observableSlotsConfinedToCores popped st1p [] :=
+      observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (receiveTransferCaps_scheduler_eq hXo) (receiveTransferCaps_preserves_machine hXo)
+    simpa using observableSlotsConfinedToCores_trans hQ hXc
+  have hAnsConf := replyRecvAnswerCaller_confinedToCores a st1p prevCaller xs.capInfo
+  have hPopAns := observableSlotsConfinedToCores_trans hPopConf hAnsConf
+  simp only [List.nil_append] at hPopAns
+  obtain ⟨eR, hER⟩ := hEp _ (replyRecvReplyStep_cnodeSlotsKept (answer := a) hInv hR hPop hXo)
+  rw [hER]
+  dsimp only
+  exact observableSlotsConfinedToCores_trans hConfR (observableSlotsConfinedToCores_trans hPopAns
+    (replyRecvNothingReceived_confinedToCores rs core ret? _))
+
+/-- **A reply-receive whose receive is refused after its reply writes no
+replenish queue outside the pop's segment**: the reply leg writes none, the pop
+keeps the queues outside its own sub-segment, and neither the capability
+transfer, the caller's answer nor the nothing-received outcome writes one. -/
+theorem replyRecvTransferThenR_refused_replenishQueueOnCore_ne
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) (hEp : ∀ s, CNodeSlotsKept st s → ∃ e, recvEp s = .error e)
+    (d : CoreId)
+    (hne : d ∉ replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      epId tid rid prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant core
+      st) :
+    (RefusalCarrying.stoppedState
+        (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant core)
+        st).scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d := by
+  unfold RefusalCarrying.stoppedState replyRecvTransferThenR
+  cases hA : replyRecvPopAdmits st rid prevCaller
+  · simp only [Bool.false_eq_true, ↓reduceIte]
+  simp only [↓reduceIte]
+  try dsimp only
+  unfold replyRecvHandoffReplenishCores at hne
+  simp only [replyRecvReplyTransfer_eq_receiveTransferCaps] at hne
+  revert hne
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = a
+  generalize replyRecvLegMessage a msg = m
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  generalize (if a.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  intro hne
+  unfold endpointReplyRecvAnsweringBodyThenR
+  have hR1 := endpointReplyOnCore_replenishQueueOnCore tid prevCaller m core st d
+  have hInvR := endpointReplyOnCore_preserves_objects_invExt tid prevCaller m core st hInv
+  generalize hR : endpointReplyOnCore tid prevCaller m core st = R at hne hR1 hInvR ⊢
+  obtain ⟨st1, r1⟩ := R
+  cases r1 with
+  | error e1 => exact hR1
+  | ok sgi =>
+  obtain ⟨⟨ret?, popped⟩, hPop⟩ := replyRecvPopDonation_ok_of_admits (replier := tid) (msg := m)
+    (core := core) hInv (by rw [hR]) hA
+  rw [hR] at hPop
+  dsimp only at hPop hne hR1 hInvR ⊢
+  have hPopR : replyRecvPopDonationR rid prevCaller st1 = .ok (ret?, popped) := by
+    have := replyRecvPopDonationR_eq rid prevCaller st1
+    rw [hPop] at this
+    cases hq : replyRecvPopDonationR rid prevCaller st1 with
+    | error es => rw [hq] at this; cases this
+    | ok r => rw [hq] at this; cases this; rfl
+  rw [hPopR]
+  rw [hPop] at hne
+  dsimp only at hne ⊢
+  have hInvP := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 popped ret?
+    hInvR hPop
+  have hXo := receiveTransferCaps_eq_done req none target popped
+  rw [hXo] at hne
+  generalize receiveTransferCapsDone req none target popped = D at hXo hne ⊢
+  obtain ⟨xs, st1p⟩ := D
+  dsimp only at hne ⊢
+  simp only [List.mem_append, not_or] at hne
+  have hnePop := hne.1
+  have hRP := replyRecvPopDonation_replenishQueueOnCore_ne rid prevCaller st1 popped ret? d hInvR
+    hnePop hPop
+  have hRX : st1p.scheduler = popped.scheduler := receiveTransferCaps_scheduler_eq hXo
+  have hInv1p : st1p.objects.invExt := receiveTransferCaps_objects_invExt hInvP hXo
+  have hInv1a := replyRecvAnswerCaller_preserves_objects_invExt a st1p prevCaller xs.capInfo
+    hInv1p
+  have hRa := replyRecvAnswerCaller_replenishQueueOnCore a st1p prevCaller xs.capInfo d
+  obtain ⟨eR, hER⟩ := hEp _ (replyRecvReplyStep_cnodeSlotsKept (answer := a) hInv hR hPop hXo)
+  rw [hER]
+  dsimp only
+  rw [replyRecvNothingReceived_replenishQueueOnCore rs core ret? _ hInv1a d, hRa, hRX, hRP, hR1]
+
 /-- **A refused reply-receive is covered by the arm's footprint** (WS-SX SX34):
 the state its refusal reports stays inside the transition's declared run and
 replenish segments, which the arm's footprint contains. -/
-theorem schedLockSet_replyRecvArmOnCore_coversStopped (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_replyRecvArmOnCore_coversStopped {receiveRefused : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (label : Nat) (msg : IpcMessage) (grant : Bool) (e : CoreId) (st : SystemState)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
-      prevCaller label msg grant e st) = some S) :
+      prevCaller label msg grant receiveRefused e st) = some S) :
     footprintCoversWrites S st
       (replyRecvTransferStoppedState endpointId receiver replyId prevCaller label msg grant e st) := by
   obtain ⟨S0, hS0⟩ := schedFootprintOfCores_ofList?_isSome
@@ -645,7 +797,103 @@ theorem schedLockSet_replyRecvArmOnCore_coversStopped (endpointId : SeLe4n.ObjId
   rw [LockSet.ofList?_pairs hS]
   rw [LockSet.ofList?_pairs hS0] at hl
   exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
-    label msg grant e st _ hl
+    label msg grant receiveRefused e st _ hl
+
+/-- **A reply-receive whose receive is refused after its reply is covered by the
+arm's footprint**: the state it reports stays inside the stop's run segment
+(`replyRecvAfterReplyStopCores`) and the pop's replenish segment, which the
+arm's footprint contains. -/
+theorem schedLockSet_replyRecvArmOnCore_coversRefusedAfterReply
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool) (e : CoreId) (st : SystemState)
+    (S : LockSet) (hObjInv : st.objects.invExt)
+    (hEp : ∀ s, CNodeSlotsKept st s → ∃ e, recvEp s = .error e)
+    (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
+      prevCaller label msg grant true e st) = some S) :
+    footprintCoversWrites S st
+      (RefusalCarrying.stoppedState
+        (replyRecvTransferThenR recvEp receiver replyId prevCaller label msg grant e) st) := by
+  obtain ⟨S0, hS0⟩ := schedFootprintOfCores_ofList?_isSome
+    (replyRecvAfterReplyStopCores (replyRecvCallerFaultAnswer? st prevCaller label msg) receiver
+      replyId prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant e st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      endpointId receiver replyId prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant e st)
+  refine footprintCoversWrites_mono S0 S st _ (fun l hl => ?_)
+    (footprintCoversWrites_of_confined S0 _ _ st _ (LockSet.ofList?_pairs hS0)
+      (replyRecvTransferThenR_refused_confinedToCores recvEp receiver replyId prevCaller label
+        msg grant e st hObjInv hEp)
+      (fun d hd => replyRecvTransferThenR_refused_replenishQueueOnCore_ne recvEp endpointId
+        receiver replyId prevCaller label msg grant e st hObjInv hEp d hd))
+  rw [LockSet.ofList?_pairs hS]
+  rw [LockSet.ofList?_pairs hS0] at hl
+  unfold schedLockSet_replyRecvArmOnCore
+  simp only [↓reduceIte]
+  exact schedFootprintOfCores_subset
+    (fun _ h => List.mem_append_left _ (List.mem_append_right _ h))
+    (fun _ h => List.mem_append_left _ h) _ hl
+
+/-- **An answering reply-receive whose receive is refused after its reply is
+covered by the arm's footprint, on both of its branches**: where its receive
+completes the bound notification, the reply leg alone runs before the refusal
+(`replyRecvCompletesSignalArmThenR`), confined to the reply's write set and
+replenish cores, which the arm names; otherwise the composite's stop
+(`schedLockSet_replyRecvArmOnCore_coversRefusedAfterReply`). -/
+theorem schedLockSet_replyRecvArmOnCore_coversAnsweringRefused (ctx : LabelingContext)
+    (recvEp : SystemState → Except KernelError SeLe4n.ObjId) (decoded : SyscallDecodeResult)
+    (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge) (replyGrant : Bool)
+    (e : CoreId) (st : SystemState) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
+    (hEp : ∀ s, CNodeSlotsKept st s → ∃ e, recvEp s = .error e)
+    (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId tid rid prevCaller
+      decoded.msgInfo.label
+      { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+          decoded.msgInfo, badge := replyBadge } replyGrant true e st) = some S) :
+    footprintCoversWrites S st
+      (RefusalCarrying.stoppedState
+        (replyRecvAnsweringThenR ctx recvEp decoded tid e rid prevCaller replyBadge replyGrant)
+        st) := by
+  have hT := schedLockSet_replyRecvArmOnCore_coversRefusedAfterReply recvEp endpointId tid rid
+    prevCaller _ _ replyGrant e st S hObjInv hEp hS
+  unfold RefusalCarrying.stoppedState at hT ⊢
+  unfold replyRecvAnsweringThenR
+  dsimp only
+  by_cases hSig : receiveCompletesSignal ctx st tid = true
+  · rw [if_pos hSig]
+    unfold replyRecvCompletesSignalArmThenR
+    cases hR : replyTransferOnCoreChecked ctx tid prevCaller
+        (replyRecvReplyMessageInfo decoded.msgInfo.label
+          { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+              decoded.msgInfo, badge := replyBadge })
+        (Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo)
+        { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+            decoded.msgInfo, badge := replyBadge } replyGrant e st true with
+    | error _ => exact footprintCoversWrites_refl S st
+    | ok p =>
+      obtain ⟨⟨⟩, st1⟩ := p
+      dsimp only
+      obtain ⟨eR, hER⟩ := hEp st1 (replyTransferOnCoreChecked_cnodeSlotsKept hObjInv hR)
+      rw [hER]
+      dsimp only
+      rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid prevCaller _ _ _ _ e
+        st hFlow true] at hR
+      have hConf := replyTransferOnCore_confinedToCores tid prevCaller _ _ _ replyGrant e st st1
+        hObjInv hR
+      refine footprintCoversWrites_of_cores S _ _ st st1 (LockSet.ofList?_pairs hS)
+        (fun d hd => ?_) (fun d hd => ?_)
+      · have hd' := fun m => hd (List.mem_append_right _ (List.mem_append_left _ m))
+        exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
+      · exact replyTransferOnCore_replenishQueueOnCore_ne tid prevCaller _ _ _ replyGrant e st
+          st1 d hObjInv (fun m => hd (List.mem_append_right _ (List.mem_append_left _ m))) hR
+  · rw [if_neg hSig]
+    cases hY : replyRecvTransferThenR recvEp tid rid prevCaller decoded.msgInfo.label
+        { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+            decoded.msgInfo, badge := replyBadge } replyGrant e st with
+    | error es => rw [hY] at hT; exact hT
+    | ok r => exact footprintCoversWrites_refl S st
 
 /-- ...and so is the notification the receive's lock operands name. -/
 theorem cancelRecvBusyReply_receiverBoundNotification? (ctx : LabelingContext)
@@ -959,13 +1207,13 @@ frame leave the scheduler alone, and the completion's donation
 (`maybeDonateSchedContext`) writes the receiver's home core, which no step
 before it moves (`replyTransferOnCoreChecked_homeCoresKept`) and the arm names
 (`replyRecvDonationCores_eq_home_of_completes`). -/
-theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
+theorem replyRecvCompletesSignalArm_coversWrites {receiveRefused : Bool} (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
     (e : CoreId) (st st' : SystemState) (S : LockSet) (hObjInv : st.objects.invExt)
     (hFlow : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf prevCaller) = true)
     (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
-      prevCaller label msg grant e st) = some S)
+      prevCaller label msg grant receiveRefused e st) = some S)
     (hStep : replyRecvCompletesSignalArm ctx receiver prevCaller label msg grant e st
       = .ok ((), st')) :
     footprintCoversWrites S st st' := by
@@ -976,7 +1224,7 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
   have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
     LockSet.ofList?_pairs hS ▸ schedFootprintOfCores_contains_objStore_write _ _
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx receiver prevCaller _ _ _ _ e
-    st hFlow] at hR
+    st hFlow true] at hR
   have hConf := replyTransferOnCore_confinedToCores receiver prevCaller _ _ msg grant e st st1
     hObjInv hR
   have hRep : footprintCoversWrites S st st1 := by
@@ -1225,7 +1473,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
     (hGate : abiEntryGate decoded tid st = some (tcb, gate))
     (hLk : syscallLookupCap gate st = .ok (cap, st))
-    (hOps : abiEntryLockOperands decoded tid st = some ops)
+    (hOps : abiEntryLockOperands ctx decoded tid st = some ops)
     (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid st) ops e st = some S)
     (hDisp : dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), st')) :
     footprintCoversWrites S st st' := by
@@ -1841,7 +2089,7 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (e : CoreId)
     (st st' : SystemState) (ops : Concurrency.SyscallLockOperands) (S : LockSet)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
-    (hOps : abiEntryLockOperands decoded tid st = some ops)
+    (hOps : abiEntryLockOperands ctx decoded tid st = some ops)
     (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid st) ops e st = some S)
     (hDisp : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
     footprintCoversWrites S st st' := by
@@ -1860,20 +2108,20 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
         simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
         subst hDisp
         exact schedLockSet_yieldOnCore_coversWrites e st stY S hSched hYieldOk
-  obtain ⟨tcb, gate, cap, hGate, hLk, -⟩ :=
+  obtain ⟨tcb, gate, cap, hGate, hLk, hRg, -⟩ :=
     abiEntryLockOperands_gate_lookup decoded tid st ops hY hOps
   obtain ⟨hTcb, -, -, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   have hTcbObj : st.getObject? tid.toObjId = some (.tcb tcb) :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   have hRes : syscallResolveCap gate st = .ok (cap, st) := syscallLookupCap_resolve gate st cap hLk
   have key : ∀ stPost, dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), stPost) →
-      footprintCoversWrites S st (applySyscallTaint (syscallTaintPlan st tid decoded) st stPost) :=
+      footprintCoversWrites S st (checkedArmTaint ctx decoded tid e gate st stPost) :=
     fun stPost hD => footprintCoversWrites_trans S
       (dispatchWithCapChecked_coversWrites ctx decoded tid e tcb gate cap st stPost ops S hObjInv
         hHeads hGate hLk hOps hSched hD)
       (footprintCoversWrites_of_scheduler_eq S
         (schedLockSetForSyscall_contains_objStore_write _ _ _ _ _ hSched)
-        (applySyscallTaint_scheduler _ _ _))
+        (checkedArmTaint_scheduler _))
   unfold dispatchSyscallChecked at hDisp
   split at hDisp
   · exact absurd hDisp (by simp)
@@ -1886,6 +2134,16 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
     · rename_i stPost hD
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
       subst hDisp
+      have hAcc : decoded.syscallId = .replyRecv →
+          syscallTargetAccepted .replyRecv st cap = true := by
+        intro hS
+        rw [hS] at hRg
+        cases hT : syscallTargetAccepted .replyRecv st cap
+        · simp [receiveGateRefuses, syscallReceivesOnCap, hT] at hRg
+        · rfl
+      have hXf : decoded.syscallId = .replyRecv → decodedExtraCapsFault? st tid decoded = none :=
+        fun hS => callerExtraCapsFault?_receive st tid _ _ (by rw [hS]; rfl)
+      have hD := dispatchSyscallArmChecked_ok_of_resolved hObjInv hRes hAcc hXf hD
       obtain ⟨cap', hLk', -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
       rw [hLk] at hLk'
       cases hLk'
@@ -1912,14 +2170,15 @@ theorem finaliseWriteAny_callerCspaceRoot {st st' : SystemState}
 lock set** (WS-SX SX34): its operands are the answering reply's, so its
 footprint is the arm's (`schedLockSet_replyRecvArmOnCore`) on the reply the
 capability resolves to. -/
-theorem replyRecvAnswering_schedLockSet (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+theorem replyRecvAnswering_schedLockSet {ctx : LabelingContext} (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId)
     (e : CoreId) (tcb : TCB) (gate : SyscallGate) (cap : Capability) (st : SystemState)
     (ops : Concurrency.SyscallLockOperands) (S : LockSet) (epId : SeLe4n.ObjId)
     (rid : SeLe4n.ReplyId) (prev : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
     (replyGrant : Bool)
     (hGate : abiEntryGate decoded tid st = some (tcb, gate))
     (hLk : syscallLookupCap gate st = .ok (cap, st))
-    (hOps : abiEntryLockOperands decoded tid st = some ops)
+    (hOps : abiEntryLockOperands ctx decoded tid st = some ops)
     (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid st) ops e st = some S)
     (hId : decoded.syscallId = .replyRecv) (hT : cap.target = .object epId)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
@@ -1927,7 +2186,9 @@ theorem replyRecvAnswering_schedLockSet (decoded : SyscallDecodeResult) (tid : S
     (hAw : replyRecvCallerAwaitsReply st prev = true) :
     LockSet.ofList? (schedLockSet_replyRecvArmOnCore epId tid rid prev decoded.msgInfo.label
       { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
-          decoded.msgInfo, badge := replyBadge } replyGrant e st) = some S := by
+          decoded.msgInfo, badge := replyBadge } replyGrant
+      (!endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid)) e st)
+      = some S := by
   have hY : decoded.syscallId ≠ .yield := by rw [hId]; decide
   obtain ⟨hTcb, -, -, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   have hGc : resolveReplyRecvReply gate decoded st =
@@ -1984,7 +2245,7 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     (hCode : ∀ gate, recvBusyReplyHolderCode ctx tid gate decoded stSpilled
       = recvBusyReplyHolderCode ctx tid gate decoded stRegs)
     (hXc : ∀ n, callerExtraCapsFault? stSpilled tid n = callerExtraCapsFault? stRegs tid n)
-    (hOps : abiEntryLockOperands decoded tid stSpilled = some ops)
+    (hOps : abiEntryLockOperands ctx decoded tid stSpilled = some ops)
     (hSched : schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops e stSpilled
       = some S)
     (hU : unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops e stSpilled
@@ -1992,7 +2253,7 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     (hFilledEq : stSpilled = stRegs) :
     footprintCoversWrites U stRegs (cancelReceiveBusyReply ctx e stRegs) := by
   rcases cancelReceiveBusyReply_cases_decoded ctx e stRegs with
-    h | ⟨tid', tcb', decoded', k, hCur', hObj', hDec', hRecv', hCode', h⟩ | hA
+    h | ⟨tid', tcb', decoded', k, hCur', hObj', hDec', hRecv', hCode', h⟩ | hA | hB
   · rw [h]; exact footprintCoversWrites_refl U stRegs
   rotate_left
   · -- WS-SX SX34: a reply-receive that answered its caller reports the state its
@@ -2032,6 +2293,68 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
     exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U _ _ hSched hU
       (schedLockSet_replyRecvArmOnCore_coversStopped epId tid rid c _ _ grant e stSpilled S
         hRegsObjInv hL)
+  · -- WS-SX SX36.1: a reply-receive whose reply answered and whose receive the
+    -- entry refuses reports the state its after-reply stop left, inside the
+    -- arm's footprint
+    subst hFilledEq
+    obtain ⟨tid', tcb', decoded', gate', rid, prev, badge, grant, -, hCur', hObj', hDec', hRR, hRef,
+      hS⟩ := hB
+    rw [hCur] at hCur'
+    cases hCur'
+    rw [hTcbRegs] at hObj'
+    cases hObj'
+    rw [hDec] at hDec'
+    cases hDec'
+    obtain ⟨tcbR, eR, hTR, rfl, hAnsR, hEpR⟩ := replyRecvRefusedOnEntry?_some hRef
+    rw [hTcbRegs] at hTR
+    simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTR
+    subst hTR
+    obtain ⟨hXc', hRRR, hW⟩ := replyRecvAnsweringReply?_some hAnsR
+    simp only [replyRecvReplyAnswers, Bool.and_eq_true] at hW
+    obtain ⟨tcbF, gate, cap', hGate, hLk, hRg, -⟩ :=
+      abiEntryLockOperands_gate_lookup decoded tid stSpilled ops (by rw [hRR]; decide) hOps
+    obtain ⟨hTcbF, -, -, hGateEq⟩ := abiEntryGate_components decoded tid stSpilled tcbF gate hGate
+    have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
+    have hTcbRegs' : stSpilled.objects[tid.toObjId]? = some (.tcb tcb) := hTcbRegs
+    rw [hTcbRegs'] at hTcbF'
+    simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
+    subst hTcbF'
+    have hRc := syscallLookupCap_resolve gate stSpilled cap' hLk
+    rw [hGateEq] at hRc
+    have hAcc : syscallTargetAccepted .replyRecv stSpilled cap' = true := by
+      rw [hRR] at hRg
+      cases hT : syscallTargetAccepted .replyRecv stSpilled cap'
+      · simp [receiveGateRefuses, syscallReceivesOnCap, hT] at hRg
+      · rfl
+    obtain ⟨epId, hTgt⟩ : ∃ epId, cap'.target = .object epId := by
+      unfold syscallTargetAccepted at hAcc
+      cases hT : cap'.target with
+      | object id => exact ⟨id, rfl⟩
+      | _ => rw [hT] at hAcc; simp at hAcc
+    have hL := replyRecvAnswering_schedLockSet decoded tid e _ gate cap' stSpilled ops S epId rid
+      prev badge grant hGate hLk hOps hSched hRR hTgt hXc' (by rw [hGateEq]; exact hRRR) hW.2
+    -- the entry's flow gate refuses the receive (the only refusal left once the
+    -- capability resolves to an endpoint with its right), so the footprint names
+    -- the after-reply stop's cores
+    have hRight : cap'.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+      rw [hRR] at hRg ⊢
+      cases hH : cap'.hasRight (syscallRequiredRight .replyRecv)
+      · simp [receiveGateRefuses, syscallReceivesOnCap, hH] at hRg
+      · rfl
+    have hFl := replyRecvReceiveEndpoint_flowRefused hRc hAcc hRight hTgt hEpR
+    rw [hFl] at hL
+    rw [hS]
+    exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U _ _ hSched hU
+      (taintSteps_of_afterReplyRefusal (fun x => footprintCoversWrites S stSpilled x)
+        (fun _ _ x hx => footprintCoversWrites_trans S hx
+          (footprintCoversWrites_of_scheduler_eq S
+            (schedLockSetForSyscall_contains_objStore_write _ _ _ _ _ hSched)
+            (applySyscallTaint_scheduler _ _ _)))
+        (schedLockSet_replyRecvArmOnCore_coversAnsweringRefused ctx _ decoded epId tid rid prev
+          badge grant e stSpilled S hRegsObjInv hW.1
+          (fun s hK => ⟨eR, by
+            exact (replyRecvReceiveEndpoint_eq_of_cnodeSlotsKept (ctx := ctx) (tid := tid) hK hRc
+              hAcc).trans hEpR⟩) hL))
   rw [h]
   rw [hCur] at hCur'
   cases hCur'
@@ -2096,7 +2419,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
   obtain ⟨tid, decoded, stSpilled⟩ := triple
   rw [hPlan] at hU
   simp only at hU
-  cases hOps : abiEntryLockOperands decoded tid stSpilled with
+  cases hOps : abiEntryLockOperands ctx decoded tid stSpilled with
   | none => rw [hOps] at hU; exact absurd hU (by simp)
   | some ops =>
   rw [hOps] at hU
@@ -2155,7 +2478,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
         ∀ id, (cancelReceiveBusyReply ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).getCNode? id
           = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).getCNode? id) →
-        Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+        Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke
@@ -2166,7 +2489,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             = some (.tcb tcb) := hTcbRegs
       -- WS-ZA ZA4.3: a yield has no capability-fault phase.
       by_cases hY : decoded.syscallId = .yield
-      · exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ _
+      · exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase ctx SeLe4n.arm64DefaultLayout _ _
           tid ke tcb decoded hTcbRegs' hDec (by rw [hY]; rfl)
       obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv, hReplyF⟩ :=
         abiEntryLockOperands_gate_lookup decoded tid stSpilled ops hY hOps
@@ -2181,7 +2504,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       subst hGateEq
       cases hPhase : Platform.FFI.capFaultReceivePhase? decoded.syscallId with
       | none =>
-        exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _ _
+        exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase ctx SeLe4n.arm64DefaultLayout _ _
           tid ke tcb decoded hTcbRegs' hDec hPhase
       | some inRecv =>
         have hRecv' : receiveGateRefuses decoded.syscallId tid
@@ -2194,7 +2517,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid
               = tcb.spaceCells[0] := by
           simp only [callerCspaceRoot, hTcbRegs]
-        exact Platform.FFI.syscallCapFaultAt_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ _ tid
+        exact Platform.FFI.syscallCapFaultAt_none_of_lookup_ok ctx SeLe4n.arm64DefaultLayout _ _ tid
           ke tcb decoded inRecv hTcbRegs' hDec hPhase
           (by
             have hX := abiEntryLockOperands_extraCaps decoded tid stSpilled ops hY hOps
@@ -2204,7 +2527,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             rw [hFrameR.1, hRoot, receiveReplyFault?_congr_getCNode? _ decoded _ _ hFrameR.2,
               ← receiveReplyFault?_congr_objects _ decoded _ _ hFillObj]
             exact hReplyF)
-    have hNoFault : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+    have hNoFault : Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke
@@ -2218,10 +2541,63 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           exact ⟨finaliseWriteAny_callerCspaceRoot
               (cancelReplyHolder_finaliseFrameAny _ holder e hRegsObjInv).write tid,
             cancelReplyHolder_getCNode? _ holder e hRegsObjInv⟩)
+      rcases hA with hA | hA
       · -- WS-SX SX34: a reply-receive that answered its caller faults only where
         -- its transition stopped where it started
         rcases hA.capFault_none_of_dispatch hRegsObjInv (by rw [hRegsSch]; exact hCur) hTcbRegs
             hDec (by rw [← hFilled]; exact hDisp) with hSt | hN
+        · exact hNoFaultOf (by rw [hSt]; exact ⟨rfl, fun _ => rfl⟩)
+        · exact hN
+      · -- WS-SX SX36.1: a reply-receive whose receive the entry refused after its
+        -- reply faults only where it stopped where it started: its receive
+        -- capability resolved on entry, so the after-reply refusal is no lookup's
+        have hTcbRegs' :
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects[tid.toObjId]?
+              = some (.tcb tcb) := hTcbRegs
+        by_cases hY : decoded.syscallId = .yield
+        · exact Platform.FFI.syscallCapFaultAt_none_of_no_fault_phase ctx SeLe4n.arm64DefaultLayout
+            _ _ tid ke tcb decoded hTcbRegs' hDec (by rw [hY]; rfl)
+        obtain ⟨tcbF, gate, cap, hGate, hLk, hRecv, -⟩ :=
+          abiEntryLockOperands_gate_lookup decoded tid stSpilled ops hY hOps
+        obtain ⟨hTcbF, -, -, hGateEq⟩ :=
+          abiEntryGate_components decoded tid stSpilled tcbF gate hGate
+        have hTcbF' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcbF
+        rw [hFillObj, hTcbRegs'] at hTcbF'
+        simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcbF'
+        subst hTcbF'
+        have hResolve := syscallResolveCap_congr_objects gate stSpilled _ cap hFillObj
+          (syscallLookupCap_resolve gate stSpilled cap hLk)
+        subst hGateEq
+        have hRecv' : receiveGateRefuses decoded.syscallId tid
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) cap = false := by
+          rw [← hRecv]
+          unfold receiveGateRefuses receiveBoundRefuses notificationBoundElsewhere
+            syscallTargetAccepted objectKindIs
+          simp only [SystemState.getObject?, SystemState.getNotification?, hFillObj]
+        have hRRA : decoded.syscallId = .replyRecv := by
+          obtain ⟨_, _, _, _, _, _, _, _, _, hC', hO', hD', hRR', -⟩ := hA
+          rw [hRegsSch, hCur] at hC'
+          cases hC'
+          rw [hTcbRegs] at hO'
+          simp only [Option.some.injEq, KernelObject.tcb.injEq] at hO'
+          subst hO'
+          rw [hDec] at hD'
+          cases hD'
+          exact hRR'
+        have hAcc : syscallTargetAccepted .replyRecv
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) cap = true := by
+          rw [hRRA] at hRecv'
+          cases hT : syscallTargetAccepted .replyRecv
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) cap
+          · simp [receiveGateRefuses, syscallReceivesOnCap, hT] at hRecv'
+          · rfl
+        rcases ReplyRecvAfterReplyEntry.capFault_none_of_dispatch hA hRegsObjInv
+            (by rw [hRegsSch]; exact hCur) hTcbRegs hDec
+            (by
+              have hX := abiEntryLockOperands_extraCaps decoded tid stSpilled ops hY hOps
+              rw [hFilled] at hX
+              simp [syscallOperandLookup, hResolve, hRecv', hX])
+            hResolve hAcc (by rw [← hFilled]; exact hDisp) with hSt | hN
         · exact hNoFaultOf (by rw [hSt]; exact ⟨rfl, fun _ => rfl⟩)
         · exact hN
     rw [hNoFault] at hD

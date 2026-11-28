@@ -176,10 +176,11 @@ theorem replyTransferChecked_caps_inPlace (ctx : LabelingContext) (st : SystemSt
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb)
     (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .reply capAddr mi) :
+      stcb.registerContext = .reply capAddr mi)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi' regs
         { registers := Architecture.regMessageBody layout rf len,
-          badge := SeLe4n.Badge.opt badgeWord badged } true core st =
+          badge := SeLe4n.Badge.opt badgeWord badged } true core st keep =
       .ok ((), performReplyCapsDelivered st c server rid layout rf len badgeWord badged core
         stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps stcb.registerContext)
         ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
@@ -193,9 +194,9 @@ theorem replyTransferChecked_caps_inPlace (ctx : LabelingContext) (st : SystemSt
     omega
   obtain ⟨sgi, hD⟩ := replyDispatch_inPlace st replier c server ct ep rid
     { registers := Architecture.regMessageBody layout rf len,
-      badge := SeLe4n.Badge.opt badgeWord badged } core hSz' hT hIpc hRO hSRes hG
+      badge := SeLe4n.Badge.opt badgeWord badged } core hSz' hT hIpc hRO hSRes hG keep
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [hD]
   simp only []

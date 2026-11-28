@@ -1462,6 +1462,33 @@ def replyRecvDonationCores (st : SystemState) (receiver : SeLe4n.ThreadId) :
   | some t => if t.boundNotificationCode = 0 then [] else [determineTargetCore st receiver]
   | none => []
 
+/-- **The cores a reply-receive whose receive is refused after its reply may
+write** (seL4-MCS `handleReplyRecv`: `handleInvocation` answers the caller, then
+`handleRecv` refuses the receive capability): the reply leg's core, the caller's
+answer, and the nothing-received outcome on the state the answer left
+(`replyRecvNothingReceived`), read as the composite's write set reads them.  The
+receive capability is refused after the reply only where the entry refuses it
+(the flow gate), which the footprint does not read, so the arm names these cores
+too. -/
+def replyRecvAfterReplyStopCores (answer : Option Architecture.FaultReplyOutcome)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    List Concurrency.CoreId :=
+  determineTargetCore st prevCaller ::
+    (match endpointReplyOnCore receiver prevCaller msg executingCore st with
+     | (_, .error _) => []
+     | (st1, .ok _) =>
+        match replyRecvPopDonation replyId prevCaller st1 with
+        | .error _ => []
+        | .ok (returnedSc?, st1q) =>
+          match replyRecvReplyTransfer answer st receiver prevCaller grant st1q with
+          | .error _ => []
+          | .ok (xs, st1p) =>
+            replyRecvAnswerCores answer st1p prevCaller ++
+              replyRecvNothingReceivedWriteSet ((recordedReplyServer? st prevCaller).getD receiver)
+                executingCore returnedSc?
+                (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo))
+
 /-- **The `.replyRecv` arm's scheduler-domain footprint**: the arm runs either the
 composite (`replyRecvTransferOnCore`) or, when its receive completes the bound
 notification (seL4-MCS `receiveIPC`'s first branch), the reply leg alone
@@ -1469,16 +1496,27 @@ notification (seL4-MCS `receiveIPC`'s first branch), the reply leg alone
 writes only the object store.  Which one runs turns on the labelling context the
 footprint does not read, so it names both legs' cores: `schedFootprintOfCores` of
 the two write sets and of the two replenish-core lists, and the cores the
-completion's donation may write (`replyRecvDonationCores`).  The canonical
-segments deduplicate the shared cores. -/
+completion's donation may write (`replyRecvDonationCores`).  Where the entry's
+flow gate refuses the receive capability (`receiveRefused`, read on entry: the
+gate reads the labelling context and the capability alone), the reply runs and
+the receive is refused after it, so the arm names the cores that stop writes
+too (`replyRecvAfterReplyStopCores`); an admitted receive's footprint is the
+one without them (`schedLockSet_replyRecvArmOnCore_receiveAdmitted`).  The
+canonical segments deduplicate the shared cores. -/
 def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (label : Nat) (msg : IpcMessage) (grant receiveRefused : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
-    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
+    ((replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
         executingCore st ++
+      (if receiveRefused then
+        replyRecvAfterReplyStopCores (replyRecvCallerFaultAnswer? st prevCaller label msg) receiver
+          replyId prevCaller
+          (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+          executingCore st
+       else [])) ++
       (replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
         msg.registers msg executingCore st ++ replyRecvDonationCores st receiver))
     (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
@@ -1491,13 +1529,37 @@ def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
 /-- The composite's footprint is contained in the arm's. -/
 theorem schedLockSet_replyRecvTransferOnCore_subset_arm (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (label : Nat) (msg : IpcMessage) (grant receiveRefused : Bool)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
     ∀ p ∈ schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
         grant executingCore st,
       p ∈ schedLockSet_replyRecvArmOnCore endpointId receiver replyId prevCaller label msg grant
-        executingCore st :=
-  schedFootprintOfCores_subset (fun _ h => List.mem_append_left _ h)
+        receiveRefused executingCore st :=
+  schedFootprintOfCores_subset (fun _ h => List.mem_append_left _ (List.mem_append_left _ h))
     (fun _ h => List.mem_append_left _ h)
+
+/-- **An admitted receive's footprint is the arm's without the after-reply
+stop's cores**: where the entry's flow gate admits the receive capability, the
+arm's footprint is the union of the two legs' write sets, replenish cores and the
+completion's donation cores, exactly as before the receive was read after the
+reply. -/
+theorem schedLockSet_replyRecvArmOnCore_receiveAdmitted (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    schedLockSet_replyRecvArmOnCore endpointId receiver replyId prevCaller label msg grant false
+        executingCore st =
+      schedFootprintOfCores
+        (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
+            executingCore st ++
+          (replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
+            msg.registers msg executingCore st ++ replyRecvDonationCores st receiver))
+        (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+            endpointId receiver replyId prevCaller
+            (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+            executingCore st ++
+          (replyTransferReplenishCores receiver prevCaller msg executingCore st ++
+            replyRecvDonationCores st receiver)) := by
+  simp only [schedLockSet_replyRecvArmOnCore, Bool.false_eq_true, ↓reduceIte, List.append_nil]
 
 end SeLe4n.Kernel

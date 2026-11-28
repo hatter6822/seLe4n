@@ -414,11 +414,11 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
           (returnUnheldSchedContextInPlace
             ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c scId)
           (determineTargetCore st c) scId) ∧
-      (∀ cv : SeLe4n.ValidThreadId, cv.val = c →
+      (∀ (keep : Bool) (core : CoreId) (cv : SeLe4n.ValidThreadId), cv.val = c →
         applyReplyDonationOnCore
             ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) rid cv
             (determineTargetCore
-              ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c) =
+              ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c) keep core =
           .ok (SchedContextOps.settleReturnedContext
             (returnUnheldSchedContextInPlace
               ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c scId)
@@ -542,7 +542,7 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
   · unfold replyRecvPopDonation
     rw [hHolder]
     simp only [hPopT]
-  intro cv hcv
+  intro keep core cv hcv
   subst hcv
   unfold applyReplyDonationOnCore
   rw [hHolder]
@@ -586,8 +586,9 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
     (hG : replyUnheldPopsInPlace st c rid = true)
     (hNoF : ct.faultWords.isFault = false)
     (hX : replyTransferInert st replier ct grant = true)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st keep =
       .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len badgeWord badged) := by
   replace hMsg := hMsg.symm
@@ -613,13 +614,13 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
   have hNoP := returnUnheldSchedContextInPlace_noResizeDue _ c scId hNoS
   have hNoQ := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId hNoP
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte,
     replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hAns, hcv, SystemState.unlinkReplyWaiterOpt]
-  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performReplyUnheldDelivered
   subst hMsg
@@ -667,8 +668,8 @@ theorem replyDispatch_unlinked_inPlace (st : SystemState) (replier c : SeLe4n.Th
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
-    (hG : replyUnlinkedInPlace st c rid = true) :
-    ∃ sgi, endpointReplyCrossCoreDispatch replier c msg core st =
+    (hG : replyUnlinkedInPlace st c rid = true) (keep : Bool := false) :
+    ∃ sgi, endpointReplyCrossCoreDispatch replier c msg core st keep =
       (storeReplyLeg st c rid msg, .ok sgi) := by
   simp only [replyUnlinkedInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
@@ -732,8 +733,9 @@ theorem replyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st : Syst
     (hG : replyUnlinkedInPlace st c rid = true)
     (hNoF : ct.faultWords.isFault = false)
     (hX : replyTransferInert st replier ct grant = true)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st keep =
       .ok ((), performReplyUnlinkedDelivered st c rid layout rf len badgeWord badged) := by
   replace hMsg := hMsg.symm
   have hW : replyWakesInPlace st c ct rid = true := hG
@@ -741,14 +743,14 @@ theorem replyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st : Syst
   have hSz' : ¬ msg.registers.size > maxMessageRegisters := by
     rw [← hMsg, Architecture.regMessageBody_size]; simp only [maxMessageRegisters]; omega
   obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid msg core hSz' hT hIpc
-    hRO hG
+    hRO hG keep
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hNF : threadHasPendingFault st c = false := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
   have hNoS := storeReplyLegReady_noResizeDue st c rid hNo
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte,
     replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
   rw [hD]

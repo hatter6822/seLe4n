@@ -353,8 +353,11 @@ theorem dispatchSyscallChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
   · cases h
   rename_i stPost hD
   cases h
-  refine LendersStage.trans (b := stPost) ?_ (applySyscallTaint_lendersStage _ _ _)
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  refine LendersStage.trans (b := stPost) ?_
+    (checkedArmTaint_induct (fun x => LendersStage ctx stPost x)
+      (fun _ _ _ h => LendersStage.trans h (applySyscallTaint_lendersStage _ _ _))
+      (LendersStage.refl stPost))
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec _ cap st stPost
     (P tcb hTcb cap) hCaller hW hA (fun k hk => hCapOnly _ cap k stPost (P tcb hTcb cap) hk) hD
 

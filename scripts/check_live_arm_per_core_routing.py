@@ -1318,15 +1318,33 @@ def main() -> int:
             return (inert_declared
                     and not (called_per_arm[i] & bodies.keys())
                     and ".error" in armlist[i])
+        # An arm that reaches none of the declared roots but whose code calls
+        # exactly ONE definition delegates to it: that callee is the operation
+        # the arm runs, so it is the arm's root, derived from the code rather
+        # than hand-listed (`.replyRecv`'s after-reply arm runs
+        # `dispatchReplyRecvAfterReply` and nothing else).  Exactly one: an arm
+        # calling two or more definitions has no single delegate, and taking
+        # all of them would walk names it merely mentions, so it still fails
+        # closed and must be declared.
+        derived: set[str] = set()
+        def arm_delegate(i: int) -> str | None:
+            callees = called_per_arm[i] & bodies.keys()
+            return next(iter(callees)) if len(callees) == 1 else None
+        for i, c in enumerate(called_per_arm):
+            if not (declared & c) and not arm_is_inert(i):
+                d = arm_delegate(i)
+                if d is not None:
+                    derived.add(d)
         uncovered = [i for i, c in enumerate(called_per_arm)
-                     if not (declared & c) and not arm_is_inert(i)]
+                     if not (declared & c) and not arm_is_inert(i)
+                     and arm_delegate(i) is None]
         if uncovered:
             unverified.append((sid, root,
                                f"dispatch arm #{uncovered[0]} calls none of "
                                f"{sorted(declared)} — declare it as "
                                f"`\"{labels[sid]}#alt\"` in the aliases file"))
             continue
-        extra_roots.setdefault(sid, set()).update(d for d in declared
+        extra_roots.setdefault(sid, set()).update(d for d in declared | derived
                                                   if d != root and d in bodies)
     if unverified:
         print("[per-core-routing] FAIL: a mapped operation is not the one its live "

@@ -200,7 +200,8 @@ theorem of_propagatePipChainCrossCore (st : SystemState) (tid : SeLe4n.ThreadId)
 /-- The donated context's return, on each of its five arms. -/
 theorem of_applyReplyDonationOnCore (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {keep : Bool} {executingCore : CoreId}
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep executingCore = .ok st') :
     notificationsAndBindingsKept st st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
@@ -221,8 +222,8 @@ theorem of_applyReplyDonationOnCore (st st' : SystemState) (rid : SeLe4n.ReplyId
 priority-inheritance revert. -/
 theorem of_endpointReplyCrossCoreDispatch
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    notificationsAndBindingsKept st (endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+    (st : SystemState) (hObjInv : st.objects.invExt) (keep : Bool := false) :
+    notificationsAndBindingsKept st (endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have hRep := of_endpointReplyOnCore replier target msg c st hObjInv
   have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier target msg c st hObjInv
   unfold endpointReplyCrossCoreDispatch
@@ -258,12 +259,12 @@ theorem of_endpointReplyCrossCoreDispatch
 
 theorem of_endpointReplyCrossCoreDispatchChecked (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (st : SystemState) (hObjInv : st.objects.invExt) (keep : Bool := false) :
     notificationsAndBindingsKept st
-      (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+      (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st keep).1 := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact of_endpointReplyCrossCoreDispatch replier target msg c st hObjInv
+  · exact of_endpointReplyCrossCoreDispatch replier target msg c st hObjInv keep
   · exact refl st
 
 /-- A thread write keeps every notification (it writes a TCB slot only). -/
@@ -352,11 +353,11 @@ theorem of_faultReplyApplyOnCore (st : SystemState) (faulted : SeLe4n.ThreadId)
 
 theorem of_faultReplyOnCore (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    notificationsAndBindingsKept st (faultReplyOnCore replier faulted mi regs c st).1 := by
-  have hE := of_endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st hObjInv
+    (hObjInv : st.objects.invExt) (keep : Bool := false) :
+    notificationsAndBindingsKept st (faultReplyOnCore replier faulted mi regs c st keep).1 := by
+  have hE := of_endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st hObjInv keep
   have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
-    IpcMessage.empty c st hObjInv
+    IpcMessage.empty c st hObjInv keep
   unfold faultReplyOnCore
   split
   · exact refl st
@@ -374,26 +375,28 @@ on both of its branches. -/
 theorem of_replyTransferOnCoreChecked {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
-    {st st' : SystemState} (hObjInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    {st st' : SystemState} {keep : Bool} (hObjInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep
+      = .ok ((), st')) :
     notificationsAndBindingsKept st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
-  · have hF := of_faultReplyOnCore replier callerTid mi regs c st hObjInv
+  · have hF := of_faultReplyOnCore replier callerTid mi regs c st hObjInv keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h
     | ok _ => intro h hF; cases h; exact hF
-  · have hE := of_endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st hObjInv
-    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st).1.objects.invExt := by
+  · have hE := of_endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st hObjInv keep
+    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st
+        keep).1.objects.invExt := by
       unfold endpointReplyCrossCoreDispatchChecked
       split
-      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv
+      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv keep
       · exact hObjInv
     revert h hE hI
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _ _; cases h
@@ -422,8 +425,8 @@ end notificationsAndBindingsKept
 theorem faultReplyOnCore_preserves_objects_invExt
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    (faultReplyOnCore replier faulted mi regs c st).1.objects.invExt := by
+    (hObjInv : st.objects.invExt) (keep : Bool := false) :
+    (faultReplyOnCore replier faulted mi regs c st keep).1.objects.invExt := by
   cases hTcb : st.getTcb? faulted with
   | none => simpa only [faultReplyOnCore, hTcb] using hObjInv
   | some tcb =>
@@ -431,9 +434,9 @@ theorem faultReplyOnCore_preserves_objects_invExt
       | none => simpa only [faultReplyOnCore, hTcb, hFault] using hObjInv
       | some tf =>
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
-            faulted IpcMessage.empty c st hObjInv
+            faulted IpcMessage.empty c st hObjInv keep
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
-            with ⟨stR, res⟩
+            keep with ⟨stR, res⟩
           rw [hStep] at hRepObj
           simp only at hRepObj
           cases res with
