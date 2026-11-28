@@ -1381,6 +1381,108 @@ theorem replyRecvTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
           syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow,
           applyTaintStep, joinTaintAt_toWords_of_decode _ _ hT]
 
+/-- The answered caller's code is the resolution's caller where no extra
+capability fails and the reply answers it, `0` otherwise. -/
+theorem replyRecvAnsweringCallerCode_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (xc : Nat) (st : SystemState) :
+    replyRecvAnsweringCallerCode ctx tid w xc st =
+      match callerExtraCapsFault? st tid xc with
+      | some _ => 0
+      | none =>
+        match resolveReplyRecvReplyR st tid (SeLe4n.CPtr.ofWord w) with
+        | .ok (some (_, c, _, _)) => if replyRecvReplyAnswers ctx st tid c then c.val + 1 else 0
+        | _ => 0 := by
+  unfold replyRecvAnsweringCallerCode
+  rw [callerExtraCapsFailK_eq]
+  cases callerExtraCapsFault? st tid xc with
+  | some _ => rfl
+  | none =>
+    dsimp only
+    rw [resolveReplyRecvK_eq_of st tid _ _ _ _ _ (fun _ c _ _ => c.val + 1)
+      (fun _ _ _ _ _ _ => rfl)]
+    cases resolveReplyRecvReplyR st tid (SeLe4n.CPtr.ofWord w) with
+    | error e => rfl
+    | ok r =>
+      cases r with
+      | none => rfl
+      | some q => obtain ⟨rid, c, b, g⟩ := q; rfl
+
+/-- **The entry route's refusal step is its rule** (WS-SX SX36): the compiled
+operand arm's refusal, through the answered caller's code and the words and
+codes captured before the arm, is `replyRecvEntryRefusalTaint`.
+Unconditional. -/
+theorem replyRecvEntryRefusalTaint_eq_step (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (w : UInt64) (cap : Capability) (st s : SystemState) :
+    replyRecvEntryRefusalTaintStep (replyRecvAnsweringCallerCode ctx tid w xc st)
+        (receiveTaintSourceCode st cap)
+        (senderAwaitsReceiveOfCode st (receiveTaintSourceCode st cap)) tid
+        (st.taintWordsAt tid.toObjId)
+        (st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap))) s =
+      replyRecvEntryRefusalTaint ctx tid xc (SeLe4n.CPtr.ofWord w) cap st s := by
+  rw [replyRecvAnsweringCallerCode_eq]
+  unfold replyRecvEntryRefusalTaint replyRecvEntryRefusalTaintStep
+  cases callerExtraCapsFault? st tid xc with
+  | some _ => rfl
+  | none =>
+    dsimp only
+    cases resolveReplyRecvReplyR st tid (SeLe4n.CPtr.ofWord w) with
+    | error e => rfl
+    | ok r =>
+      cases r with
+      | none => rfl
+      | some q =>
+        obtain ⟨rid, c, b, g⟩ := q
+        dsimp only
+        cases replyRecvReplyAnswers ctx st tid c with
+        | false => rfl
+        | true =>
+          simp only [↓reduceIte]
+          rw [replyRecvRefusalTaint_eq_step]
+          cases c with
+          | mk cv =>
+          congr 1
+          cases hTg : cap.target with
+          | object epId =>
+            dsimp only
+            have hSc : receiveTaintSourceCode st cap = receiveLegSourceCode st epId := by
+              simp only [receiveTaintSourceCode, receiveLegSourceCode, hTg]
+              cases st.getEndpoint? epId <;> rfl
+            rw [hSc, replyRecvReceiveLegRefusalTaint_eq_step]
+          | _ =>
+            dsimp only
+            have hSc : receiveTaintSourceCode st cap = 0 := by
+              unfold receiveTaintSourceCode; rw [hTg]
+            rw [hSc]; rfl
+
+/-- **A refusal on the state handed in carries no flow**: the caller the reply
+answers still waits for it, and the receive's sender still waits. -/
+theorem replyRecvEntryRefusalTaint_self (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (replyAddr : SeLe4n.CPtr) (cap : Capability) (st : SystemState) :
+    replyRecvEntryRefusalTaint ctx tid xc replyAddr cap st st = st := by
+  unfold replyRecvEntryRefusalTaint
+  split
+  · rfl
+  · split
+    · rename_i c _ _ _
+      split
+      · rename_i hA
+        simp only [replyRecvReplyAnswers, Bool.and_eq_true] at hA
+        cases hTg : cap.target <;> dsimp only <;>
+          (try rw [replyRecvReceiveLegRefusalTaint_self]) <;>
+          unfold replyRecvRefusalTaint <;> rw [if_pos hA.2]
+      · rfl
+    · rfl
+
+/-- The compiled refusal step on the state handed in is that state. -/
+theorem replyRecvEntryRefusalStep_self (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (xc : Nat) (w : UInt64) (cap : Capability) (st : SystemState) :
+    replyRecvEntryRefusalTaintStep (replyRecvAnsweringCallerCode ctx tid w xc st)
+        (receiveTaintSourceCode st cap)
+        (senderAwaitsReceiveOfCode st (receiveTaintSourceCode st cap)) tid
+        (st.taintWordsAt tid.toObjId)
+        (st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap))) st = st := by
+  rw [replyRecvEntryRefusalTaint_eq_step, replyRecvEntryRefusalTaint_self]
+
 theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
@@ -1441,7 +1543,10 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
         simp -iota only [hRR]
         rcases dispatchWithCapChecked ctx decoded tid executingCore
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight .replyRecv }
-          cap st with _ | ⟨⟨⟩, stPost⟩ <;> rfl
+          cap st with e' | ⟨⟨⟩, stPost⟩
+        · dsimp only
+          rw [hReply, replyRecvEntryRefusalTaint_eq_step]
+        · rfl
       · simp -iota only [hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte]
         rfl
 
@@ -1526,14 +1631,17 @@ theorem replyRecvOperandArmThenTaintR_refuses_unchanged (ctx : LabelingContext)
     · rw [hA] at h; cases h
     · rw [hRt] at h; cases h
     · exact h
-  simp only [↓reduceIte, withTaintWordsAt_eq]
+  simp only [↓reduceIte, withTaintWordsAt_eq, TaintWords.mk_fields]
   unfold endpointReplyRecvCheckedArmR
   cases hT : cap.target with
   | object epId =>
     dsimp only
     rw [hFl epId hT]
+    simp only [Bool.not_false, ↓reduceIte, replyRecvEntryRefusalStep_self]
     exact ⟨_, rfl⟩
-  | _ => exact ⟨_, rfl⟩
+  | _ =>
+    simp only [replyRecvEntryRefusalStep_self]
+    exact ⟨_, rfl⟩
 
 /-- **Today's reply-receive route refuses wherever the after-reply route runs,
 on the state it was handed** (WS-SX SX36.1): where the reply answers and the
@@ -2203,7 +2311,10 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
         simp -iota only [hRR]
         rcases dispatchWithCapChecked ctx decoded tid executingCore
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight .replyRecv }
-          cap st with _ | ⟨⟨⟩, stPost⟩ <;> rfl
+          cap st with e' | ⟨⟨⟩, stPost⟩
+        · dsimp only
+          rw [hReply, replyRecvEntryRefusalTaint_eq_step]
+        · rfl
       · simp -iota only [hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte]
         rfl
 

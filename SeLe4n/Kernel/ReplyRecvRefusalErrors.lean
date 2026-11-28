@@ -638,7 +638,8 @@ theorem ReplyRecvAnsweringEntry.entry_error {ctx : LabelingContext} {e : CoreId}
     {st s : SystemState} {ke : KernelError} (hA : ReplyRecvAnsweringEntry ctx e st s)
     (h : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout e 32 st = .error ke) :
     ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (epId : SeLe4n.ObjId)
-      (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool),
+      (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
+      (cap : Capability),
       st.scheduler.currentOnCore e = some tid ∧
       st.objects[tid.toObjId]? = some (.tcb tcb) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
@@ -649,7 +650,8 @@ theorem ReplyRecvAnsweringEntry.entry_error {ctx : LabelingContext} {e : CoreId}
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
           requiredRight := syscallRequiredRight decoded.syscallId }
         (syscallExtraCapCount decoded.syscallId decoded.msgInfo.extraCaps) st = .ok () ∧
-      s = replyRecvTransferStoppedState epId tid rid c label msg grant e st ∧
+      s = replyRecvEntryRefusalTaint ctx tid decoded.msgInfo.extraCaps decoded.replyCPtr cap st
+        (replyRecvTransferStoppedState epId tid rid c label msg grant e st) ∧
       replyRecvTransferOnCore epId tid rid c label msg grant e st = .error ke := by
   obtain ⟨tid, tcb, decoded, ref, hCtx, hCur, hObj, hDec, hRR, hRef, cap, epId, rid, c, badge,
     grant, hCap, hRes, hAcc, hRight, hTgt, hFlow, hXc, hR, hAns, hSig, hS⟩ := hA
@@ -663,7 +665,7 @@ theorem ReplyRecvAnsweringEntry.entry_error {ctx : LabelingContext} {e : CoreId}
     simp only [syscallResolveCap, SyscallGate.lookupSlot_mk, hRef, hCap, hRes, Bool.false_eq_true,
       ↓reduceIte]
   have hXc0 : ∀ n, syscallExtraCapCount .replyRecv n = 0 := fun _ => rfl
-  refine ⟨tid, tcb, decoded, epId, rid, c, _, _, grant, hCur, hObj', hDec, hRR, ?_, hS, ?_⟩
+  refine ⟨tid, tcb, decoded, epId, rid, c, _, _, grant, cap, hCur, hObj', hDec, hRR, ?_, hS, ?_⟩
   · rw [hRR]
     simp only [syscallOperandLookup, hResolve, hXc0, callerExtraCapsFault?_zero, receiveGateRefuses,
       hAcc, hRight, receiveBoundRefuses, Bool.not_true, Bool.false_or, Bool.and_false,
@@ -702,13 +704,13 @@ theorem ReplyRecvAnsweringEntry.capFault_none {ctx : LabelingContext} {e : CoreI
     (hCur : st.scheduler.currentOnCore e = some t)
     (h : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout e 32 st = .error ke) :
     s = st ∨ Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout st s t ke = none := by
-  obtain ⟨tid, tcb, decoded, epId, rid, c, label, msg, grant, hCur', hObj, hDec, hRR, hLookup, hS,
-    hErr⟩ := hA.entry_error h
+  obtain ⟨tid, tcb, decoded, epId, rid, c, label, msg, grant, cap, hCur', hObj, hDec, hRR, hLookup,
+    hS, hErr⟩ := hA.entry_error h
   rw [hCur] at hCur'
   cases hCur'
   rcases replyRecvTransferOnCore_refusal_notLookup epId t rid c label msg grant e st hInv hErr with
     hSt | hKe
-  · exact Or.inl (hS.trans hSt)
+  · exact Or.inl (hS.trans (by rw [hSt]; exact replyRecvEntryRefusalTaint_self ..))
   · exact Or.inr (syscallCapFaultAt_none_of_lookup_ok_of_notLookup ctx _ st s t ke tcb decoded true
       hObj hDec (by rw [hRR]; rfl) hLookup hKe)
 

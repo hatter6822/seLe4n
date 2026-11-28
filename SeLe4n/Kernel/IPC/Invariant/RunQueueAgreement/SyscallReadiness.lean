@@ -2199,10 +2199,23 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
       · rw [hEq]; exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _⟩
       · rw [hEq]
         exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e⟩
-      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+      · obtain ⟨t, _, _, _, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
         rw [hCur1] at hCt
         cases hCt
         rw [hEq]
+        refine replyRecvEntryRefusalTaint_induct
+          (fun x => SystemState.RunQueueEntryStage
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x ∧
+            readyKeptStage (· = tid)
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx =>
+            have hS := SystemState.RunQueueStage.of_objectsAgreeOffTaint
+              (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+              applySyscallTaint_invExt (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler])
+            ⟨SystemState.RunQueueEntryStage.trans hx.1 hS.entry,
+              readyKeptStage.trans_links hx.1.1.links hx.2 (readyKeptStage.of_stage hS)⟩) ?_
         exact ⟨replyRecvTransferStoppedState_runQueueEntryStage E1.objInv E1.refined E1.dequeued
             E1.queueHeads hCur1 hNI,
           replyRecvTransferStoppedState_readyKeptStage E1.objInv E1.refined E1.dequeued

@@ -1195,6 +1195,21 @@ def replyRecvReceiveLegPlan (st : SystemState) (tid : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) : TaintPlan :=
   { edges := receiverTaintEdges st tid epId }
 
+/-- **The reply an answering reply-receive delivered, as a plan of its own**:
+the one edge from the server to the caller its reply answered, nothing
+cleared, bypassed or originated.  The flow a refused reply-receive carries
+where its reply reached the caller. -/
+def replyRecvAnsweredPlan (prevCaller tid : SeLe4n.ThreadId) : TaintPlan :=
+  { edges := [{ sink := prevCaller.toObjId, source := tid.toObjId }] }
+
+/-- **The message a receive copied from the sender it took, as a plan of its
+own**: the one edge from that sender into the receiver, nothing cleared,
+bypassed or originated.  The flow a refused reply-receive carries where its
+receive copied the sender's message; a bound notification's word is never
+part of it, since no refusal delivers one. -/
+def replyRecvReceivedSenderPlan (tid sender : SeLe4n.ThreadId) : TaintPlan :=
+  { edges := [{ sink := tid.toObjId, source := sender.toObjId }] }
+
 /-- WS-SM SM9.D.7: an inert syscall plans no content movement — the property the
 reach gate checks the *other* half of (that nothing it calls moves content
 either).

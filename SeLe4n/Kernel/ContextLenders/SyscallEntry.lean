@@ -263,6 +263,11 @@ theorem LendersStep.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
       (by rw [← resolveReplyRecvReplyR_eq st tid _ decoded rfl
         (by simp only [callerCspaceRoot, hObj]), hR])
     rw [hS]
+    refine replyRecvEntryRefusalTaint_induct (fun x => LendersStep ctx st x)
+      (fun _ _ x hx => ⟨hx.stage.trans (LendersStage.of_viewsAgree
+          (contextStackViewsAgree_of_objectsAgreeOffTaint
+            (applySyscallTaint_objectsAgreeOffTaint _ _ _))),
+        applySyscallTaint_invExt hx.invExt⟩) ?_
     exact LendersStep.replyRecvTransferStoppedState hInv (resolveReplyRecvReplyR_some_caller hR) hD
   · -- WS-SX SX36.1: the after-reply stop, its receive read on the answered state
     obtain ⟨tid, tcb, decoded, gate, rid, prevCaller, replyBadge, replyGrant, -, hCur, hObj, hDec,

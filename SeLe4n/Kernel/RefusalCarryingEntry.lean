@@ -446,7 +446,8 @@ SX34): the operand `cap?` is a capability the reply-receive accepts, on an
 endpoint whose receive flow gate passes, no extra capability faults, the reply
 capability resolves to a caller the reply answers on a receive that completes
 no bound notification, and the report `s` is the state the transition's
-refusing step stopped in (`replyRecvTransferStoppedState`). -/
+refusing step stopped in (`replyRecvTransferStoppedState`), with the flow its
+refusal carries (`replyRecvEntryRefusalTaint`). -/
 def ReplyRecvAnsweringReported (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (decoded : SyscallDecodeResult)
     (cap? : Option Capability) (st s : SystemState) : Prop :=
@@ -462,10 +463,35 @@ def ReplyRecvAnsweringReported (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     resolveReplyRecvReplyR st tid decoded.replyCPtr = .ok (some (rid, c, badge, grant)) ∧
     replyRecvReplyAnswers ctx st tid c = true ∧
     receiveCompletesSignal ctx st tid = false ∧
-    s = replyRecvTransferStoppedState epId tid rid c decoded.msgInfo.label
-      { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-        badge := badge }
-      grant executingCore st
+    s = replyRecvEntryRefusalTaint ctx tid decoded.msgInfo.extraCaps decoded.replyCPtr cap st
+      (replyRecvTransferStoppedState epId tid rid c decoded.msgInfo.label
+        { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+          badge := badge }
+        grant executingCore st)
+
+/-- A refusal whose extra capability fails carries no reply-receive flow. -/
+theorem replyRecvEntryRefusalTaint_of_fault {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {xc : Nat} {replyAddr : SeLe4n.CPtr} {cap : Capability} {st : SystemState} {f}
+    (h : callerExtraCapsFault? st tid xc = some f) (s : SystemState) :
+    replyRecvEntryRefusalTaint ctx tid xc replyAddr cap st s = s := by
+  unfold replyRecvEntryRefusalTaint; rw [h]
+
+/-- A refusal whose reply answers no caller carries no reply-receive flow. -/
+theorem replyRecvEntryRefusalTaint_of_skips {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {xc : Nat} {replyAddr : SeLe4n.CPtr} {cap : Capability} {st : SystemState}
+    (h : (replyRecvRepliesToNoOne st tid replyAddr ||
+      replyRecvReplyRefused ctx st tid replyAddr) = true) (s : SystemState) :
+    replyRecvEntryRefusalTaint ctx tid xc replyAddr cap st s = s := by
+  unfold replyRecvEntryRefusalTaint
+  unfold replyRecvRepliesToNoOne replyRecvReplyRefused at h
+  split
+  · rfl
+  · split
+    · rename_i c _ _ _ hR
+      rw [hR] at h
+      simp only [Bool.false_or, Bool.not_eq_true'] at h
+      rw [if_neg (by rw [h]; exact Bool.false_ne_true)]
+    · rfl
 
 /-- A reply-receive's report on its decode is the state handed to it or its
 busy reply's cancel: the latter only when it skipped its reply and received,
@@ -580,10 +606,12 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
     · rename_i hRight
       split
       · rename_i hXc
+        rw [replyRecvEntryRefusalTaint_of_fault hXc]
         exact (hRecvCase _ (by simp [replyRecvSkipsReply, hXc])).imp_right Or.inl
       · rename_i hXc
         split
         · rename_i hNo
+          rw [replyRecvEntryRefusalTaint_of_skips hNo]
           rcases (Bool.or_eq_true _ _).mp hNo with hNo | hRef
           · exact (hRecvCase _
               (by simp [replyRecvSkipsReply, resolveReplyRecvReply_of_repliesToNoOne hNo])).imp_right
@@ -598,7 +626,7 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
               split
               · rename_i rid c badge grant hR
                 split
-                · exact Or.inl rfl
+                · exact Or.inl (replyRecvEntryRefusalTaint_self ..)
                 · rename_i hSig
                   have hAns : replyRecvReplyAnswers ctx st tid c = true := by
                     simp only [replyRecvRepliesToNoOne, replyRecvReplyRefused, hR, Bool.false_or,
@@ -607,9 +635,9 @@ theorem replyRecvDecodedReport_cases (ctx : LabelingContext) (tid : SeLe4n.Threa
                   exact Or.inr (Or.inr ⟨cap, epId, rid, c, badge, grant, rfl,
                     by simpa using hRes, by simpa using hAcc, hRight, hTgt, hFlow, hXc, hR, hAns,
                     by simpa using hSig, rfl⟩)
-              · exact Or.inl rfl
-            · exact Or.inl rfl
-          · exact Or.inl rfl
+              · exact Or.inl (replyRecvEntryRefusalTaint_self ..)
+            · exact Or.inl (replyRecvEntryRefusalTaint_self ..)
+          · exact Or.inl (replyRecvEntryRefusalTaint_self ..)
     · exact Or.inl rfl
   unfold operandReport
   split
@@ -669,7 +697,7 @@ decodes, in a secure labelling context, to a reply-receive whose reply answers
 and whose receive capability the entry refuses (`replyRecvRefusedOnEntry?`), and
 the report `s` is the state the after-reply composite stopped in, with the reply
 leg's edge where the reply was delivered and the receive leg's where the
-receive took a sender (`replyRecvAfterReplyRefusalTaint`). -/
+receive copied a sender's message (`replyRecvAfterReplyRefusalTaint`). -/
 def ReplyRecvAfterReplyEntry (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (st s : SystemState) : Prop :=
   ∃ (tid : SeLe4n.ThreadId) (tcb : TCB) (decoded : SyscallDecodeResult) (gate : SyscallGate)
@@ -723,19 +751,59 @@ theorem resolveReplyRecvReplyR_some_caller {st : SystemState} {tid : SeLe4n.Thre
       exact hC
     · cases h
 
+/-- Every property the taint step keeps, the entry route's refusal flow
+keeps. -/
+theorem replyRecvEntryRefusalTaint_induct (P : SystemState → Prop)
+    (hStep : ∀ (plan : TaintPlan) (pre s : SystemState), P s → P (applySyscallTaint plan pre s))
+    {ctx : LabelingContext} {tid : SeLe4n.ThreadId} {xc : Nat} {replyAddr : SeLe4n.CPtr}
+    {cap : Capability} {st s : SystemState} (h : P s) :
+    P (replyRecvEntryRefusalTaint ctx tid xc replyAddr cap st s) := by
+  have hR : ∀ c x, P x → P (replyRecvRefusalTaint st tid c x) := by
+    intro c x hx
+    unfold replyRecvRefusalTaint
+    split
+    · exact hx
+    · exact hStep _ _ _ hx
+  unfold replyRecvEntryRefusalTaint
+  have hL : ∀ epId, P (replyRecvReceiveLegRefusalTaint st tid epId s) := by
+    intro epId
+    unfold replyRecvReceiveLegRefusalTaint
+    split
+    · split
+      · exact hStep _ _ _ h
+      · exact h
+    · exact h
+  have hI : P (match cap.target with
+      | .object epId => replyRecvReceiveLegRefusalTaint st tid epId s
+      | _ => s) := by
+    split
+    · exact hL _
+    · exact h
+  split
+  · exact h
+  · split
+    · split
+      · exact hR _ _ hI
+      · exact h
+    · exact h
+
 /-- What a reply-receive's stopped-state report gives its consumers: the
 running thread, the answered caller, the receive leg's flow gate and the
-report as the transition's stopped state. -/
+report as the transition's stopped state, with its refusal's flow
+(`replyRecvEntryRefusalTaint`). -/
 theorem ReplyRecvAnsweringEntry.stopped {ctx : LabelingContext} {e : Concurrency.CoreId}
     {st s : SystemState} (h : ReplyRecvAnsweringEntry ctx e st s) :
     ∃ (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId)
-      (label : Nat) (msg : IpcMessage) (grant : Bool),
+      (label : Nat) (msg : IpcMessage) (grant : Bool) (xc : Nat) (replyAddr : SeLe4n.CPtr)
+      (cap : Capability),
       st.scheduler.currentOnCore e = some tid ∧ replyAnsweredCaller? st rid = some c ∧
       endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true ∧
-      s = replyRecvTransferStoppedState epId tid rid c label msg grant e st := by
+      s = replyRecvEntryRefusalTaint ctx tid xc replyAddr cap st
+        (replyRecvTransferStoppedState epId tid rid c label msg grant e st) := by
   obtain ⟨tid, -, decoded, -, -, hCur, -, -, -, -, cap, epId, rid, c, badge, grant, -, -, -, -, -,
     hFlow, -, hR, -, -, hS⟩ := h
-  exact ⟨tid, epId, rid, c, _, _, grant, hCur, resolveReplyRecvReplyR_some_caller hR, hFlow, hS⟩
+  exact ⟨tid, epId, rid, c, _, _, grant, _, _, cap, hCur, resolveReplyRecvReplyR_some_caller hR,
+    hFlow, hS⟩
 
 /-- **What a refusal of the checked entry reports is the state handed to it or
 its busy reply's cancel**: `cancelReceiveBusyReply` is the identity, or the

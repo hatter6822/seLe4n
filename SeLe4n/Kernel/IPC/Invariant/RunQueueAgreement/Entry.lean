@@ -965,10 +965,16 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         hEq | ⟨_, hd, -, -, hEq⟩ | hA | hB
       · rw [hEq]; exact (RunQueueStage.refl _).entry
       · rw [hEq]; exact cancelReplyHolder_runQueueEntryStage _ hd e
-      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+      · obtain ⟨t, _, _, _, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
         rw [hCur1] at hCt
         cases hCt
         rw [hEq]
+        refine replyRecvEntryRefusalTaint_induct (fun x => SystemState.RunQueueEntryStage _ x)
+          (fun _ _ x hx => SystemState.RunQueueEntryStage.trans hx
+            (RunQueueStage.of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+              applySyscallTaint_invExt (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler])).entry) ?_
         exact replyRecvTransferStoppedState_runQueueEntryStage E1.objInv E1.refined E1.dequeued
           E1.queueHeads hCur1 hNI
       · -- WS-SX SX36.1: the after-reply stop is a stage

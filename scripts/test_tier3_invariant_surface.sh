@@ -4934,7 +4934,11 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringBodyThenR_eq($|[
 # carries the receive-leg step inside the reply-leg step.
 run_check "INVARIANT" rg -n '^theorem replyRecvAfterReplyRunR_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvAfterReplyRefusalTaint_induct($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '^          \| \.error e =>\n            \.error \(e, replyRecvRefusalTaintStep callerCode prevCaller tid\n              ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩\n              \(receiveLegRefusalTaintStep sc so tid ' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^        \| \.error \(e, s\) =>\n          \.error \(e, replyRecvRefusalTaintStep callerCode prevCaller tid\n            ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩\n            \(receiveLegRefusalTaintStep so aw tid ' SeLe4n/Kernel/API.lean
+# WS-SX SX36: the entry-resolved route's refusal carries the same rule, its
+# answered caller and sender read before the arm.
+run_check "INVARIANT" rg -n -U '^          \| \.error \(e, s\) =>\n              \.error \(e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvEntryRefusalTaint_eq_step($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvEquations.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def dispatchCheckedImplArm [^\n]*\n(    [^\n]*\n|  [^\n]*\n)*[^\n]*replyRecvAfterReplyRunR ctx gate decoded tid executingCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvAnsweringThenR_eq_reporting($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '^              match replyRecvTransferOnCoreR epId tid rid prevCaller mi\.label msg\n                  replyGrant executingCore st with\n              \| \.ok \(summary, st.\) =>\n                  \.ok \(\(\), Architecture\.stageDeliveredMessage st. tid summary\.capInfo\)\n              \| \.error es => \.error es\)$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

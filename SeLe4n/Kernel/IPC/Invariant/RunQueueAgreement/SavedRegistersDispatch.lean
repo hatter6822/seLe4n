@@ -903,8 +903,16 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
           cancelReplyHolder_objects_invExt _ hd e iW⟩
       · -- WS-SX SX34: a reply-receive's stopped state writes only the answered
         -- caller's saved registers
-        obtain ⟨_, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
         rw [hX]
+        refine replyRecvEntryRefusalTaint_induct
+          (fun x => savedRegsWrittenFree e st
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x ∧
+            x.objects.invExt)
+          (fun _ _ x hx => ⟨hx.1.trans (savedRegsWrittenFree.of_kept (W := fun _ => False)
+              (savedRegsKeptExcept.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) fun _ h => h.elim),
+            applySyscallTaint_invExt hx.2⟩) ?_
         obtain ⟨w, i⟩ := replyRecvTransferStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW
         exact ⟨w.rebase hBase, i⟩
       · -- WS-SX SX36.1: the after-reply stop writes only the answered caller's

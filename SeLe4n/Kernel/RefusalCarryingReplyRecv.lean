@@ -141,6 +141,31 @@ def replyRecvArmReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
       receiveArmReport ctx tid true replyAddr executingCore cap st
     else replyRecvAnsweringReport ctx tid mi regs replyAddr executingCore cap st
 
+/-- **The flow a refused answering reply-receive carries, its receive
+capability resolved on entry** (WS-SX SX36): where no extra capability fails
+and the reply answers its caller `c` on the entry state, the reply leg's edge
+where the reply was delivered (`replyRecvRefusalTaint`) and the receive leg's
+where the receive copied a sender's message (`replyRecvReceiveLegRefusalTaint`,
+on the endpoint the capability names, read on the entry state as the commit's
+plan reads it); the state as it is otherwise, since a refusal that skips the
+reply delivered nothing to a caller.  The rule the after-reply route's refusal
+follows (`replyRecvAfterReplyRefusalTaint`), on the entry state. -/
+def replyRecvEntryRefusalTaint (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (extraCaps : Nat) (replyAddr : SeLe4n.CPtr) (cap : Capability) (st s : SystemState) :
+    SystemState :=
+  match callerExtraCapsFault? st tid extraCaps with
+  | some _ => s
+  | none =>
+    match resolveReplyRecvReplyR st tid replyAddr with
+    | .ok (some (_, c, _, _)) =>
+      if replyRecvReplyAnswers ctx st tid c then
+        replyRecvRefusalTaint st tid c
+          (match cap.target with
+            | .object epId => replyRecvReceiveLegRefusalTaint st tid epId s
+            | _ => s)
+      else s
+    | _ => s
+
 /-- The checked reply-receive arm (`dispatchWithCapChecked`'s `.replyRecv`
 case) through the specification's path
 (`endpointReplyRecvCheckedArmGeneralR_eq`): a refusal before the reply is
@@ -223,6 +248,19 @@ as the operand is.  WS-ZA ZA4.7. -/
       (fun cnode slot =>
         replyRecvCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
           answers onErr onNone onOk)
+
+/-- **The caller a reply-receive's reply answers, as its code**
+(`SeLe4n.ThreadId.optCode`), on the state it is handed, in continuation form:
+the caller the reply capability at `replyWord` names, where no extra
+capability of the reply fails and the reply answers it
+(`replyRecvReplyAnswers`), and `0` otherwise.  Out of line, with the state
+borrowed, so nothing is built and the state is not held. -/
+@[noinline] def replyRecvAnsweringCallerCode (ctx : @& LabelingContext) (tid : SeLe4n.ThreadId)
+    (replyWord : UInt64) (extraCaps : Nat) (st : @& SystemState) : Nat :=
+  callerExtraCapsFailK st tid extraCaps (fun _ => 0) fun _ =>
+    resolveReplyRecvK st tid (SeLe4n.CPtr.ofWord replyWord)
+      (fun c => replyRecvReplyAnswers ctx st tid c) (fun _ => 0) (fun _ => 0)
+      (fun _ _ c _ _ => c.val + 1)
 
 /-- WS-ZA ZA4.7: a reply-receive answers a caller blocked on this server and
 then blocks, every write in its slot: the caller's reply leg may write in place
@@ -925,9 +963,23 @@ caller's (`replyRecvTaintStep_eq`). -/
     (tid : SeLe4n.ThreadId) (wN wS wT : TaintWords) (post : SystemState) : SystemState :=
   sendTaintStep callerCode tid wT (receiveTaintStep signalCode sourceCode tid wN wS post)
 
+/-- The entry route's refusal step, without the plan
+(`replyRecvEntryRefusalTaint`): where the reply answers the caller the code
+`answered` names, the receive leg's refusal step, then the reply leg's; the
+state as it is where it answers none. -/
+@[inline] def replyRecvEntryRefusalTaintStep (answered sourceCode : Nat) (awaited : Bool)
+    (tid : SeLe4n.ThreadId) (wT wS : TaintWords) (s : SystemState) : SystemState :=
+  match answered with
+  | 0 => s
+  | c + 1 =>
+    replyRecvRefusalTaintStep (c + 1) ⟨c⟩ tid wT
+      (receiveLegRefusalTaintStep sourceCode awaited tid wS s)
+
 /-- WS-ZA ZA4.7: the reply-receive's slot check, gate, arm and taint step on
-the capability its operand resolved to.  Every refusal carries the state it was
-handed (`replyRecvOperandArmThenTaintR_eq`). -/
+the capability its operand resolved to.  A refusal of the arm carries the
+state the arm stopped in, with an answering reply-receive's flow taken through
+words captured before the arm (`replyRecvEntryRefusalTaint`,
+`replyRecvOperandArmThenTaintR_eq`). -/
 @[inline] def replyRecvOperandArmThenTaintR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
@@ -943,12 +995,17 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
           let signalCode := receiveTaintSignalCode st tid cap
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCode st tid layout rf extraCaps
+          let answered := replyRecvAnsweringCallerCode ctx tid
+            (SeLe4n.readRegWord rf layout.replyReg) extraCaps st
+          let awaited := senderAwaitsReceiveOfCode st sourceCode
           withTaintWordsAt st (notifObjOfCode signalCode) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           withTaintWordsAt st tid.toObjId fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
           match endpointReplyRecvCheckedArmR ctx layout rf len extraCaps label tid executingCore
               cap st with
-          | .error refusal => .error refusal
+          | .error (e, s) =>
+              .error (e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid
+                ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s)
           | .ok ((), stPost) =>
               .ok ((), replyRecvTaintStep signalCode sourceCode callerCode tid
                 ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
@@ -956,9 +1013,10 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
         else .error (syscallMissingRightError .replyRecv, st)
 
 /-- **The state a refusal of a reply-receive's operand arm reports**: its
-arm's (`replyRecvArmReport`) once the operand's slot check and rights pass; the
-state it was handed otherwise, since every refusal before the arm writes
-nothing. -/
+arm's (`replyRecvArmReport`) once the operand's slot check and rights pass,
+with the flow an answering reply-receive's refusal carries
+(`replyRecvEntryRefusalTaint`); the state it was handed otherwise, since every
+refusal before the arm writes nothing. -/
 def replyRecvOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId)
     (requiredRight : AccessRight) (operand : Option Capability) (st : SystemState) :
@@ -969,7 +1027,8 @@ def replyRecvOperandReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     if SeLe4n.Kernel.capTargetsReservedKernelObject cap then st
     else if !syscallTargetAccepted .replyRecv st cap then st
     else if cap.hasRight requiredRight then
-      replyRecvArmReport ctx tid mi regs replyAddr executingCore cap st
+      replyRecvEntryRefusalTaint ctx tid mi.extraCaps replyAddr cap st
+        (replyRecvArmReport ctx tid mi regs replyAddr executingCore cap st)
     else st
 
 /-! ### The long reply-receive -/
@@ -1370,8 +1429,8 @@ replier's overflow words into the caller's buffer
 
 /-- The long reply-receive's slot check, gate, arm and taint step on the
 capability its operand resolved to (`endpointReplyRecvLongCheckedArmR`), its
-taint the short reply-receive's (`replyRecvTaintStep`).  Every refusal carries
-the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
+taint the short reply-receive's (`replyRecvTaintStep`), and its refusals the
+short one's (`replyRecvEntryRefusalTaint`, `replyRecvLongOperandArmThenTaintR_eq`). -/
 @[inline] def replyRecvLongOperandArmThenTaintR (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
@@ -1387,12 +1446,17 @@ the state it was handed (`replyRecvLongOperandArmThenTaintR_eq`). -/
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCode st tid SeLe4n.arm64DefaultLayout rf
             extraCaps
+          let answered := replyRecvAnsweringCallerCode ctx tid
+            (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.replyReg) extraCaps st
+          let awaited := senderAwaitsReceiveOfCode st sourceCode
           withTaintWordsAt st (notifObjOfCode signalCode) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           withTaintWordsAt st tid.toObjId fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
           match endpointReplyRecvLongCheckedArmR ctx rf len extraCaps label tid executingCore
               cap st with
-          | .error refusal => .error refusal
+          | .error (e, s) =>
+              .error (e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid
+                ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s)
           | .ok ((), stPost) =>
               .ok ((), replyRecvTaintStep signalCode sourceCode callerCode tid
                 ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩

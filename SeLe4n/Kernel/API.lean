@@ -7615,6 +7615,47 @@ theorem receiveTransferCaps_ok (req : Option (Capability × Array SeLe4n.CPtr))
           (resolveExtraCaps root addrs true Z).size 0 slot? #[] Z
         exact ⟨s, Z', h⟩
 
+/-- **The per-core receive refuses on the state it was handed**: every one of
+its refusals, before or after the dequeue, returns its input. -/
+theorem endpointReceiveDualOnCore_error_state {endpointId : SeLe4n.ObjId}
+    {receiver : SeLe4n.ThreadId} {replyId : Option SeLe4n.ReplyId} {executingCore : Concurrency.CoreId}
+    {st s : SystemState} {e : KernelError}
+    (h : endpointReceiveDualOnCore endpointId receiver replyId executingCore st = (s, .error e)) :
+    s = st := by
+  unfold endpointReceiveDualOnCore at h
+  repeat' split at h
+  all_goals first
+    | (simp only [Prod.mk.injEq] at h; exact h.1.symm)
+    | (simp only [Prod.mk.injEq, reduceCtorEq, and_false] at h)
+    | skip
+/-- **A receive that refuses reports the state it was handed**, with its
+capability transfer: the transfer never refuses (`receiveTransferCaps_ok`).  So
+no refusal of the receive reports a sender dequeued without its message
+copied. -/
+theorem endpointReceiveDualWithCapsOnCore_error_state {endpointId : SeLe4n.ObjId}
+    {receiver : SeLe4n.ThreadId} {replyId : Option SeLe4n.ReplyId} {executingCore : Concurrency.CoreId}
+    {st s : SystemState} {e : KernelError}
+    (h : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st =
+      (s, .error e)) : s = st := by
+  unfold endpointReceiveDualWithCapsOnCore at h
+  dsimp only at h
+  cases hR : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk s1 r =>
+    rw [hR] at h
+    cases r with
+    | error e1 =>
+      simp only [Prod.mk.injEq] at h
+      obtain ⟨rfl, -⟩ := h
+      exact endpointReceiveDualOnCore_error_state hR
+    | ok q =>
+      obtain ⟨sender, sgi⟩ := q
+      dsimp only at h
+      split at h
+      · simp only [Prod.mk.injEq, reduceCtorEq, and_false] at h
+      · obtain ⟨Z, Z', hOk⟩ := receiveTransferCaps_ok (receiveCapRequest st endpointId)
+          endpointId (receiverCapTarget? st receiver) s1
+        rw [hOk] at h
+        simp only [Prod.mk.injEq, reduceCtorEq, and_false] at h
 /-- The reply's capability transfer as its result: it never refuses
 (`receiveTransferCaps_ok`). -/
 def receiveTransferCapsDone (req : Option (Capability × Array SeLe4n.CPtr))
@@ -7973,17 +8014,16 @@ def replyRecvCallerGate (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) 
 
 /-- **The state a refused answering reply-receive reports, with its reply's
 flow** (WS-SX SX36): where the reply was delivered -- the caller it answers no
-longer waits for it on the state the refusal carries -- the reply leg's edge
-(`replyRecvReplyLegPlan`) from the entry state, since the server's message
-reached the caller whatever the receive leg then did; the state as it is where
-the reply step itself refused, which delivered nothing (every such refusal
-carries a state on which the caller still waits).  One rule for every route
-of the reply-receive. -/
-def replyRecvRefusalTaint (st : SystemState) (tid : SeLe4n.ThreadId)
-    (decoded : SyscallDecodeResult) (prevCaller : SeLe4n.ThreadId) (s : SystemState) :
-    SystemState :=
+longer waits for it on the state the refusal carries -- the one edge from the
+server to that caller (`replyRecvAnsweredPlan`), its source read on the entry
+state, since the server's message reached the caller whatever the receive leg
+then did; the state as it is where the reply step itself refused, which
+delivered nothing (every such refusal carries a state on which the caller
+still waits).  One rule for every route of the reply-receive. -/
+def replyRecvRefusalTaint (st : SystemState) (tid prevCaller : SeLe4n.ThreadId)
+    (s : SystemState) : SystemState :=
   if replyRecvCallerAwaitsReply s prevCaller then s
-  else applySyscallTaint (replyRecvReplyLegPlan st tid decoded) st s
+  else applySyscallTaint (replyRecvAnsweredPlan prevCaller tid) st s
 
 /-- **An answering reply's leg is the one edge to the caller it answers**: the
 reply capability the caller's gate resolves names a reply object whose caller
@@ -8063,31 +8103,47 @@ def replyRecvSenderAwaitsReceive (st : SystemState) (sender : SeLe4n.ThreadId) :
   | none => false
 
 /-- **The state a refused reply-receive reports, with its receive leg's flow**
-(WS-SX SX36): where the receive leg took the sender at the head of the
-endpoint's send queue on the state the receive ran on (`sA`) -- that sender no
-longer waits to be received on the state the refusal carries -- the receive
-leg's edges (`replyRecvReceiveLegPlan`) from `sA`, since the sender's message
-reached the server whatever the rest of the step then did; the state as it is
-where the receive took no sender.  The receive leg's form of the rule
-`replyRecvRefusalTaint` states for the reply leg. -/
+(WS-SX SX36): where the receive copied the message of the sender at the head
+of the endpoint's send queue on the state the receive ran on (`sA`) -- that
+sender waited to be received on `sA` and no longer waits on the state the
+refusal carries -- the one edge from that sender into the server
+(`replyRecvReceivedSenderPlan`), its source read on `sA`, since the sender's
+message reached the server whatever the rest of the step then did; the state
+as it is otherwise.  Exact: a receive that refuses reports the state it was
+handed (`endpointReceiveDualWithCapsOnCore_error_state`), so a sender that
+stopped waiting had its message copied, and no refusal delivers a bound
+notification's word, so its edge is never part of a refusal's flow.  The
+receive leg's form of the rule `replyRecvRefusalTaint` states for the reply
+leg. -/
 def replyRecvReceiveLegRefusalTaint (sA : SystemState) (tid : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (s : SystemState) : SystemState :=
   match (sA.getEndpoint? epId).bind (·.sendQ.head) with
   | some sender =>
-      if replyRecvSenderAwaitsReceive s sender then s
-      else applySyscallTaint (replyRecvReceiveLegPlan sA tid epId) sA s
+      if replyRecvSenderAwaitsReceive sA sender && !replyRecvSenderAwaitsReceive s sender then
+        applySyscallTaint (replyRecvReceivedSenderPlan tid sender) sA s
+      else s
   | none => s
+
+/-- A refusal that reports the state the receive was read on carries no
+receive-leg flow: the sender, if any, still waits. -/
+theorem replyRecvReceiveLegRefusalTaint_self (sA : SystemState) (tid : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : replyRecvReceiveLegRefusalTaint sA tid epId sA = sA := by
+  unfold replyRecvReceiveLegRefusalTaint
+  split
+  · rename_i sender _
+    cases replyRecvSenderAwaitsReceive sA sender <;> rfl
+  · rfl
 
 /-- **The state a refused answering reply-receive reports, its receive
 capability read after the reply** (WS-SX SX36): the receive leg's flow where
-the receive took a sender (`replyRecvReceiveLegRefusalTaint`, on the state the
+the receive copied a sender's message (`replyRecvReceiveLegRefusalTaint`, on the state the
 receive capability is read on and the endpoint read there), then the reply
 leg's where the reply was delivered (`replyRecvRefusalTaint`). -/
 def replyRecvAfterReplyRefusalTaint (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
     (replyGrant : Bool) (st s : SystemState) : SystemState :=
-  replyRecvRefusalTaint st tid decoded prevCaller
+  replyRecvRefusalTaint st tid prevCaller
     (match replyRecvAnsweringReadState? ctx decoded tid executingCore rid prevCaller replyBadge
         replyGrant st with
       | some sA =>
@@ -8105,7 +8161,7 @@ theorem replyRecvAfterReplyRefusalTaint_induct (P : SystemState → Prop)
     {st s : SystemState} (h : P s) :
     P (replyRecvAfterReplyRefusalTaint ctx decoded tid executingCore gate rid prevCaller
       replyBadge replyGrant st s) := by
-  have hR : ∀ x, P x → P (replyRecvRefusalTaint st tid decoded prevCaller x) := by
+  have hR : ∀ x, P x → P (replyRecvRefusalTaint st tid prevCaller x) := by
     intro x hx
     unfold replyRecvRefusalTaint
     split
@@ -8118,8 +8174,8 @@ theorem replyRecvAfterReplyRefusalTaint_induct (P : SystemState → Prop)
     · unfold replyRecvReceiveLegRefusalTaint
       split
       · split
-        · exact h
         · exact hStep _ _ _ h
+        · exact h
       · exact h
     · exact h
   · exact h
@@ -8137,16 +8193,24 @@ the server's words `wT` join the caller's where the caller no longer waits. -/
     (wT : TaintWords) (s : SystemState) : SystemState :=
   if replyRecvCallerAwaitsReply s prevCaller then s else sendTaintStep callerCode tid wT s
 
+/-- Whether the sender a code names (`SeLe4n.ThreadId.optCode`) waits to be
+received, `false` for no sender.  Read before the receive runs, as a scalar. -/
+@[inline] def senderAwaitsReceiveOfCode (sA : SystemState) (sourceCode : Nat) : Bool :=
+  match sourceCode with
+  | 0 => false
+  | k + 1 => replyRecvSenderAwaitsReceive sA ⟨k⟩
+
 /-- The receive leg's refusal step, without the plan
-(`replyRecvReceiveLegRefusalTaint`): the receive's step where the sender the
-code names no longer waits to be received. -/
-@[inline] def receiveLegRefusalTaintStep (signalCode sourceCode : Nat) (tid : SeLe4n.ThreadId)
-    (wN wS : TaintWords) (s : SystemState) : SystemState :=
+(`replyRecvReceiveLegRefusalTaint`): the sender's words `wS` join the
+receiver's where the sender the code names waited before the receive
+(`awaited`) and no longer waits. -/
+@[inline] def receiveLegRefusalTaintStep (sourceCode : Nat) (awaited : Bool)
+    (tid : SeLe4n.ThreadId) (wS : TaintWords) (s : SystemState) : SystemState :=
   match sourceCode with
   | 0 => s
   | k + 1 =>
-    if replyRecvSenderAwaitsReceive s ⟨k⟩ then s
-    else receiveTaintStep signalCode sourceCode tid wN wS s
+    if awaited && !replyRecvSenderAwaitsReceive s ⟨k⟩ then joinTaintAt s tid.toObjId wS
+    else s
 
 
 
@@ -8190,9 +8254,7 @@ the routed reply-receive and the general dispatcher both run it. -/
                 ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s))
           | .error e =>
             .error (e, replyRecvRefusalTaintStep callerCode prevCaller tid
-              ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
-              (receiveLegRefusalTaintStep sc so tid ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩
-                ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ st1))
+              ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ st1)
         else
           .ok ((), sendTaintStep callerCode tid ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
             (receiveTaintStep sc so tid ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩
@@ -8215,6 +8277,7 @@ the routed reply-receive and the general dispatcher both run it. -/
       | .ok epId =>
         let sc := boundSignalTaintCode stA tid
         let so := receiveLegSourceCode stA epId
+        let aw := senderAwaitsReceiveOfCode stA so
         withTaintWordsAt stA (notifObjOfCode sc) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
         withTaintWordsAt stA (threadObjOfCode so) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
         match replyRecvAnsweringReceiveLegR epId tid rid executingCore recordedServer returnedSc?
@@ -8222,8 +8285,7 @@ the routed reply-receive and the general dispatcher both run it. -/
         | .error (e, s) =>
           .error (e, replyRecvRefusalTaintStep callerCode prevCaller tid
             ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
-            (receiveLegRefusalTaintStep sc so tid ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩
-              ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s))
+            (receiveLegRefusalTaintStep so aw tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s))
         | .ok (summary, s) =>
           .ok ((), sendTaintStep callerCode tid ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
             (receiveTaintStep sc so tid ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩
@@ -8278,6 +8340,53 @@ theorem applySyscallTaint_receiveLegPlan (sA : SystemState) (tid : SeLe4n.Thread
 
 
 
+/-- **The answered reply's plan is the compiled step**: the server's words
+captured on the entry state join the caller's. -/
+theorem applySyscallTaint_answeredPlan (st : SystemState) (tid prevCaller : SeLe4n.ThreadId)
+    (s : SystemState) :
+    applySyscallTaint (replyRecvAnsweredPlan prevCaller tid) st s =
+      sendTaintStep (prevCaller.val + 1) tid (st.taintWordsAt tid.toObjId) s := by
+  unfold applySyscallTaint replyRecvAnsweredPlan
+  simp [sendTaintStep, planOriginationTags, applyOrigination, applyTaintStep,
+    joinTaintAt_toWords_of_decode _ _ (decode_taintWordsAt st tid.toObjId)]
+
+/-- **The reply leg's refusal rule is its compiled step**, the server's words
+captured on the entry state. -/
+theorem replyRecvRefusalTaint_eq_step (st : SystemState) (tid prevCaller : SeLe4n.ThreadId)
+    (s : SystemState) :
+    replyRecvRefusalTaint st tid prevCaller s =
+      replyRecvRefusalTaintStep (prevCaller.val + 1) prevCaller tid
+        (st.taintWordsAt tid.toObjId) s := by
+  unfold replyRecvRefusalTaint replyRecvRefusalTaintStep
+  rw [applySyscallTaint_answeredPlan]
+
+/-- **The receive leg's refusal rule is its compiled step**, the sender's words
+and whether it waited captured on the state the receive is read on. -/
+theorem replyRecvReceiveLegRefusalTaint_eq_step (sA : SystemState) (tid : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (s : SystemState) :
+    replyRecvReceiveLegRefusalTaint sA tid epId s =
+      receiveLegRefusalTaintStep (receiveLegSourceCode sA epId)
+        (senderAwaitsReceiveOfCode sA (receiveLegSourceCode sA epId)) tid
+        (sA.taintWordsAt (threadObjOfCode (receiveLegSourceCode sA epId))) s := by
+  unfold replyRecvReceiveLegRefusalTaint receiveLegSourceCode
+  cases sA.getEndpoint? epId with
+  | none => rfl
+  | some ep =>
+    have hS := decode_taintWordsAt sA (threadObjOfCode ep.sendHeadCode)
+    revert hS
+    generalize sA.taintWordsAt (threadObjOfCode ep.sendHeadCode) = wS
+    simp only [Option.bind_some, ← Endpoint.ofOptCode_sendHeadCode]
+    cases ep.sendHeadCode with
+    | zero => intro _; rfl
+    | succ k =>
+      intro h
+      simp only [threadObjOfCode, Nat.add_sub_cancel] at h
+      simp only [SeLe4n.ThreadId.ofOptCode, receiveLegRefusalTaintStep, senderAwaitsReceiveOfCode]
+      split
+      · simp [applySyscallTaint, replyRecvReceivedSenderPlan, planOriginationTags,
+          applyOrigination, applyTaintStep, joinTaintAt_toWords_of_decode _ _ h]
+      · rfl
+
 /-- **The compiled after-reply route is the specification's**, its taint step
 included: on a commit, the receive leg's edges read on the state the receive
 capability is read on and the reply leg's from the entry state
@@ -8302,30 +8411,9 @@ theorem replyRecvAfterReplyRunR_eq {ctx : LabelingContext} {gate : SyscallGate}
         .error (e, replyRecvAfterReplyRefusalTaint ctx decoded tid executingCore gate rid
           prevCaller replyBadge replyGrant st s) := by
   have hR := applySyscallTaint_replyLegPlan_of_edges hEdges
-  have hRef : ∀ s, replyRecvRefusalTaint st tid decoded prevCaller s =
-      replyRecvRefusalTaintStep (prevCaller.val + 1) prevCaller tid
-        (st.taintWordsAt tid.toObjId) s := by
-    intro s
-    unfold replyRecvRefusalTaint replyRecvRefusalTaintStep
-    rw [hR]
-  have hQ : ∀ sA epId s, replyRecvReceiveLegRefusalTaint sA tid epId s =
-      receiveLegRefusalTaintStep (boundSignalTaintCode sA tid) (receiveLegSourceCode sA epId) tid
-        (sA.taintWordsAt (notifObjOfCode (boundSignalTaintCode sA tid)))
-        (sA.taintWordsAt (threadObjOfCode (receiveLegSourceCode sA epId))) s := by
-    intro sA epId s
-    unfold replyRecvReceiveLegRefusalTaint receiveLegRefusalTaintStep
-    rw [applySyscallTaint_receiveLegPlan]
-    generalize hW : sA.taintWordsAt (notifObjOfCode (boundSignalTaintCode sA tid)) = wN
-    generalize boundSignalTaintCode sA tid = sc
-    unfold receiveLegSourceCode
-    cases sA.getEndpoint? epId with
-    | none => rfl
-    | some ep =>
-      simp only [Option.bind_some, ← Endpoint.ofOptCode_sendHeadCode]
-      cases ep.sendHeadCode <;> rfl
   unfold replyRecvAfterReplyRunR replyRecvAnsweringThenR replyRecvAfterReplyRefusalTaint
     replyRecvAfterReplyTaint replyRecvAnsweringReadState?
-  simp only [withTaintWordsAt_eq, TaintWords.mk_fields, hRef, hR, hQ,
+  simp only [withTaintWordsAt_eq, TaintWords.mk_fields, replyRecvRefusalTaint_eq_step, hR,
     applySyscallTaint_receiveLegPlan]
   by_cases hSig : receiveCompletesSignal ctx st tid = true
   · simp only [hSig, ↓reduceIte]
@@ -8342,7 +8430,7 @@ theorem replyRecvAfterReplyRunR_eq {ctx : LabelingContext} {gate : SyscallGate}
         · simp only [hC, ↓reduceIte]
           split
           · next s hS => simp only [hS]
-          · next e hS => simp only [hS]
+          · next e hS => simp only [hS, replyRecvReceiveLegRefusalTaint_self]
         · simp only [hC, Bool.false_eq_true, ↓reduceIte]
   · simp only [hSig, Bool.false_eq_true, ↓reduceIte]
     unfold replyRecvTransferThenR
@@ -8357,7 +8445,7 @@ theorem replyRecvAfterReplyRunR_eq {ctx : LabelingContext} {gate : SyscallGate}
         · next epId hE =>
           simp only [hE]
           split
-          · next e s hL => simp only [hL]
+          · next e s hL => simp only [hL, replyRecvReceiveLegRefusalTaint_eq_step]
           · next summary s hL => simp only [hL]
     · simp only [hAd, Bool.false_eq_true, ↓reduceIte]
 

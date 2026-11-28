@@ -162,8 +162,13 @@ DECLARED_TAINT_WRITERS = {
     # (`replyRecvRefusalTaint`), the receive leg's where the sender no longer
     # waits (`replyRecvReceiveLegRefusalTaint`); and those two without the plan
     # (`replyRecvRefusalTaintStep`, `receiveLegRefusalTaintStep`), the compiled
-    # route's (`replyRecvAfterReplyRunR_eq`).
+    # route's (`replyRecvAfterReplyRunR_eq`).  The entry-resolved route's
+    # refusal follows the same rule on the entry state
+    # (`replyRecvEntryRefusalTaint`), compiled without the plan
+    # (`replyRecvEntryRefusalTaintStep`, `replyRecvEntryRefusalTaint_eq_step`).
     "SeLe4n.Kernel.checkedArmTaint",
+    "SeLe4n.Kernel.replyRecvEntryRefusalTaint",
+    "SeLe4n.Kernel.replyRecvEntryRefusalTaintStep",
     "SeLe4n.Kernel.replyRecvAfterReplyTaint",
     "SeLe4n.Kernel.replyRecvRefusalTaint",
     "SeLe4n.Kernel.replyRecvReceiveLegRefusalTaint",
@@ -236,6 +241,11 @@ DECLARED_TAINT_CONSUMERS = {
     # those two steps (`replyRecvRoutedR_eq`; the routed arm runs the compiled
     # route, `replyRecvAfterReplyRoutedOn_eq`).
     "SeLe4n.Kernel.replyRecvRoutedR",
+    # And the entry-resolved route's specification, whose refusal takes the
+    # answered caller's and the receive leg's edges
+    # (`replyRecvEntryRefusalTaint`), with the conjunct that names it.
+    "SeLe4n.Kernel.replyRecvOperandReport",
+    "SeLe4n.Kernel.ReplyRecvAnsweringReported",
     # WS-ZA ZA5.12: the declassify arms' fused arm-then-apply steps
     # (`dispatchCheckedArmThenTaintFused_eq`).
     "SeLe4n.Kernel.dispatchCheckedArmThenDeclassifyTaint",

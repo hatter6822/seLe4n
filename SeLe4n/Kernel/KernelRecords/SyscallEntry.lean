@@ -480,10 +480,12 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
         hEq | ⟨t', hd, hC', hne, hEq⟩ | hA | hB
       · rw [hEq]; exact .refl _
       · rw [hEq]; exact RecordsStage.cancelReplyHolder _ hd e
-      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+      · obtain ⟨t, _, _, _, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
         rw [hCur1] at hCt
         cases hCt
         rw [hEq]
+        refine replyRecvEntryRefusalTaint_induct (fun x => RecordsStage _ x)
+          (fun _ _ x hx => RecordsStage.trans hx (applySyscallTaint_recordsStage _ _ _)) ?_
         exact RecordsStage.replyRecvTransferStoppedState P1.deletes.1 (hR1 e tid hCur1)
       · -- WS-SX SX36.1: the after-reply stop keeps the records
         obtain ⟨t, -, decoded', gate, rid, prev, badge, grant, -, hCt, -, -, -, -, hEq⟩ := hB

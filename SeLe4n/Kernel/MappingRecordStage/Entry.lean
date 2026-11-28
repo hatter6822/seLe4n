@@ -348,8 +348,12 @@ theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
   rcases cancelReceiveBusyReply_cases_holder ctx e st with h | ⟨_, _, -, -, h⟩ | hA | hB
   · rw [h]; exact MappingStage.refl _
   · rw [h]; exact cancelReplyHolder_mappingStage _ _ _
-  · obtain ⟨_, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
-    rw [h]; exact replyRecvTransferStoppedState_mappingStage
+  · obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
+    rw [h]
+    exact replyRecvEntryRefusalTaint_induct (fun x => MappingStage st x)
+      (fun _ _ _ h => h.trans (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
+        (applySyscallTaint_objectsAgreeOffTaint _ _ _) (applySyscallTaint_ghostsKept _ _ _)))
+      replyRecvTransferStoppedState_mappingStage
   · -- WS-SX SX36.1: a reply-receive whose receive was refused after its reply
     exact fun hInv => hB.induct MappingStage (fun s _ => MappingStage.refl s)
       (fun _ _ _ _ h1 h2 => h1.trans h2)

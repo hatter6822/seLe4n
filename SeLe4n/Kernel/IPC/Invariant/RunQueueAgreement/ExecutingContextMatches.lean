@@ -122,11 +122,21 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
       rotate_left
       · -- WS-SX SX34: a reply-receive's stopped state covers the other cores and
         -- writes only the answered caller's saved registers
-        obtain ⟨_, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
+        have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+            ).residentsHaveTcbs := by
+          rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT
+        obtain ⟨c1, i1⟩ := cancelReceiveBusyReply_stepCovers (otherCore e) ctx e _ iW
+        refine ⟨contextMatchesCurrentOnCore_of_stepCovers_writtenFree c1 ?_ hSp, c1, i1⟩
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
         rw [hX]
-        obtain ⟨c1, i1⟩ := replyRecvTransferStoppedState_stepCovers (otherCore e) iW
-        exact ⟨replyRecvTransferStoppedState_contextMatchesCurrentOnCore E1.dequeued
-          (by rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT) hBNR1 iW hSp, c1, i1⟩
+        refine replyRecvEntryRefusalTaint_induct
+          (fun x => savedRegsWrittenFree (otherCore e)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx => hx.trans (savedRegsWrittenFree.of_kept (W := fun _ => False)
+              (savedRegsKeptExcept.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) fun _ h => h.elim)) ?_
+        exact (replyRecvTransferStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW).1
       · -- WS-SX SX36.1: the after-reply stop covers the other cores and writes
         -- only the answered caller's saved registers
         have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6

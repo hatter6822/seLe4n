@@ -2291,8 +2291,13 @@ theorem cancelReceiveBusyReply_coversWrites (ctx : LabelingContext) (e : CoreId)
       badge grant hGate hLk hOps hSched hRR hTgt hXc' hRRR hAw
     rw [hS]
     exact unifiedLockSetForSyscall_coversWrites _ _ _ _ S U _ _ hSched hU
-      (schedLockSet_replyRecvArmOnCore_coversStopped epId tid rid c _ _ grant e stSpilled S
-        hRegsObjInv hL)
+      (replyRecvEntryRefusalTaint_induct (fun x => footprintCoversWrites S stSpilled x)
+        (fun _ _ x hx => footprintCoversWrites_trans S hx
+          (footprintCoversWrites_of_scheduler_eq S
+            (schedLockSetForSyscall_contains_objStore_write _ _ _ _ _ hSched)
+            (applySyscallTaint_scheduler _ _ _)))
+        (schedLockSet_replyRecvArmOnCore_coversStopped epId tid rid c _ _ grant e stSpilled S
+          hRegsObjInv hL))
   · -- WS-SX SX36.1: a reply-receive whose reply answered and whose receive the
     -- entry refuses reports the state its after-reply stop left, inside the
     -- arm's footprint

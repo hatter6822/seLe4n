@@ -238,8 +238,13 @@ theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
   rcases cancelReceiveBusyReply_cases_holder ctx ec st with h | ⟨_, _, -, -, h⟩ | hA | hB
   · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
   · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
-  · obtain ⟨_, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
-    rw [h]; exact replyRecvTransferStoppedState_stepCovers e hInv
+  · obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
+    rw [h]
+    exact replyRecvEntryRefusalTaint_induct (fun x => stepCovers e st x ∧ x.objects.invExt)
+      (fun _ _ _ h => ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq
+          (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+          (applySyscallTaint_scheduler _ _ _)), applySyscallTaint_invExt h.2⟩)
+      (replyRecvTransferStoppedState_stepCovers e hInv)
   · -- WS-SX SX36.1: a reply-receive whose receive was refused after its reply
     exact hB.induct (fun a b => stepCovers e a b ∧ b.objects.invExt)
       (fun s h => ⟨stepCovers_refl e s, h⟩)

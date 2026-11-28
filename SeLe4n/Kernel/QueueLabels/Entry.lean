@@ -369,8 +369,15 @@ theorem QueueLabelsStage.cancelReceiveBusyReply (ctx : LabelingContext) (e : Cor
   · rw [hE]
     have F := QueueLabelsFrame.cancelReplyHolder st holder e hInv
     exact ⟨F.stage, F.invExt⟩
-  · obtain ⟨_, _, _, _, _, _, _, -, -, hFlow, hS⟩ := hA.stopped
+  · obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, hFlow, hS⟩ := hA.stopped
     rw [hS]
+    refine replyRecvEntryRefusalTaint_induct
+      (fun x => QueueLabelsStage ctx st x ∧ x.objects.invExt)
+      (fun _ _ x hx =>
+        have F := RecordsFrame.of_agreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+          (by rw [applySyscallTaint_frame]) (applySyscallTaint_invExt hx.2)
+          (by rw [applySyscallTaint_machine])
+        ⟨hx.1.trans (QueueLabelsStage.of_frame F), F.invExt⟩) ?_
     exact ⟨QueueLabelsStage.replyRecvTransferStoppedState hInv hFlow,
       replyRecvTransferStoppedState_objects_invExt hInv⟩
   · obtain ⟨tid, -, decoded, gate, rid, prevCaller, replyBadge, replyGrant, -, -, -, -, -, -, hS⟩ := hB
