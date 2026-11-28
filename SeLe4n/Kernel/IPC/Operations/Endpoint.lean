@@ -1946,9 +1946,9 @@ The third is not excluded by any invariant stated today: `donationChainWellForme
 constrains only the chains reachable from a scheduling context's head, so a
 pair of replies linked to each other and headed by no context satisfies it, and
 a donor whose reply object is the inner one of that pair is refused here.  The
-missing invariant (every linked frame reachable from a head, or the donor's
-reply fresh from `linkReply`) and the no-refusal theorem over it are the WS-SX
-row after SX36, registered in `docs/REGISTERED_DEBT.md`.  Until then the
+missing invariant (no orphan frames: every linked reply frame reachable from a
+scheduling context's head) and the no-refusal theorem over it are WS-SX SX37,
+registered in `docs/REGISTERED_DEBT.md`.  Until then the
 refusal is a defensive check that writes nothing.  This is the same
 defence-in-depth posture as the pop's own head
 validation and `donateSchedContext`'s AUD-3b `boundThread` guard: the guard is
