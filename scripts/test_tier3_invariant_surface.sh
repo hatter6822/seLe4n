@@ -2494,6 +2494,18 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationPushFrame\?[^\n]
 # consumes (`not_mem_donationChainFrom_of_not_donating`).
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationPushFrame\?[^\n]*(\n([ \t][^\n]*)?)*if r\.prev\.isNone \|\| r\.next\.isNone then \.error" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" rg -n '^theorem donationPushFrame\?_ok' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# WS-SX SX37 (D67): a donor whose reply was just linked is not refused.  The
+# statement is over the link itself (freshness), and its conclusion is the
+# push's success on the linked state at the linked object.  Relation, not
+# presence: the hypothesis and the conclusion are read inside the theorem's
+# own block.
+run_check "INVARIANT" rg -n '^theorem donationPushFrame\?_ok_of_linked ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationPushFrame\?_ok_of_linked [^\n]*(\n([ \t][^\n]*)?)*\(hLink : SystemState\.linkCallerReply caller rid st0 = \.ok \(\(\), st\)\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationPushFrame\?_ok_of_linked [^\n]*(\n([ \t][^\n]*)?)*\(hDonor : st\.getTcb\? caller = some donor\)[^\n]*(\n([ \t][^\n]*)?)*donationPushFrame\? st donor = \.ok \(rid, r\) := by" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# NEGATIVE: the theorem takes no whole-store invariant over the chain.  Linked
+# frames no context heads are reachable (D67), so a statement resting on one
+# would be resting on a false premise.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationPushFrame\?_ok_of_linked [^\n]*(\n([ \t][^\n]*)?)*\(h[A-Za-z]* : (donationChainWellFormed|replyCallerLinkage|ipcInvariantFull) " SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The push writes the head and the frame, and the frame's `prev` is the OLD head
 # -- read out of the same SchedContext object the store rewrites.  Relation, not
 # presence: the mutation keeps both stores and drops the link.

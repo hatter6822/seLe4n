@@ -1,3 +1,37 @@
+## v0.37.66 — The donation push's linked-frame refusal proven unreachable by freshness (WS-SX SX37)
+
+SX37 closes the debt SX36 registered under D65.  It changes no
+compiled code: one theorem, a docstring, anchors and documents.
+
+- **The freshness theorem (SX37.1).**  `donationPushFrame?_ok_of_linked`
+  (`IPC/Operations/Endpoint.lean`): a donor whose reply object
+  `linkCallerReply` has just linked passes `donationPushFrame?` with that
+  object, which names the donor and carries no stack link.  It needs
+  only the store's `invExt` and the link: `linkReply` admits only a
+  `Reply.isFree` object (no caller, no `prev`, no `next`) and writes only
+  the caller.  Every donor reaches the push with its reply linked so in
+  the same operation (the Call's caller, or the call-sender a receive
+  takes), as seL4's `reply_push` asserts.  `donationPushFrame?`'s
+  docstring cites the theorem.
+- **D65's invariant is false on reachable states (D67).**  "Every linked
+  reply frame is reachable from a scheduling context's head" is broken by
+  three seL4-faithful writers: `schedContextUnbindReply` (seL4's
+  `schedContext_unbindReply`, on `SchedContext_Unbind` of a stack two
+  deep and on a context's finalisation), the suspend's head cut
+  (`reply_remove_tcb`) and a reply to an unheaded top (`reply_remove`).
+  Each leaves linked frames no context heads, as seL4 does.  None of
+  them is free, so no link hands one to a push and no donation is
+  wrongly refused.  The registered theorem ("a donor `.blockedOnReply` is
+  not refused") is false as written: every donation leaves its donor so.
+  The owner chose the freshness theorem ("Freshness theorem").
+- **Anchors.**  Three Tier 3 anchors on the theorem's hypothesis and
+  conclusion, and one negative anchor (no whole-store chain invariant
+  among its hypotheses), each break-tested by breaking the relation.
+- **Docs.**  D67 recorded and SX37 restated in the plan; the debt row
+  closed; the spec, the claim index and the workstream context record
+  the theorem and the standing constraint (no proof may assume a linked
+  frame is on a context's stack).
+
 ## v0.37.65 — ReplyRecv's receive capability resolved after the reply; the passive server current until the scheduling point (WS-SX SX36)
 
 SX36 moves ReplyRecv to seL4's order (D63).  seL4-MCS's `SysReplyRecv`

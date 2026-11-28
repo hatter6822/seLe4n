@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "sel4-replyrecv-receive-after-reply",
-      "commit_sha": "7527184444bd7142060fc4bb3706aa4484dcbd72",
-      "tree_sha": "11f024f315fbd570a61b9cde762e0bad13928326",
-      "committed_at_utc": "2026-11-28T11:54:29+00:00"
+      "branch": "reply-frames-reachable-from-context-head",
+      "commit_sha": "7e14fba6c2121b76b837039e389dcff6d81bc6b6",
+      "tree_sha": "9dc0d720cd444d40c5c425d227f96a1388090693",
+      "committed_at_utc": "2026-11-28T12:15:50+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "38a7e4ddffc37b903efb624e9a165df8bb4d94939c7d8803383c70a2a4f27dd6"
+    "source_digest": "0f9bfa25a9d572fd8fcedfd22f53cf2d807aac4a5334e171c80003bcbfc0ab08"
   },
   "summary": {
     "module_count": 788,
-    "declaration_count": 40595
+    "declaration_count": 40596
   },
   "readme_sync": {
-    "version": "0.37.65",
+    "version": "0.37.66",
     "lean_toolchain": "v4.28.0",
     "production_files": 717,
-    "production_loc": 710098,
+    "production_loc": 710148,
     "test_files": 71,
     "test_loc": 91919,
-    "proved_theorem_lemma_decls": 27318,
+    "proved_theorem_lemma_decls": 27319,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -275598,7 +275598,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Endpoint",
       "path": "SeLe4n/Kernel/IPC/Operations/Endpoint.lean",
-      "declaration_count": 671,
+      "declaration_count": 672,
       "declarations": [
         {
           "kind": "def",
@@ -278117,7 +278117,7 @@
           "kind": "def",
           "name": "donationPushFrame?",
           "full_name": "SeLe4n.Kernel.donationPushFrame?",
-          "line": 1957,
+          "line": 1956,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -278133,7 +278133,7 @@
           "kind": "theorem",
           "name": "donationPushFrame?_ok",
           "full_name": "SeLe4n.Kernel.donationPushFrame?_ok",
-          "line": 1980,
+          "line": 1979,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -278146,10 +278146,34 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "donationPushFrame?_ok_of_linked",
+          "full_name": "SeLe4n.Kernel.donationPushFrame?_ok_of_linked",
+          "line": 2030,
+          "called": [
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Kernel.Reply.caller",
+            "SeLe4n.Kernel.Reply.isFree",
+            "SeLe4n.Kernel.Reply.isFree_iff",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.donationPushFrame?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getReply?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.linkCallerReply",
+            "SeLe4n.Model.SystemState.linkCallerReply_getReply?_caller_some",
+            "SeLe4n.Model.SystemState.linkCallerReply_replyObject_some",
+            "SeLe4n.Model.SystemState.linkReply",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "storeDonationFramePush",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush",
-          "line": 2028,
+          "line": 2078,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.KernelError",
@@ -278164,7 +278188,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_cases",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_cases",
-          "line": 2051,
+          "line": 2101,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationFramePush",
@@ -278179,7 +278203,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_objects_ne",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_objects_ne",
-          "line": 2103,
+          "line": 2153,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278197,7 +278221,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_preserves_objects_invExt",
-          "line": 2118,
+          "line": 2168,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278213,7 +278237,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_kindPreservingWrite",
-          "line": 2137,
+          "line": 2187,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278235,7 +278259,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_cdt_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_cdt_eq",
-          "line": 2157,
+          "line": 2207,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationFramePush",
@@ -278250,7 +278274,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_getReply?_pushed",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_getReply?_pushed",
-          "line": 2170,
+          "line": 2220,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278271,7 +278295,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_getReply?_old",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_getReply?_old",
-          "line": 2193,
+          "line": 2243,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278292,7 +278316,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_non_reply_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_non_reply_eq",
-          "line": 2221,
+          "line": 2271,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278313,7 +278337,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_reply_kind_stable",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_reply_kind_stable",
-          "line": 2250,
+          "line": 2300,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278332,7 +278356,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_getSchedContext?_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_getSchedContext?_eq",
-          "line": 2270,
+          "line": 2320,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278350,7 +278374,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_tcb_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_tcb_eq",
-          "line": 2286,
+          "line": 2336,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278368,7 +278392,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_getTcb?_eq",
-          "line": 2298,
+          "line": 2348,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278387,7 +278411,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_machine_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_machine_eq",
-          "line": 2314,
+          "line": 2364,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationFramePush",
@@ -278402,7 +278426,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_tlbShootdown_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_tlbShootdown_eq",
-          "line": 2326,
+          "line": 2376,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationFramePush",
@@ -278417,7 +278441,7 @@
           "kind": "theorem",
           "name": "storeDonationFramePush_scheduler_eq",
           "full_name": "SeLe4n.Kernel.storeDonationFramePush_scheduler_eq",
-          "line": 2338,
+          "line": 2388,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationFramePush",
@@ -278432,7 +278456,7 @@
           "kind": "def",
           "name": "sameSchedContextBindings",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings",
-          "line": 2376,
+          "line": 2426,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB",
@@ -278445,7 +278469,7 @@
           "kind": "theorem",
           "name": "refl",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.refl",
-          "line": 2385,
+          "line": 2435,
           "called": [
             "SeLe4n.Kernel.sameSchedContextBindings",
             "SeLe4n.Model.SystemState"
@@ -278455,7 +278479,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.trans",
-          "line": 2389,
+          "line": 2439,
           "called": [
             "SeLe4n.Kernel.sameSchedContextBindings",
             "SeLe4n.Model.SystemState"
@@ -278465,7 +278489,7 @@
           "kind": "theorem",
           "name": "of_objects_eq",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.of_objects_eq",
-          "line": 2399,
+          "line": 2449,
           "called": [
             "SeLe4n.Kernel.sameSchedContextBindings",
             "SeLe4n.Model.SystemState"
@@ -278475,7 +278499,7 @@
           "kind": "theorem",
           "name": "of_objectsAgreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.of_objectsAgreeOffRunLinks",
-          "line": 2404,
+          "line": 2454,
           "called": [
             "SeLe4n.Kernel.sameSchedContextBindings",
             "SeLe4n.Model.SystemState",
@@ -278486,7 +278510,7 @@
           "kind": "theorem",
           "name": "of_ntfnLinksRewritten",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.of_ntfnLinksRewritten",
-          "line": 2410,
+          "line": 2460,
           "called": [
             "SeLe4n.Kernel.ntfnLinksRewritten",
             "SeLe4n.Kernel.sameSchedContextBindings",
@@ -278497,7 +278521,7 @@
           "kind": "theorem",
           "name": "of_updateTcb",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.of_updateTcb",
-          "line": 2418,
+          "line": 2468,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.sameSchedContextBindings",
@@ -278519,7 +278543,7 @@
           "kind": "theorem",
           "name": "lookupTcb_backward",
           "full_name": "SeLe4n.Kernel.sameSchedContextBindings.lookupTcb_backward",
-          "line": 2438,
+          "line": 2488,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.lookupTcb_of_objects_of_not_reserved",
@@ -278536,7 +278560,7 @@
           "kind": "def",
           "name": "callDonationSchedContext?",
           "full_name": "SeLe4n.Kernel.callDonationSchedContext?",
-          "line": 2459,
+          "line": 2509,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Model.SystemState",
@@ -278548,7 +278572,7 @@
           "kind": "theorem",
           "name": "callDonationSchedContext?_of_donated_caller",
           "full_name": "SeLe4n.Kernel.callDonationSchedContext?_of_donated_caller",
-          "line": 2485,
+          "line": 2535,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.lookupTcb",
@@ -278563,7 +278587,7 @@
           "kind": "theorem",
           "name": "callDonationSchedContext?_some_of_sameSchedContextBindings",
           "full_name": "SeLe4n.Kernel.callDonationSchedContext?_some_of_sameSchedContextBindings",
-          "line": 2522,
+          "line": 2572,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.lookupTcb",
@@ -278577,7 +278601,7 @@
           "kind": "theorem",
           "name": "callDonationSchedContext?_none_of_sameSchedContextBindings",
           "full_name": "SeLe4n.Kernel.callDonationSchedContext?_none_of_sameSchedContextBindings",
-          "line": 2558,
+          "line": 2608,
           "called": [
             "SeLe4n.Kernel.callDonationSchedContext?",
             "SeLe4n.Kernel.callDonationSchedContext?_some_of_sameSchedContextBindings",
@@ -278590,7 +278614,7 @@
           "kind": "theorem",
           "name": "callDonationSchedContext?_self",
           "full_name": "SeLe4n.Kernel.callDonationSchedContext?_self",
-          "line": 2578,
+          "line": 2628,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.scId?",
             "SeLe4n.Kernel.callDonationSchedContext?",
@@ -278603,7 +278627,7 @@
           "kind": "def",
           "name": "donationPushRefusal?",
           "full_name": "SeLe4n.Kernel.donationPushRefusal?",
-          "line": 2599,
+          "line": 2649,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Model.KernelError",
@@ -278617,7 +278641,7 @@
           "kind": "theorem",
           "name": "donationPushRefusal?_eq_none",
           "full_name": "SeLe4n.Kernel.donationPushRefusal?_eq_none",
-          "line": 2611,
+          "line": 2661,
           "called": [
             "SeLe4n.Kernel.donationPushRefusal?",
             "SeLe4n.Kernel.lookupTcb",
@@ -278631,7 +278655,7 @@
           "kind": "def",
           "name": "donateSchedContext",
           "full_name": "SeLe4n.Kernel.donateSchedContext",
-          "line": 2714,
+          "line": 2764,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.ownerCode",
@@ -278654,7 +278678,7 @@
           "kind": "theorem",
           "name": "donateSchedContext_ok_storeChain",
           "full_name": "SeLe4n.Kernel.donateSchedContext_ok_storeChain",
-          "line": 2815,
+          "line": 2865,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -278683,7 +278707,7 @@
           "kind": "theorem",
           "name": "donateSchedContext_ok_pushFrame",
           "full_name": "SeLe4n.Kernel.donateSchedContext_ok_pushFrame",
-          "line": 2911,
+          "line": 2961,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.donateSchedContext",
@@ -278703,7 +278727,7 @@
           "kind": "theorem",
           "name": "getReply?_getSchedContext?_key_ne",
           "full_name": "SeLe4n.Kernel.getReply?_getSchedContext?_key_ne",
-          "line": 2933,
+          "line": 2983,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -278720,7 +278744,7 @@
           "kind": "theorem",
           "name": "donateSchedContext_objects_ne",
           "full_name": "SeLe4n.Kernel.donateSchedContext_objects_ne",
-          "line": 2956,
+          "line": 3006,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.SchedContext",
@@ -278744,7 +278768,7 @@
           "kind": "theorem",
           "name": "donateSchedContext_ok_pushedHead",
           "full_name": "SeLe4n.Kernel.donateSchedContext_ok_pushedHead",
-          "line": 2995,
+          "line": 3045,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -278780,7 +278804,7 @@
           "kind": "def",
           "name": "donationReturnBinding",
           "full_name": "SeLe4n.Kernel.donationReturnBinding",
-          "line": 3065,
+          "line": 3115,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.SchedContextId",
@@ -278791,7 +278815,7 @@
           "kind": "theorem",
           "name": "donationReturnBinding_none",
           "full_name": "SeLe4n.Kernel.donationReturnBinding_none",
-          "line": 3070,
+          "line": 3120,
           "called": [
             "SeLe4n.Kernel.donationReturnBinding",
             "SeLe4n.SchedContextId"
@@ -278801,7 +278825,7 @@
           "kind": "theorem",
           "name": "donationReturnBinding_some",
           "full_name": "SeLe4n.Kernel.donationReturnBinding_some",
-          "line": 3073,
+          "line": 3123,
           "called": [
             "SeLe4n.Kernel.donationReturnBinding",
             "SeLe4n.SchedContextId",
@@ -278812,7 +278836,7 @@
           "kind": "def",
           "name": "donationReturnSchedContext",
           "full_name": "SeLe4n.Kernel.donationReturnSchedContext",
-          "line": 3111,
+          "line": 3161,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.ReplyId",
@@ -278824,7 +278848,7 @@
           "kind": "theorem",
           "name": "donationReturnSchedContext_scReply",
           "full_name": "SeLe4n.Kernel.donationReturnSchedContext_scReply",
-          "line": 3117,
+          "line": 3167,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.donationReturnSchedContext",
@@ -278836,7 +278860,7 @@
           "kind": "def",
           "name": "donationSeverSchedContext",
           "full_name": "SeLe4n.Kernel.donationSeverSchedContext",
-          "line": 3127,
+          "line": 3177,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.ReplyId"
@@ -278846,7 +278870,7 @@
           "kind": "def",
           "name": "outerCallerAcceptable",
           "full_name": "SeLe4n.Kernel.outerCallerAcceptable",
-          "line": 3145,
+          "line": 3195,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -278857,7 +278881,7 @@
           "kind": "theorem",
           "name": "outerCallerAcceptable_none",
           "full_name": "SeLe4n.Kernel.outerCallerAcceptable_none",
-          "line": 3158,
+          "line": 3208,
           "called": [
             "SeLe4n.Kernel.outerCallerAcceptable",
             "SeLe4n.Model.SystemState",
@@ -278868,7 +278892,7 @@
           "kind": "def",
           "name": "replyFrameOnLiveStack",
           "full_name": "SeLe4n.Kernel.replyFrameOnLiveStack",
-          "line": 3196,
+          "line": 3246,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getReply?",
@@ -278881,7 +278905,7 @@
           "kind": "theorem",
           "name": "replyFrameOnLiveStack_of_no_reply",
           "full_name": "SeLe4n.Kernel.replyFrameOnLiveStack_of_no_reply",
-          "line": 3215,
+          "line": 3265,
           "called": [
             "SeLe4n.Kernel.replyFrameOnLiveStack",
             "SeLe4n.Model.SystemState",
@@ -278893,7 +278917,7 @@
           "kind": "def",
           "name": "donationRecipientAcceptable",
           "full_name": "SeLe4n.Kernel.donationRecipientAcceptable",
-          "line": 3269,
+          "line": 3319,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Model.SystemState",
@@ -278904,7 +278928,7 @@
           "kind": "theorem",
           "name": "donationRecipientAcceptable_of_none",
           "full_name": "SeLe4n.Kernel.donationRecipientAcceptable_of_none",
-          "line": 3275,
+          "line": 3325,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.lookupTcb",
@@ -278916,7 +278940,7 @@
           "kind": "theorem",
           "name": "donationRecipientAcceptable_eq_of_some",
           "full_name": "SeLe4n.Kernel.donationRecipientAcceptable_eq_of_some",
-          "line": 3281,
+          "line": 3331,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.lookupTcb",
@@ -278930,7 +278954,7 @@
           "kind": "theorem",
           "name": "donationReturnBinding_ne_unbound",
           "full_name": "SeLe4n.Kernel.donationReturnBinding_ne_unbound",
-          "line": 3294,
+          "line": 3344,
           "called": [
             "SeLe4n.Kernel.donationReturnBinding",
             "SeLe4n.SchedContextId",
@@ -278941,7 +278965,7 @@
           "kind": "theorem",
           "name": "donationReturnBinding_scId?",
           "full_name": "SeLe4n.Kernel.donationReturnBinding_scId?",
-          "line": 3305,
+          "line": 3355,
           "called": [
             "SeLe4n.Kernel.donationReturnBinding",
             "SeLe4n.SchedContextId",
@@ -278952,7 +278976,7 @@
           "kind": "def",
           "name": "donationHeadOf?",
           "full_name": "SeLe4n.Kernel.donationHeadOf?",
-          "line": 3323,
+          "line": 3373,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -278967,7 +278991,7 @@
           "kind": "theorem",
           "name": "donationHeadOf?_of_no_stack",
           "full_name": "SeLe4n.Kernel.donationHeadOf?_of_no_stack",
-          "line": 3339,
+          "line": 3389,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.donationHeadOf?",
@@ -278979,7 +279003,7 @@
           "kind": "theorem",
           "name": "donationHeadOf?_ok_key",
           "full_name": "SeLe4n.Kernel.donationHeadOf?_ok_key",
-          "line": 3351,
+          "line": 3401,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -278994,7 +279018,7 @@
           "kind": "theorem",
           "name": "donationHeadOf?_ok_resolves",
           "full_name": "SeLe4n.Kernel.donationHeadOf?_ok_resolves",
-          "line": 3372,
+          "line": 3422,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -279010,7 +279034,7 @@
           "kind": "def",
           "name": "replyStackOuterCaller?",
           "full_name": "SeLe4n.Kernel.replyStackOuterCaller?",
-          "line": 3449,
+          "line": 3499,
           "called": [
             "SeLe4n.Kernel.donationHeadOf?",
             "SeLe4n.Model.KernelError",
@@ -279025,7 +279049,7 @@
           "kind": "theorem",
           "name": "replyStackOuterCaller?_of_no_stack",
           "full_name": "SeLe4n.Kernel.replyStackOuterCaller?_of_no_stack",
-          "line": 3477,
+          "line": 3527,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.donationHeadOf?_of_no_stack",
@@ -279039,7 +279063,7 @@
           "kind": "theorem",
           "name": "replyStackOuterCaller?_of_bottom_head",
           "full_name": "SeLe4n.Kernel.replyStackOuterCaller?_of_bottom_head",
-          "line": 3491,
+          "line": 3541,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -279055,7 +279079,7 @@
           "kind": "theorem",
           "name": "replyStackOuterCaller?_ok_some",
           "full_name": "SeLe4n.Kernel.replyStackOuterCaller?_ok_some",
-          "line": 3509,
+          "line": 3559,
           "called": [
             "SeLe4n.Kernel.donationHeadOf?",
             "SeLe4n.Kernel.replyStackOuterCaller?",
@@ -279070,7 +279094,7 @@
           "kind": "theorem",
           "name": "replyStackOuterCaller?_of_consumed_frame",
           "full_name": "SeLe4n.Kernel.replyStackOuterCaller?_of_consumed_frame",
-          "line": 3570,
+          "line": 3620,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -279088,7 +279112,7 @@
           "kind": "def",
           "name": "replyStackBelowHead?",
           "full_name": "SeLe4n.Kernel.replyStackBelowHead?",
-          "line": 3615,
+          "line": 3665,
           "called": [
             "SeLe4n.Kernel.donationHeadOf?",
             "SeLe4n.Model.SystemState",
@@ -279103,7 +279127,7 @@
           "kind": "theorem",
           "name": "replyStackBelowHead?_of_no_stack",
           "full_name": "SeLe4n.Kernel.replyStackBelowHead?_of_no_stack",
-          "line": 3644,
+          "line": 3694,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.donationHeadOf?_of_no_stack",
@@ -279117,7 +279141,7 @@
           "kind": "theorem",
           "name": "replyStackBelowHead?_of_bottom_head",
           "full_name": "SeLe4n.Kernel.replyStackBelowHead?_of_bottom_head",
-          "line": 3659,
+          "line": 3709,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -279133,7 +279157,7 @@
           "kind": "theorem",
           "name": "replyStackBelowHead?_snd_eq_outerCaller",
           "full_name": "SeLe4n.Kernel.replyStackBelowHead?_snd_eq_outerCaller",
-          "line": 3676,
+          "line": 3726,
           "called": [
             "SeLe4n.Kernel.donationHeadOf?",
             "SeLe4n.Kernel.replyStackBelowHead?",
@@ -279149,7 +279173,7 @@
           "kind": "theorem",
           "name": "replyStackBelowHead?_of_outer_none",
           "full_name": "SeLe4n.Kernel.replyStackBelowHead?_of_outer_none",
-          "line": 3720,
+          "line": 3770,
           "called": [
             "SeLe4n.Kernel.donationHeadOf?",
             "SeLe4n.Kernel.replyStackBelowHead?",
@@ -279164,7 +279188,7 @@
           "kind": "def",
           "name": "replyStackHead?",
           "full_name": "SeLe4n.Kernel.replyStackHead?",
-          "line": 3769,
+          "line": 3819,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getSchedContext?",
@@ -279176,7 +279200,7 @@
           "kind": "theorem",
           "name": "replyStackHead?_of_no_stack",
           "full_name": "SeLe4n.Kernel.replyStackHead?_of_no_stack",
-          "line": 3773,
+          "line": 3823,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.replyStackHead?",
@@ -279189,7 +279213,7 @@
           "kind": "theorem",
           "name": "replyStackHead?_eq",
           "full_name": "SeLe4n.Kernel.replyStackHead?_eq",
-          "line": 3779,
+          "line": 3829,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.replyStackHead?",
@@ -279202,7 +279226,7 @@
           "kind": "theorem",
           "name": "replyStackHead?_of_none",
           "full_name": "SeLe4n.Kernel.replyStackHead?_of_none",
-          "line": 3784,
+          "line": 3834,
           "called": [
             "SeLe4n.Kernel.replyStackHead?",
             "SeLe4n.Model.SystemState",
@@ -279214,7 +279238,7 @@
           "kind": "theorem",
           "name": "replyStackBelowHead?_of_no_head",
           "full_name": "SeLe4n.Kernel.replyStackBelowHead?_of_no_head",
-          "line": 3792,
+          "line": 3842,
           "called": [
             "SeLe4n.Kernel.donationHeadOf?_of_no_stack",
             "SeLe4n.Kernel.replyStackBelowHead?",
@@ -279229,7 +279253,7 @@
           "kind": "def",
           "name": "replyStackSecondBelowHead?",
           "full_name": "SeLe4n.Kernel.replyStackSecondBelowHead?",
-          "line": 3816,
+          "line": 3866,
           "called": [
             "SeLe4n.Kernel.replyStackBelowHead?",
             "SeLe4n.Model.SystemState",
@@ -279243,7 +279267,7 @@
           "kind": "theorem",
           "name": "replyStackSecondBelowHead?_of_no_stack",
           "full_name": "SeLe4n.Kernel.replyStackSecondBelowHead?_of_no_stack",
-          "line": 3832,
+          "line": 3882,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.replyStackBelowHead?_of_no_stack",
@@ -279257,7 +279281,7 @@
           "kind": "theorem",
           "name": "replyStackSecondBelowHead?_of_no_below",
           "full_name": "SeLe4n.Kernel.replyStackSecondBelowHead?_of_no_below",
-          "line": 3839,
+          "line": 3889,
           "called": [
             "SeLe4n.Kernel.replyStackBelowHead?",
             "SeLe4n.Kernel.replyStackSecondBelowHead?",
@@ -279269,7 +279293,7 @@
           "kind": "def",
           "name": "storeDonationHeadClear",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear",
-          "line": 3851,
+          "line": 3901,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState",
@@ -279283,7 +279307,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_none",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_none",
-          "line": 3862,
+          "line": 3912,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState"
@@ -279293,7 +279317,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_some",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_some",
-          "line": 3865,
+          "line": 3915,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState",
@@ -279307,7 +279331,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_cases",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_cases",
-          "line": 3882,
+          "line": 3932,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279324,7 +279348,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_some_ok",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_some_ok",
-          "line": 3921,
+          "line": 3971,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279340,7 +279364,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_ok_of_reply",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_ok_of_reply",
-          "line": 3946,
+          "line": 3996,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279357,7 +279381,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_scheduler_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_scheduler_eq",
-          "line": 3967,
+          "line": 4017,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState",
@@ -279369,7 +279393,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_tlbShootdown_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_tlbShootdown_eq",
-          "line": 3976,
+          "line": 4026,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState",
@@ -279381,7 +279405,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_machine_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_machine_eq",
-          "line": 3985,
+          "line": 4035,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState",
@@ -279393,7 +279417,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_preserves_objects_invExt",
-          "line": 3995,
+          "line": 4045,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279406,7 +279430,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_preserves_objectIndexSet_invExt",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_preserves_objectIndexSet_invExt",
-          "line": 4005,
+          "line": 4055,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -279421,7 +279445,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_preserves_objectIndexSetComplete",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_preserves_objectIndexSetComplete",
-          "line": 4016,
+          "line": 4066,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHSet.contains",
@@ -279437,7 +279461,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_tcb_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_tcb_eq",
-          "line": 4033,
+          "line": 4083,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279453,7 +279477,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_getTcb?_eq",
-          "line": 4047,
+          "line": 4097,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279469,7 +279493,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_getSchedContext?_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_getSchedContext?_eq",
-          "line": 4060,
+          "line": 4110,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279485,7 +279509,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_tcb_backward",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_tcb_backward",
-          "line": 4074,
+          "line": 4124,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279502,7 +279526,7 @@
           "kind": "def",
           "name": "tcbBindingRewrite",
           "full_name": "SeLe4n.Kernel.tcbBindingRewrite",
-          "line": 4092,
+          "line": 4142,
           "called": [
             "SeLe4n.Model.TCB"
           ]
@@ -279511,7 +279535,7 @@
           "kind": "theorem",
           "name": "tcbBindingRewrite.refl",
           "full_name": "SeLe4n.Kernel.tcbBindingRewrite.refl",
-          "line": 4095,
+          "line": 4145,
           "called": [
             "SeLe4n.Kernel.tcbBindingRewrite",
             "SeLe4n.Model.TCB"
@@ -279521,7 +279545,7 @@
           "kind": "theorem",
           "name": "tcbBindingRewrite.trans",
           "full_name": "SeLe4n.Kernel.tcbBindingRewrite.trans",
-          "line": 4098,
+          "line": 4148,
           "called": [
             "SeLe4n.Kernel.tcbBindingRewrite",
             "SeLe4n.Model.TCB"
@@ -279531,7 +279555,7 @@
           "kind": "def",
           "name": "replyStackRewrite",
           "full_name": "SeLe4n.Kernel.replyStackRewrite",
-          "line": 4114,
+          "line": 4164,
           "called": [
             "SeLe4n.Kernel.Reply"
           ]
@@ -279540,7 +279564,7 @@
           "kind": "theorem",
           "name": "replyStackRewrite.refl",
           "full_name": "SeLe4n.Kernel.replyStackRewrite.refl",
-          "line": 4117,
+          "line": 4167,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyStackRewrite"
@@ -279550,7 +279574,7 @@
           "kind": "theorem",
           "name": "replyStackRewrite.trans",
           "full_name": "SeLe4n.Kernel.replyStackRewrite.trans",
-          "line": 4119,
+          "line": 4169,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyStackRewrite"
@@ -279560,7 +279584,7 @@
           "kind": "theorem",
           "name": "replyStackRewrite.caller_eq",
           "full_name": "SeLe4n.Kernel.replyStackRewrite.caller_eq",
-          "line": 4127,
+          "line": 4177,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -279571,7 +279595,7 @@
           "kind": "theorem",
           "name": "replyStackRewrite.stasherCode_eq",
           "full_name": "SeLe4n.Kernel.replyStackRewrite.stasherCode_eq",
-          "line": 4132,
+          "line": 4182,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyStackRewrite"
@@ -279581,7 +279605,7 @@
           "kind": "theorem",
           "name": "replyStackRewrite.replyId_eq",
           "full_name": "SeLe4n.Kernel.replyStackRewrite.replyId_eq",
-          "line": 4136,
+          "line": 4186,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyStackRewrite"
@@ -279591,7 +279615,7 @@
           "kind": "def",
           "name": "storeReplyReHead",
           "full_name": "SeLe4n.Kernel.storeReplyReHead",
-          "line": 4157,
+          "line": 4207,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState",
@@ -279605,7 +279629,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_none",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_none",
-          "line": 4168,
+          "line": 4218,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -279616,7 +279640,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_some",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_some",
-          "line": 4171,
+          "line": 4221,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -279630,7 +279654,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_cases",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_cases",
-          "line": 4188,
+          "line": 4238,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279647,7 +279671,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_some_ok",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_some_ok",
-          "line": 4227,
+          "line": 4277,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279663,7 +279687,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_ok_of_reply",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_ok_of_reply",
-          "line": 4252,
+          "line": 4302,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279680,7 +279704,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_scheduler_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_scheduler_eq",
-          "line": 4273,
+          "line": 4323,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -279693,7 +279717,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_tlbShootdown_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_tlbShootdown_eq",
-          "line": 4282,
+          "line": 4332,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -279706,7 +279730,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_machine_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_machine_eq",
-          "line": 4291,
+          "line": 4341,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -279719,7 +279743,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_preserves_objects_invExt",
-          "line": 4301,
+          "line": 4351,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279733,7 +279757,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_preserves_objectIndexSet_invExt",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_preserves_objectIndexSet_invExt",
-          "line": 4311,
+          "line": 4361,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -279749,7 +279773,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_preserves_objectIndexSetComplete",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_preserves_objectIndexSetComplete",
-          "line": 4322,
+          "line": 4372,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHSet.contains",
@@ -279766,7 +279790,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_tcb_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_tcb_eq",
-          "line": 4339,
+          "line": 4389,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279782,7 +279806,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_getTcb?_eq",
-          "line": 4353,
+          "line": 4403,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279799,7 +279823,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_getSchedContext?_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_getSchedContext?_eq",
-          "line": 4366,
+          "line": 4416,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279815,7 +279839,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_tcb_backward",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_tcb_backward",
-          "line": 4380,
+          "line": 4430,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.storeReplyReHead",
@@ -279832,7 +279856,7 @@
           "kind": "def",
           "name": "storeDonationHeadPop",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop",
-          "line": 4406,
+          "line": 4456,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279847,7 +279871,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_none",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_none",
-          "line": 4414,
+          "line": 4464,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadPop",
             "SeLe4n.Model.SystemState",
@@ -279858,7 +279882,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_some",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_some",
-          "line": 4417,
+          "line": 4467,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279873,7 +279897,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_cases",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_cases",
-          "line": 4425,
+          "line": 4475,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -279889,7 +279913,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_ghostsKept",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_ghostsKept",
-          "line": 4447,
+          "line": 4497,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState",
@@ -279903,7 +279927,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_ghostsKept",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_ghostsKept",
-          "line": 4454,
+          "line": 4504,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -279918,7 +279942,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_ghostsKept",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_ghostsKept",
-          "line": 4461,
+          "line": 4511,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear_ghostsKept",
@@ -279936,7 +279960,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_ok_below_resolves",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_ok_below_resolves",
-          "line": 4471,
+          "line": 4521,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -279953,7 +279977,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_ok_of_reply",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_ok_of_reply",
-          "line": 4500,
+          "line": 4550,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -279972,7 +279996,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_preserves_objects_invExt",
-          "line": 4531,
+          "line": 4581,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -279988,7 +280012,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_preserves_objectIndexSet_invExt",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_preserves_objectIndexSet_invExt",
-          "line": 4542,
+          "line": 4592,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHSet",
@@ -280006,7 +280030,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_preserves_objectIndexSetComplete",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_preserves_objectIndexSetComplete",
-          "line": 4553,
+          "line": 4603,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHSet",
@@ -280027,7 +280051,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_scheduler_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_scheduler_eq",
-          "line": 4568,
+          "line": 4618,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear_scheduler_eq",
@@ -280042,7 +280066,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_tlbShootdown_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_tlbShootdown_eq",
-          "line": 4577,
+          "line": 4627,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear_tlbShootdown_eq",
@@ -280057,7 +280081,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_machine_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_machine_eq",
-          "line": 4586,
+          "line": 4636,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear_machine_eq",
@@ -280072,7 +280096,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_tcb_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_tcb_eq",
-          "line": 4595,
+          "line": 4645,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280091,7 +280115,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_getTcb?_eq",
-          "line": 4607,
+          "line": 4657,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280110,7 +280134,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_getSchedContext?_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_getSchedContext?_eq",
-          "line": 4618,
+          "line": 4668,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280128,7 +280152,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_tcb_backward",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_tcb_backward",
-          "line": 4630,
+          "line": 4680,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280147,7 +280171,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_objects_ne",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_objects_ne",
-          "line": 4645,
+          "line": 4695,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280164,7 +280188,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_reply_rewrite",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_reply_rewrite",
-          "line": 4670,
+          "line": 4720,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280185,7 +280209,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_non_reply_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_non_reply_eq",
-          "line": 4705,
+          "line": 4755,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280202,7 +280226,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadClear_cdt_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadClear_cdt_eq",
-          "line": 4730,
+          "line": 4780,
           "called": [
             "SeLe4n.Kernel.storeDonationHeadClear",
             "SeLe4n.Model.SystemState",
@@ -280214,7 +280238,7 @@
           "kind": "theorem",
           "name": "storeReplyReHead_cdt_eq",
           "full_name": "SeLe4n.Kernel.storeReplyReHead_cdt_eq",
-          "line": 4738,
+          "line": 4788,
           "called": [
             "SeLe4n.Kernel.storeReplyReHead",
             "SeLe4n.Model.SystemState",
@@ -280227,7 +280251,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_cdt_eq",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_cdt_eq",
-          "line": 4747,
+          "line": 4797,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.storeDonationHeadClear",
@@ -280244,7 +280268,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_kindPreservingWrite",
-          "line": 4772,
+          "line": 4822,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280269,7 +280293,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_non_reply_backward",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_non_reply_backward",
-          "line": 4788,
+          "line": 4838,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280287,7 +280311,7 @@
           "kind": "def",
           "name": "cutFrameBelow?",
           "full_name": "SeLe4n.Kernel.cutFrameBelow?",
-          "line": 4849,
+          "line": 4899,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -280299,7 +280323,7 @@
           "kind": "theorem",
           "name": "cutFrameBelow?_eq_some",
           "full_name": "SeLe4n.Kernel.cutFrameBelow?_eq_some",
-          "line": 4863,
+          "line": 4913,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutFrameBelow?",
@@ -280312,7 +280336,7 @@
           "kind": "theorem",
           "name": "cutFrameBelow?_ne_above",
           "full_name": "SeLe4n.Kernel.cutFrameBelow?_ne_above",
-          "line": 4892,
+          "line": 4942,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutFrameBelow?",
@@ -280325,7 +280349,7 @@
           "kind": "theorem",
           "name": "cutFrameBelow?_ne_cut",
           "full_name": "SeLe4n.Kernel.cutFrameBelow?_ne_cut",
-          "line": 4900,
+          "line": 4950,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.ReplyStackLink",
@@ -280340,7 +280364,7 @@
           "kind": "theorem",
           "name": "cutFrameBelow?_above_ne_cut",
           "full_name": "SeLe4n.Kernel.cutFrameBelow?_above_ne_cut",
-          "line": 4916,
+          "line": 4966,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutFrameBelow?",
@@ -280354,7 +280378,7 @@
           "kind": "def",
           "name": "cutReplyFrameStores",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores",
-          "line": 4968,
+          "line": 5018,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280370,7 +280394,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_cases",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_cases",
-          "line": 4994,
+          "line": 5044,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280386,7 +280410,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_isOk",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_isOk",
-          "line": 5048,
+          "line": 5098,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameStores",
@@ -280399,7 +280423,7 @@
           "kind": "def",
           "name": "cutReplyFrameStoresState",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStoresState",
-          "line": 5059,
+          "line": 5109,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280414,7 +280438,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_eq_state",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_eq_state",
-          "line": 5071,
+          "line": 5121,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameStores",
@@ -280428,7 +280452,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_break_values",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_break_values",
-          "line": 5098,
+          "line": 5148,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280454,7 +280478,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_sever_values",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_sever_values",
-          "line": 5144,
+          "line": 5194,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280477,7 +280501,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_sever_cut_read",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_sever_cut_read",
-          "line": 5172,
+          "line": 5222,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280497,7 +280521,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_objects_rewrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_objects_rewrite",
-          "line": 5192,
+          "line": 5242,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280521,7 +280545,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_preserves_objects_invExt",
-          "line": 5240,
+          "line": 5290,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280535,7 +280559,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_scheduler_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_scheduler_eq",
-          "line": 5250,
+          "line": 5300,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameStores",
@@ -280548,7 +280572,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_machine_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_machine_eq",
-          "line": 5259,
+          "line": 5309,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameStores",
@@ -280561,7 +280585,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_cdt_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_cdt_eq",
-          "line": 5267,
+          "line": 5317,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameStores",
@@ -280574,7 +280598,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_non_reply_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_non_reply_eq",
-          "line": 5276,
+          "line": 5326,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280589,7 +280613,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_reply_rewrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_reply_rewrite",
-          "line": 5289,
+          "line": 5339,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280607,7 +280631,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_objects_ne",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_objects_ne",
-          "line": 5307,
+          "line": 5357,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280625,7 +280649,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_getReply?_above",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_getReply?_above",
-          "line": 5329,
+          "line": 5379,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280642,7 +280666,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_getReply?_below",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_getReply?_below",
-          "line": 5341,
+          "line": 5391,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280658,7 +280682,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_getReply?_cut",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_getReply?_cut",
-          "line": 5353,
+          "line": 5403,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280675,7 +280699,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameStores_reply_caller_and_headLink",
           "full_name": "SeLe4n.Kernel.cutReplyFrameStores_reply_caller_and_headLink",
-          "line": 5377,
+          "line": 5427,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -280701,7 +280725,7 @@
           "kind": "def",
           "name": "severReplyFrameBelowStores",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores",
-          "line": 5436,
+          "line": 5486,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.KernelError",
@@ -280715,7 +280739,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_isOk",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_isOk",
-          "line": 5446,
+          "line": 5496,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280728,7 +280752,7 @@
           "kind": "def",
           "name": "severReplyFrameBelowStoresState",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStoresState",
-          "line": 5453,
+          "line": 5503,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -280741,7 +280765,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_eq_state",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_eq_state",
-          "line": 5459,
+          "line": 5509,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280755,7 +280779,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_cases",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_cases",
-          "line": 5467,
+          "line": 5517,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280769,7 +280793,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelow_ne",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelow_ne",
-          "line": 5487,
+          "line": 5537,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -280783,7 +280807,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_values",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_values",
-          "line": 5499,
+          "line": 5549,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280805,7 +280829,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_objects_rewrite",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_objects_rewrite",
-          "line": 5523,
+          "line": 5573,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280824,7 +280848,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_preserves_objects_invExt",
-          "line": 5542,
+          "line": 5592,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280839,7 +280863,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_scheduler_eq",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_scheduler_eq",
-          "line": 5549,
+          "line": 5599,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280853,7 +280877,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_machine_eq",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_machine_eq",
-          "line": 5556,
+          "line": 5606,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280867,7 +280891,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_cdt_eq",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_cdt_eq",
-          "line": 5563,
+          "line": 5613,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280881,7 +280905,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_objects_ne",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_objects_ne",
-          "line": 5570,
+          "line": 5620,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -280899,7 +280923,7 @@
           "kind": "theorem",
           "name": "severReplyFrameBelowStores_transport",
           "full_name": "SeLe4n.Kernel.severReplyFrameBelowStores_transport",
-          "line": 5583,
+          "line": 5633,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -280921,7 +280945,7 @@
           "kind": "def",
           "name": "cutReplyFrameOut",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut",
-          "line": 5660,
+          "line": 5710,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameStores",
             "SeLe4n.Kernel.severReplyFrameBelowStores",
@@ -280935,7 +280959,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_cases",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_cases",
-          "line": 5688,
+          "line": 5738,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -280950,7 +280974,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_eq_sever_of_no_frame_below",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_eq_sever_of_no_frame_below",
-          "line": 5744,
+          "line": 5794,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -280968,7 +280992,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_of_head",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_of_head",
-          "line": 5767,
+          "line": 5817,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -280982,7 +281006,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_of_no_frame_above",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_of_no_frame_above",
-          "line": 5774,
+          "line": 5824,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -280995,7 +281019,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_of_unreciprocated_below",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_of_unreciprocated_below",
-          "line": 5782,
+          "line": 5832,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281008,7 +281032,7 @@
           "kind": "def",
           "name": "replyFrameAbove?",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?",
-          "line": 5803,
+          "line": 5853,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getReply?",
@@ -281019,7 +281043,7 @@
           "kind": "theorem",
           "name": "replyFrameAbove?_of_splice_store",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?_of_splice_store",
-          "line": 5815,
+          "line": 5865,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281035,7 +281059,7 @@
           "kind": "theorem",
           "name": "replyFrameAbove?_eq_some",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?_eq_some",
-          "line": 5834,
+          "line": 5884,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameAbove?",
@@ -281048,7 +281072,7 @@
           "kind": "theorem",
           "name": "replyFrameAbove?_of_none",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?_of_none",
-          "line": 5850,
+          "line": 5900,
           "called": [
             "SeLe4n.Kernel.replyFrameAbove?",
             "SeLe4n.Model.SystemState",
@@ -281060,7 +281084,7 @@
           "kind": "theorem",
           "name": "replyFrameAbove?_of_head",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?_of_head",
-          "line": 5855,
+          "line": 5905,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameAbove?",
@@ -281074,7 +281098,7 @@
           "kind": "theorem",
           "name": "replyFrameAbove?_of_unlinked",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?_of_unlinked",
-          "line": 5861,
+          "line": 5911,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameAbove?",
@@ -281087,7 +281111,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_of_absent",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_of_absent",
-          "line": 5866,
+          "line": 5916,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Model.SystemState",
@@ -281099,7 +281123,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_objects_rewrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_objects_rewrite",
-          "line": 5874,
+          "line": 5924,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281115,7 +281139,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_preserves_objects_invExt",
-          "line": 5886,
+          "line": 5936,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281129,7 +281153,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_scheduler_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_scheduler_eq",
-          "line": 5895,
+          "line": 5945,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Kernel.cutReplyFrameStores_scheduler_eq",
@@ -281142,7 +281166,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_machine_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_machine_eq",
-          "line": 5903,
+          "line": 5953,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Kernel.cutReplyFrameStores_machine_eq",
@@ -281155,7 +281179,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_notification_backward",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_notification_backward",
-          "line": 5913,
+          "line": 5963,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281169,7 +281193,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_getTcb?_eq",
-          "line": 5924,
+          "line": 5974,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281183,7 +281207,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_objects_ne",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_objects_ne",
-          "line": 5939,
+          "line": 5989,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -281201,7 +281225,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_tcb_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_tcb_eq",
-          "line": 5956,
+          "line": 6006,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281215,7 +281239,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_tcb_backward",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_tcb_backward",
-          "line": 5965,
+          "line": 6015,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -281229,7 +281253,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_non_reply_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_non_reply_eq",
-          "line": 5974,
+          "line": 6024,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -281243,7 +281267,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_reply_rewrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_reply_rewrite",
-          "line": 5983,
+          "line": 6033,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -281260,7 +281284,7 @@
           "kind": "def",
           "name": "replyFrameBelow?",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?",
-          "line": 6014,
+          "line": 6064,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getReply?",
@@ -281271,7 +281295,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_of_not_head",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_of_not_head",
-          "line": 6023,
+          "line": 6073,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameBelow?",
@@ -281284,7 +281308,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_of_none",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_of_none",
-          "line": 6032,
+          "line": 6082,
           "called": [
             "SeLe4n.Kernel.replyFrameBelow?",
             "SeLe4n.Model.SystemState",
@@ -281296,7 +281320,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_of_head",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_of_head",
-          "line": 6037,
+          "line": 6087,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameBelow?",
@@ -281310,7 +281334,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_of_no_prev",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_of_no_prev",
-          "line": 6043,
+          "line": 6093,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameBelow?",
@@ -281323,7 +281347,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_eq_some",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_eq_some",
-          "line": 6053,
+          "line": 6103,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameBelow?",
@@ -281339,7 +281363,7 @@
           "kind": "theorem",
           "name": "cutFrameBelow?_mem_replyFrameBelow?",
           "full_name": "SeLe4n.Kernel.cutFrameBelow?_mem_replyFrameBelow?",
-          "line": 6083,
+          "line": 6133,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutFrameBelow?",
@@ -281357,7 +281381,7 @@
           "kind": "theorem",
           "name": "severFrameBelow_mem_replyFrameBelow?",
           "full_name": "SeLe4n.Kernel.severFrameBelow_mem_replyFrameBelow?",
-          "line": 6096,
+          "line": 6146,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameBelow?",
@@ -281371,7 +281395,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_eq_prev_of_frame_above",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_eq_prev_of_frame_above",
-          "line": 6113,
+          "line": 6163,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.replyFrameAbove?",
@@ -281387,7 +281411,7 @@
           "kind": "def",
           "name": "replyFrameHeadContext?",
           "full_name": "SeLe4n.Kernel.replyFrameHeadContext?",
-          "line": 6144,
+          "line": 6194,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getReply?",
@@ -281400,7 +281424,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadContext?_eq_some",
           "full_name": "SeLe4n.Kernel.replyFrameHeadContext?_eq_some",
-          "line": 6160,
+          "line": 6210,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -281416,7 +281440,7 @@
           "kind": "theorem",
           "name": "replyFrameOnLiveStack_of_head",
           "full_name": "SeLe4n.Kernel.replyFrameOnLiveStack_of_head",
-          "line": 6194,
+          "line": 6244,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Kernel.replyFrameHeadContext?_eq_some",
@@ -281432,7 +281456,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadContext?_of_none",
           "full_name": "SeLe4n.Kernel.replyFrameHeadContext?_of_none",
-          "line": 6201,
+          "line": 6251,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Model.SystemState",
@@ -281444,7 +281468,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadContext?_of_head",
           "full_name": "SeLe4n.Kernel.replyFrameHeadContext?_of_head",
-          "line": 6208,
+          "line": 6258,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -281460,7 +281484,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadContext?_of_frameAbove",
           "full_name": "SeLe4n.Kernel.replyFrameHeadContext?_of_frameAbove",
-          "line": 6220,
+          "line": 6270,
           "called": [
             "SeLe4n.Kernel.replyFrameAbove?",
             "SeLe4n.Kernel.replyFrameAbove?_eq_some",
@@ -281473,7 +281497,7 @@
           "kind": "theorem",
           "name": "replyFrameAbove?_of_headContext",
           "full_name": "SeLe4n.Kernel.replyFrameAbove?_of_headContext",
-          "line": 6226,
+          "line": 6276,
           "called": [
             "SeLe4n.Kernel.replyFrameAbove?",
             "SeLe4n.Kernel.replyFrameAbove?_of_head",
@@ -281488,7 +281512,7 @@
           "kind": "theorem",
           "name": "replyFrameBelow?_of_headContext",
           "full_name": "SeLe4n.Kernel.replyFrameBelow?_of_headContext",
-          "line": 6235,
+          "line": 6285,
           "called": [
             "SeLe4n.Kernel.replyFrameBelow?",
             "SeLe4n.Kernel.replyFrameBelow?_of_head",
@@ -281503,7 +281527,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadContext?_congr",
           "full_name": "SeLe4n.Kernel.replyFrameHeadContext?_congr",
-          "line": 6245,
+          "line": 6295,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Model.SystemState",
@@ -281517,7 +281541,7 @@
           "kind": "def",
           "name": "answeredReplyObject?",
           "full_name": "SeLe4n.Kernel.answeredReplyObject?",
-          "line": 6289,
+          "line": 6339,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -281529,7 +281553,7 @@
           "kind": "def",
           "name": "replyFrameHeadHolder?",
           "full_name": "SeLe4n.Kernel.replyFrameHeadHolder?",
-          "line": 6334,
+          "line": 6384,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Model.SystemState",
@@ -281543,7 +281567,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadHolder?_of_no_head",
           "full_name": "SeLe4n.Kernel.replyFrameHeadHolder?_of_no_head",
-          "line": 6344,
+          "line": 6394,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Kernel.replyFrameHeadHolder?",
@@ -281555,7 +281579,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadHolder?_of_head",
           "full_name": "SeLe4n.Kernel.replyFrameHeadHolder?_of_head",
-          "line": 6350,
+          "line": 6400,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Kernel.replyFrameHeadHolder?",
@@ -281570,7 +281594,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadHolder?_eq_some",
           "full_name": "SeLe4n.Kernel.replyFrameHeadHolder?_eq_some",
-          "line": 6360,
+          "line": 6410,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?",
             "SeLe4n.Kernel.replyFrameHeadHolder?",
@@ -281585,7 +281609,7 @@
           "kind": "theorem",
           "name": "replyFrameHeadHolder?_congr",
           "full_name": "SeLe4n.Kernel.replyFrameHeadHolder?_congr",
-          "line": 6386,
+          "line": 6436,
           "called": [
             "SeLe4n.Kernel.replyFrameHeadContext?_congr",
             "SeLe4n.Kernel.replyFrameHeadHolder?",
@@ -281600,7 +281624,7 @@
           "kind": "def",
           "name": "answeredFrameHeadContext?",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContext?",
-          "line": 6401,
+          "line": 6451,
           "called": [
             "SeLe4n.Kernel.answeredReplyObject?",
             "SeLe4n.Kernel.replyFrameHeadHolder?",
@@ -281613,7 +281637,7 @@
           "kind": "theorem",
           "name": "answeredFrameHeadContext?_of_no_reply",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContext?_of_no_reply",
-          "line": 6408,
+          "line": 6458,
           "called": [
             "SeLe4n.Kernel.answeredFrameHeadContext?",
             "SeLe4n.Kernel.answeredReplyObject?",
@@ -281625,7 +281649,7 @@
           "kind": "theorem",
           "name": "answeredFrameHeadContext?_eq",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContext?_eq",
-          "line": 6414,
+          "line": 6464,
           "called": [
             "SeLe4n.Kernel.answeredFrameHeadContext?",
             "SeLe4n.Kernel.answeredReplyObject?",
@@ -281639,7 +281663,7 @@
           "kind": "theorem",
           "name": "answeredFrameHeadContext?_of_head",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContext?_of_head",
-          "line": 6421,
+          "line": 6471,
           "called": [
             "SeLe4n.Kernel.answeredFrameHeadContext?",
             "SeLe4n.Kernel.answeredFrameHeadContext?_eq",
@@ -281657,7 +281681,7 @@
           "kind": "theorem",
           "name": "answeredFrameHeadContext?_eq_some",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContext?_eq_some",
-          "line": 6433,
+          "line": 6483,
           "called": [
             "SeLe4n.Kernel.answeredFrameHeadContext?",
             "SeLe4n.Kernel.answeredReplyObject?",
@@ -281674,7 +281698,7 @@
           "kind": "def",
           "name": "answeredFrameHeadContextId?",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContextId?",
-          "line": 6454,
+          "line": 6504,
           "called": [
             "SeLe4n.Kernel.answeredReplyObject?",
             "SeLe4n.Kernel.replyFrameHeadContext?",
@@ -281687,7 +281711,7 @@
           "kind": "theorem",
           "name": "answeredFrameHeadContextId?_of_holder",
           "full_name": "SeLe4n.Kernel.answeredFrameHeadContextId?_of_holder",
-          "line": 6459,
+          "line": 6509,
           "called": [
             "SeLe4n.Kernel.answeredFrameHeadContext?",
             "SeLe4n.Kernel.answeredFrameHeadContext?_eq_some",
@@ -281701,7 +281725,7 @@
           "kind": "def",
           "name": "cutReplyFrameOutOrSelf",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
-          "line": 6480,
+          "line": 6530,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Model.SystemState",
@@ -281712,7 +281736,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_cases",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_cases",
-          "line": 6487,
+          "line": 6537,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -281724,7 +281748,7 @@
           "kind": "def",
           "name": "Reply.prevNames",
           "full_name": "SeLe4n.Kernel.Reply.prevNames",
-          "line": 6497,
+          "line": 6547,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.ReplyId"
@@ -281734,7 +281758,7 @@
           "kind": "theorem",
           "name": "Reply.prevNames_eq",
           "full_name": "SeLe4n.Kernel.Reply.prevNames_eq",
-          "line": 6502,
+          "line": 6552,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.prevNames",
@@ -281745,7 +281769,7 @@
           "kind": "def",
           "name": "Reply.nextNamesFrame",
           "full_name": "SeLe4n.Kernel.Reply.nextNamesFrame",
-          "line": 6512,
+          "line": 6562,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.ReplyId"
@@ -281755,7 +281779,7 @@
           "kind": "theorem",
           "name": "Reply.nextNamesFrame_eq",
           "full_name": "SeLe4n.Kernel.Reply.nextNamesFrame_eq",
-          "line": 6517,
+          "line": 6567,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.nextNamesFrame",
@@ -281767,7 +281791,7 @@
           "kind": "def",
           "name": "cutReplyFrameOutOrSelfChecked",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelfChecked",
-          "line": 6537,
+          "line": 6587,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameStoresState",
             "SeLe4n.Kernel.severReplyFrameBelowStoresState",
@@ -281780,7 +281804,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_eq_checked",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_eq_checked",
-          "line": 6561,
+          "line": 6611,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.nextNamesFrame_eq",
@@ -281796,7 +281820,7 @@
           "kind": "def",
           "name": "cutThreadReplyFrameOut",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut",
-          "line": 6605,
+          "line": 6655,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Model.SystemState",
@@ -281808,7 +281832,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_store_cases",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_store_cases",
-          "line": 6626,
+          "line": 6676,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.unlinkedFrom",
@@ -281834,7 +281858,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_preserves_reply_caller_and_headLink",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_reply_caller_and_headLink",
-          "line": 6696,
+          "line": 6746,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -281854,7 +281878,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_cases",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_cases",
-          "line": 6733,
+          "line": 6783,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Kernel.cutThreadReplyFrameOut",
@@ -281867,7 +281891,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_eq_self_of_no_frame_above",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_eq_self_of_no_frame_above",
-          "line": 6748,
+          "line": 6798,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutThreadReplyFrameOut",
@@ -281882,7 +281906,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_scheduler_eq",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_scheduler_eq",
-          "line": 6764,
+          "line": 6814,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut_scheduler_eq",
             "SeLe4n.Kernel.cutThreadReplyFrameOut",
@@ -281894,7 +281918,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_machine_eq",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_machine_eq",
-          "line": 6770,
+          "line": 6820,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut_machine_eq",
             "SeLe4n.Kernel.cutThreadReplyFrameOut",
@@ -281906,7 +281930,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_preserves_objects_invExt",
-          "line": 6776,
+          "line": 6826,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut_preserves_objects_invExt",
@@ -281919,7 +281943,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_tcb_eq",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_tcb_eq",
-          "line": 6783,
+          "line": 6833,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut_tcb_eq",
@@ -281933,7 +281957,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_tcb_backward",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_tcb_backward",
-          "line": 6791,
+          "line": 6841,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut_tcb_backward",
@@ -281947,7 +281971,7 @@
           "kind": "theorem",
           "name": "cutThreadReplyFrameOut_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.cutThreadReplyFrameOut_getTcb?_eq",
-          "line": 6799,
+          "line": 6849,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOut_getTcb?_eq",
@@ -281962,7 +281986,7 @@
           "kind": "def",
           "name": "removeCallerReplyFrame",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame",
-          "line": 6830,
+          "line": 6880,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Model.Kernel",
@@ -281975,7 +281999,7 @@
           "kind": "def",
           "name": "removeCallerReplyFrameState",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrameState",
-          "line": 6839,
+          "line": 6889,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Model.SystemState",
@@ -281988,7 +282012,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_eq_state",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_eq_state",
-          "line": 6844,
+          "line": 6894,
           "called": [
             "SeLe4n.Kernel.removeCallerReplyFrame",
             "SeLe4n.Kernel.removeCallerReplyFrameState",
@@ -282002,7 +282026,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOut_cdt_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOut_cdt_eq",
-          "line": 6858,
+          "line": 6908,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Kernel.cutReplyFrameStores_cdt_eq",
@@ -282015,7 +282039,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_eq_self_of_no_frame_above",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_eq_self_of_no_frame_above",
-          "line": 6868,
+          "line": 6918,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOut",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282034,7 +282058,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_ghostsKept",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_ghostsKept",
-          "line": 6892,
+          "line": 6942,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282051,7 +282075,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_scheduler_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_scheduler_eq",
-          "line": 6909,
+          "line": 6959,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Kernel.cutReplyFrameOut_scheduler_eq",
@@ -282063,7 +282087,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_machine_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_machine_eq",
-          "line": 6915,
+          "line": 6965,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Kernel.cutReplyFrameOut_machine_eq",
@@ -282075,7 +282099,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_cdt_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_cdt_eq",
-          "line": 6921,
+          "line": 6971,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Kernel.cutReplyFrameOut_cdt_eq",
@@ -282087,7 +282111,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_objects_invExt",
-          "line": 6927,
+          "line": 6977,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282100,7 +282124,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_objects_rewrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_objects_rewrite",
-          "line": 6944,
+          "line": 6994,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282115,7 +282139,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_objects_ne",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_objects_ne",
-          "line": 6957,
+          "line": 7007,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282133,7 +282157,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_tcb_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_tcb_eq",
-          "line": 6971,
+          "line": 7021,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282148,7 +282172,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_tcb_backward",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_tcb_backward",
-          "line": 6979,
+          "line": 7029,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282163,7 +282187,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_getTcb?_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_getTcb?_eq",
-          "line": 6987,
+          "line": 7037,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282178,7 +282202,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_non_reply_eq",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_non_reply_eq",
-          "line": 6994,
+          "line": 7044,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -282193,7 +282217,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_non_reply_agree",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_non_reply_agree",
-          "line": 7005,
+          "line": 7055,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282207,7 +282231,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_notification_backward",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_notification_backward",
-          "line": 7015,
+          "line": 7065,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282222,7 +282246,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_reply_rewrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_reply_rewrite",
-          "line": 7025,
+          "line": 7075,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -282239,7 +282263,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_decision",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_decision",
-          "line": 7047,
+          "line": 7097,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cutReplyFrameOut",
@@ -282257,7 +282281,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_eq",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_eq",
-          "line": 7110,
+          "line": 7160,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
             "SeLe4n.Kernel.removeCallerReplyFrame",
@@ -282271,7 +282295,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_eq_consume_of_no_frame_above",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_eq_consume_of_no_frame_above",
-          "line": 7121,
+          "line": 7171,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_eq_self_of_no_frame_above",
             "SeLe4n.Kernel.removeCallerReplyFrame",
@@ -282288,7 +282312,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_isOk",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_isOk",
-          "line": 7129,
+          "line": 7179,
           "called": [
             "SeLe4n.Kernel.removeCallerReplyFrame",
             "SeLe4n.Kernel.removeCallerReplyFrame_eq",
@@ -282302,7 +282326,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_scheduler_eq",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_scheduler_eq",
-          "line": 7135,
+          "line": 7185,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_scheduler_eq",
             "SeLe4n.Kernel.removeCallerReplyFrame",
@@ -282317,7 +282341,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_machine_eq",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_machine_eq",
-          "line": 7143,
+          "line": 7193,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_machine_eq",
             "SeLe4n.Kernel.removeCallerReplyFrame",
@@ -282332,7 +282356,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_cdt_eq",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_cdt_eq",
-          "line": 7151,
+          "line": 7201,
           "called": [
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_cdt_eq",
             "SeLe4n.Kernel.removeCallerReplyFrame",
@@ -282347,7 +282371,7 @@
           "kind": "theorem",
           "name": "cutReplyFrameOutOrSelf_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.cutReplyFrameOutOrSelf_kindPreservingWrite",
-          "line": 7162,
+          "line": 7212,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf",
@@ -282368,7 +282392,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_kindPreservingWrite",
-          "line": 7179,
+          "line": 7229,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_kindPreservingWrite",
@@ -282387,7 +282411,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_preserves_objects_invExt",
-          "line": 7188,
+          "line": 7238,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_objects_invExt",
@@ -282403,7 +282427,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_nonTcbNonReply_agree",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_nonTcbNonReply_agree",
-          "line": 7196,
+          "line": 7246,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_non_reply_agree",
@@ -282422,7 +282446,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_tcb_forward",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_tcb_forward",
-          "line": 7211,
+          "line": 7261,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_objects_invExt",
@@ -282446,7 +282470,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_tcb_backward",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_tcb_backward",
-          "line": 7226,
+          "line": 7276,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_objects_invExt",
@@ -282470,7 +282494,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_replyObject_none",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_replyObject_none",
-          "line": 7242,
+          "line": 7292,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_objects_invExt",
@@ -282487,7 +282511,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_getReply?_caller_none",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_getReply?_caller_none",
-          "line": 7255,
+          "line": 7305,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.consumed",
@@ -282507,7 +282531,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_getReply?_free",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_getReply?_free",
-          "line": 7273,
+          "line": 7323,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.caller",
@@ -282528,7 +282552,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_head_getReply?_next",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_head_getReply?_next",
-          "line": 7293,
+          "line": 7343,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.Reply.consumed",
@@ -282551,7 +282575,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_objects_isSome",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_objects_isSome",
-          "line": 7310,
+          "line": 7360,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cutReplyFrameOutOrSelf_non_reply_eq",
@@ -282571,7 +282595,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_getReply?_isSome",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_getReply?_isSome",
-          "line": 7333,
+          "line": 7383,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -282591,7 +282615,7 @@
           "kind": "def",
           "name": "returnDonatedSchedContext",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext",
-          "line": 7385,
+          "line": 7435,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.ownerCode",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -282615,7 +282639,7 @@
           "kind": "def",
           "name": "returnDonatedSchedContextResolved",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextResolved",
-          "line": 7501,
+          "line": 7551,
           "called": [
             "SeLe4n.Kernel.replyStackOuterCaller?",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -282629,7 +282653,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_ok_decompose",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextResolved_ok_decompose",
-          "line": 7511,
+          "line": 7561,
           "called": [
             "SeLe4n.Kernel.replyStackOuterCaller?",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -282643,7 +282667,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_lift",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextResolved_lift",
-          "line": 7529,
+          "line": 7579,
           "called": [
             "SeLe4n.Kernel.returnDonatedSchedContext",
             "SeLe4n.Kernel.returnDonatedSchedContextResolved",
@@ -282657,7 +282681,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_of_resolved",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextResolved_of_resolved",
-          "line": 7542,
+          "line": 7592,
           "called": [
             "SeLe4n.Kernel.replyStackOuterCaller?",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -282671,7 +282695,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_eq_legacy_of_no_stack",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextResolved_eq_legacy_of_no_stack",
-          "line": 7558,
+          "line": 7608,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.replyStackOuterCaller?_of_no_stack",
@@ -282688,7 +282712,7 @@
           "kind": "def",
           "name": "heldPopOwner?",
           "full_name": "SeLe4n.Kernel.heldPopOwner?",
-          "line": 7575,
+          "line": 7625,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.isDonated",
@@ -282699,7 +282723,7 @@
           "kind": "theorem",
           "name": "heldPopOwner?_bound",
           "full_name": "SeLe4n.Kernel.heldPopOwner?_bound",
-          "line": 7579,
+          "line": 7629,
           "called": [
             "SeLe4n.Kernel.heldPopOwner?",
             "SeLe4n.SchedContextId",
@@ -282710,7 +282734,7 @@
           "kind": "theorem",
           "name": "heldPopOwner?_donated",
           "full_name": "SeLe4n.Kernel.heldPopOwner?_donated",
-          "line": 7583,
+          "line": 7633,
           "called": [
             "SeLe4n.Kernel.heldPopOwner?",
             "SeLe4n.SchedContextId",
@@ -282721,7 +282745,7 @@
           "kind": "theorem",
           "name": "heldPopOwner?_unbound",
           "full_name": "SeLe4n.Kernel.heldPopOwner?_unbound",
-          "line": 7587,
+          "line": 7637,
           "called": [
             "SeLe4n.Kernel.heldPopOwner?",
             "SeLe4n.ThreadId"
@@ -282731,7 +282755,7 @@
           "kind": "theorem",
           "name": "heldPopOwner?_cases",
           "full_name": "SeLe4n.Kernel.heldPopOwner?_cases",
-          "line": 7591,
+          "line": 7641,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.heldPopOwner?",
@@ -282742,7 +282766,7 @@
           "kind": "theorem",
           "name": "heldPopOwner?_some",
           "full_name": "SeLe4n.Kernel.heldPopOwner?_some",
-          "line": 7596,
+          "line": 7646,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.isDonated",
@@ -282754,7 +282778,7 @@
           "kind": "def",
           "name": "heldPopOuter?",
           "full_name": "SeLe4n.Kernel.heldPopOuter?",
-          "line": 7607,
+          "line": 7657,
           "called": [
             "SeLe4n.Kernel.heldPopOwner?",
             "SeLe4n.Model.SystemState",
@@ -282766,7 +282790,7 @@
           "kind": "theorem",
           "name": "heldPopOuter?_of_getTcb",
           "full_name": "SeLe4n.Kernel.heldPopOuter?_of_getTcb",
-          "line": 7615,
+          "line": 7665,
           "called": [
             "SeLe4n.Kernel.heldPopOuter?",
             "SeLe4n.Kernel.heldPopOwner?",
@@ -282781,7 +282805,7 @@
           "kind": "theorem",
           "name": "heldPopOuter?_of_donated",
           "full_name": "SeLe4n.Kernel.heldPopOuter?_of_donated",
-          "line": 7622,
+          "line": 7672,
           "called": [
             "SeLe4n.Kernel.heldPopOuter?",
             "SeLe4n.Kernel.heldPopOuter?_of_getTcb",
@@ -282797,7 +282821,7 @@
           "kind": "def",
           "name": "keepDonatedSchedContext",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext",
-          "line": 7646,
+          "line": 7696,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.ownerCode",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -282821,7 +282845,7 @@
           "kind": "def",
           "name": "keepDonatedSchedContextResolved",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved",
-          "line": 7688,
+          "line": 7738,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.replyStackOuterCaller?",
@@ -282835,7 +282859,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_ok_decompose",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_ok_decompose",
-          "line": 7696,
+          "line": 7746,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282849,7 +282873,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_lift",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
-          "line": 7709,
+          "line": 7759,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282863,7 +282887,7 @@
           "kind": "def",
           "name": "popHeldReplyHead",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead",
-          "line": 7723,
+          "line": 7773,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282878,7 +282902,7 @@
           "kind": "theorem",
           "name": "popHeldReplyHead_ok_cases",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead_ok_cases",
-          "line": 7732,
+          "line": 7782,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282893,7 +282917,7 @@
           "kind": "theorem",
           "name": "popHeldReplyHead_of_not_acceptable",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead_of_not_acceptable",
-          "line": 7745,
+          "line": 7795,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282907,7 +282931,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_of_resolved",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_of_resolved",
-          "line": 7752,
+          "line": 7802,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282921,7 +282945,7 @@
           "kind": "theorem",
           "name": "outerCallerAcceptable_self_of",
           "full_name": "SeLe4n.Kernel.outerCallerAcceptable_self_of",
-          "line": 7760,
+          "line": 7810,
           "called": [
             "SeLe4n.Kernel.outerCallerAcceptable",
             "SeLe4n.Model.SystemState",
@@ -282932,7 +282956,7 @@
           "kind": "theorem",
           "name": "popHeldReplyHead_of_acceptable",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead_of_acceptable",
-          "line": 7772,
+          "line": 7822,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.popHeldReplyHead",
@@ -282946,7 +282970,7 @@
           "kind": "theorem",
           "name": "popHeldReplyHead_lift",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead_lift",
-          "line": 7780,
+          "line": 7830,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -282961,7 +282985,7 @@
           "kind": "theorem",
           "name": "popHeldReplyHead_liftPops",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead_liftPops",
-          "line": 7794,
+          "line": 7844,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
@@ -282978,7 +283002,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_ok_storeChainGuarded",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChainGuarded",
-          "line": 7807,
+          "line": 7857,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -283010,7 +283034,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_ok_storeChain",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
-          "line": 7880,
+          "line": 7930,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -283040,7 +283064,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_objects_invExt",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_objects_invExt",
-          "line": 7908,
+          "line": 7958,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283052,7 +283076,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_scheduler_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_scheduler_eq",
-          "line": 7917,
+          "line": 7967,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283064,7 +283088,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_machine_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_machine_eq",
-          "line": 7925,
+          "line": 7975,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283076,7 +283100,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_cdt_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_cdt_eq",
-          "line": 7933,
+          "line": 7983,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283088,7 +283112,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_preserves_objectIndexSet_invExt",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_preserves_objectIndexSet_invExt",
-          "line": 7941,
+          "line": 7991,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283100,7 +283124,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_preserves_objectIndexSetComplete",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_preserves_objectIndexSetComplete",
-          "line": 7951,
+          "line": 8001,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283117,7 +283141,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_kindPreservingWrite",
-          "line": 7967,
+          "line": 8017,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283135,7 +283159,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_releaseStateAgree",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_releaseStateAgree",
-          "line": 7984,
+          "line": 8034,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -283155,7 +283179,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_objects",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_objects",
-          "line": 8002,
+          "line": 8052,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -283194,7 +283218,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_tcb_rewrite",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_tcb_rewrite",
-          "line": 8080,
+          "line": 8130,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_objects",
@@ -283206,7 +283230,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_tcb_bindingRewrite",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_tcb_bindingRewrite",
-          "line": 8096,
+          "line": 8146,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_objects",
@@ -283219,7 +283243,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_holder",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_holder",
-          "line": 8117,
+          "line": 8167,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.ownerCode",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -283242,7 +283266,7 @@
           "kind": "theorem",
           "name": "tcb_donationReturnBinding_scId?",
           "full_name": "SeLe4n.Kernel.tcb_donationReturnBinding_scId?",
-          "line": 8139,
+          "line": 8189,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.ownerCode",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -283258,7 +283282,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_binding_backward",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_binding_backward",
-          "line": 8150,
+          "line": 8200,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.scId?",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -283280,7 +283304,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_binding_backward",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_binding_backward",
-          "line": 8175,
+          "line": 8225,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding.scId?",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
@@ -283296,7 +283320,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_getTcb?_placement_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_getTcb?_placement_eq",
-          "line": 8184,
+          "line": 8234,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -283313,7 +283337,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_tcb_ipcState_backward",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_tcb_ipcState_backward",
-          "line": 8204,
+          "line": 8254,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_tcb_rewrite",
@@ -283326,7 +283350,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_reply_frame",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_reply_frame",
-          "line": 8213,
+          "line": 8263,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -283344,7 +283368,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_other_iff",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_other_iff",
-          "line": 8233,
+          "line": 8283,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283363,7 +283387,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_endpoint_backward",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_endpoint_backward",
-          "line": 8265,
+          "line": 8315,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_other_iff",
@@ -283375,7 +283399,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_notification_iff",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_notification_iff",
-          "line": 8274,
+          "line": 8324,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContext",
             "SeLe4n.Kernel.keepDonatedSchedContext_ok_storeChain",
@@ -283394,7 +283418,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_boundThread",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_boundThread",
-          "line": 8302,
+          "line": 8352,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -283408,7 +283432,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_getSchedContext?_ne",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_getSchedContext?_ne",
-          "line": 8312,
+          "line": 8362,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -283425,7 +283449,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_objects_invExt",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_objects_invExt",
-          "line": 8332,
+          "line": 8382,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
@@ -283436,7 +283460,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_scheduler_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_scheduler_eq",
-          "line": 8337,
+          "line": 8387,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
@@ -283447,7 +283471,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_machine_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_machine_eq",
-          "line": 8343,
+          "line": 8393,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
@@ -283458,7 +283482,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_cdt_eq",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_cdt_eq",
-          "line": 8349,
+          "line": 8399,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
@@ -283469,7 +283493,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContextResolved_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContextResolved_kindPreservingWrite",
-          "line": 8354,
+          "line": 8404,
           "called": [
             "SeLe4n.Kernel.keepDonatedSchedContextResolved",
             "SeLe4n.Kernel.keepDonatedSchedContextResolved_lift",
@@ -283481,7 +283505,7 @@
           "kind": "def",
           "name": "donatedReturnCommits",
           "full_name": "SeLe4n.Kernel.donatedReturnCommits",
-          "line": 8372,
+          "line": 8422,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.lookupTcb",
@@ -283497,7 +283521,7 @@
           "kind": "theorem",
           "name": "donatedReturnCommits_recipientAcceptable",
           "full_name": "SeLe4n.Kernel.donatedReturnCommits_recipientAcceptable",
-          "line": 8387,
+          "line": 8437,
           "called": [
             "SeLe4n.Kernel.donatedReturnCommits",
             "SeLe4n.Kernel.donationRecipientAcceptable",
@@ -283510,7 +283534,7 @@
           "kind": "def",
           "name": "keptPopCommits",
           "full_name": "SeLe4n.Kernel.keptPopCommits",
-          "line": 8408,
+          "line": 8458,
           "called": [
             "SeLe4n.Kernel.heldPopOuter?",
             "SeLe4n.Kernel.lookupTcb",
@@ -283526,7 +283550,7 @@
           "kind": "def",
           "name": "heldPopCommits",
           "full_name": "SeLe4n.Kernel.heldPopCommits",
-          "line": 8424,
+          "line": 8474,
           "called": [
             "SeLe4n.Kernel.donatedReturnCommits",
             "SeLe4n.Kernel.donationRecipientAcceptable",
@@ -283540,7 +283564,7 @@
           "kind": "theorem",
           "name": "heldPopCommits_of_acceptable",
           "full_name": "SeLe4n.Kernel.heldPopCommits_of_acceptable",
-          "line": 8431,
+          "line": 8481,
           "called": [
             "SeLe4n.Kernel.donatedReturnCommits",
             "SeLe4n.Kernel.donationRecipientAcceptable",
@@ -283554,7 +283578,7 @@
           "kind": "theorem",
           "name": "heldPopCommits_of_not_acceptable",
           "full_name": "SeLe4n.Kernel.heldPopCommits_of_not_acceptable",
-          "line": 8438,
+          "line": 8488,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.heldPopCommits",
@@ -283568,7 +283592,7 @@
           "kind": "theorem",
           "name": "storeObject_keeps_other",
           "full_name": "SeLe4n.Kernel.storeObject_keeps_other",
-          "line": 8444,
+          "line": 8494,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Model.KernelObject",
@@ -283583,7 +283607,7 @@
           "kind": "theorem",
           "name": "storeReply_keeps_nonReply",
           "full_name": "SeLe4n.Kernel.storeReply_keeps_nonReply",
-          "line": 8450,
+          "line": 8500,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -283599,7 +283623,7 @@
           "kind": "theorem",
           "name": "storeReply_keeps_reply",
           "full_name": "SeLe4n.Kernel.storeReply_keeps_reply",
-          "line": 8460,
+          "line": 8510,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -283615,7 +283639,7 @@
           "kind": "theorem",
           "name": "storeDonationHeadPop_ok_of",
           "full_name": "SeLe4n.Kernel.storeDonationHeadPop_ok_of",
-          "line": 8470,
+          "line": 8520,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -283642,7 +283666,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContextResolved_ok_of_commits",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextResolved_ok_of_commits",
-          "line": 8499,
+          "line": 8549,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.SchedContextBinding.ownerCode",
@@ -283680,7 +283704,7 @@
           "kind": "def",
           "name": "donateSchedContextValid",
           "full_name": "SeLe4n.Kernel.donateSchedContextValid",
-          "line": 8677,
+          "line": 8727,
           "called": [
             "SeLe4n.Kernel.donateSchedContext",
             "SeLe4n.Model.KernelError",
@@ -283693,7 +283717,7 @@
           "kind": "theorem",
           "name": "donateSchedContextValid_eq",
           "full_name": "SeLe4n.Kernel.donateSchedContextValid_eq",
-          "line": 8682,
+          "line": 8732,
           "called": [
             "SeLe4n.Kernel.donateSchedContext",
             "SeLe4n.Kernel.donateSchedContextValid",
@@ -283706,7 +283730,7 @@
           "kind": "def",
           "name": "returnDonatedSchedContextValid",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextValid",
-          "line": 8689,
+          "line": 8739,
           "called": [
             "SeLe4n.Kernel.returnDonatedSchedContext",
             "SeLe4n.Model.KernelError",
@@ -283720,7 +283744,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContextValid_eq",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContextValid_eq",
-          "line": 8696,
+          "line": 8746,
           "called": [
             "SeLe4n.Kernel.returnDonatedSchedContext",
             "SeLe4n.Kernel.returnDonatedSchedContextValid",
@@ -283734,7 +283758,7 @@
           "kind": "def",
           "name": "preReceiveDonation?",
           "full_name": "SeLe4n.Kernel.preReceiveDonation?",
-          "line": 8723,
+          "line": 8773,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Model.SystemState",
@@ -283746,7 +283770,7 @@
           "kind": "theorem",
           "name": "preReceiveDonation?_of_donated",
           "full_name": "SeLe4n.Kernel.preReceiveDonation?_of_donated",
-          "line": 8733,
+          "line": 8783,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.preReceiveDonation?",
@@ -283761,7 +283785,7 @@
           "kind": "theorem",
           "name": "preReceiveDonation?_some_lookup",
           "full_name": "SeLe4n.Kernel.preReceiveDonation?_some_lookup",
-          "line": 8744,
+          "line": 8794,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.preReceiveDonation?",
@@ -283774,7 +283798,7 @@
           "kind": "def",
           "name": "cleanupPreReceiveDonation",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation",
-          "line": 8782,
+          "line": 8832,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.popHeldReplyHead",
@@ -283786,7 +283810,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_elim",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation_elim",
-          "line": 8804,
+          "line": 8854,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
             "SeLe4n.Kernel.popHeldReplyHead",
@@ -283798,7 +283822,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_elimPops",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation_elimPops",
-          "line": 8820,
+          "line": 8870,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
             "SeLe4n.Kernel.cleanupPreReceiveDonation_elim",
@@ -283813,7 +283837,7 @@
           "kind": "def",
           "name": "cleanupPreReceiveDonationChecked",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
-          "line": 8848,
+          "line": 8898,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.popHeldReplyHead",
@@ -283826,7 +283850,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_ok_eq_cleanup",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonationChecked_ok_eq_cleanup",
-          "line": 8862,
+          "line": 8912,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
@@ -283840,7 +283864,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_eq_cleanupChecked_ok",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation_eq_cleanupChecked_ok",
-          "line": 8896,
+          "line": 8946,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
@@ -283853,7 +283877,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_of_no_donation",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonationChecked_of_no_donation",
-          "line": 8905,
+          "line": 8955,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
             "SeLe4n.Kernel.lookupTcb",
@@ -283866,7 +283890,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_of_donation",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonationChecked_of_donation",
-          "line": 8925,
+          "line": 8975,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked",
             "SeLe4n.Kernel.popHeldReplyHead",
@@ -283881,7 +283905,7 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 8941,
+          "line": 8991,
           "called": [],
           "private": true
         },
@@ -283889,7 +283913,7 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 8942,
+          "line": 8992,
           "called": [],
           "private": true
         },
@@ -283897,7 +283921,7 @@
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_z7",
           "full_name": "SeLe4n.Kernel.storeObject_scheduler_eq_z7",
-          "line": 8956,
+          "line": 9006,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.SystemState",
@@ -283910,7 +283934,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_storeChain",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_storeChain",
-          "line": 8979,
+          "line": 9029,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -283939,7 +283963,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_outerAcceptable",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_outerAcceptable",
-          "line": 9089,
+          "line": 9139,
           "called": [
             "SeLe4n.Kernel.outerCallerAcceptable",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -283953,7 +283977,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_recipientAcceptable",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_recipientAcceptable",
-          "line": 9101,
+          "line": 9151,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -283967,7 +283991,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_recipient_unbound",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_recipient_unbound",
-          "line": 9115,
+          "line": 9165,
           "called": [
             "SeLe4n.Kernel.donationRecipientAcceptable_eq_of_some",
             "SeLe4n.Kernel.lookupTcb",
@@ -283984,7 +284008,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_server_not_reserved",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_server_not_reserved",
-          "line": 9143,
+          "line": 9193,
           "called": [
             "SeLe4n.Kernel.lookupTcb_some_not_reserved",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -283999,7 +284023,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_recipient_not_reserved",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_recipient_not_reserved",
-          "line": 9161,
+          "line": 9211,
           "called": [
             "SeLe4n.Kernel.lookupTcb_some_not_reserved",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -284014,7 +284038,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_recipient_ne_server",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_ok_recipient_ne_server",
-          "line": 9182,
+          "line": 9232,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.lookupTcb",
@@ -284034,7 +284058,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_rejects_bound_recipient",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_rejects_bound_recipient",
-          "line": 9205,
+          "line": 9255,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.SchedContext.boundThread",
@@ -284055,7 +284079,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_eq_legacy_of_none",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_eq_legacy_of_none",
-          "line": 9248,
+          "line": 9298,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.SchedContext",
@@ -284085,7 +284109,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_reply_rewrite",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_reply_rewrite",
-          "line": 9300,
+          "line": 9350,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284107,7 +284131,7 @@
           "kind": "theorem",
           "name": "storeObject_tcb_bindingRewrite",
           "full_name": "SeLe4n.Kernel.storeObject_tcb_bindingRewrite",
-          "line": 9334,
+          "line": 9384,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.tcbBindingRewrite",
@@ -284125,7 +284149,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_rewrite",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_tcb_rewrite",
-          "line": 9359,
+          "line": 9409,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -284148,7 +284172,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_rewrite_backward",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_tcb_rewrite_backward",
-          "line": 9402,
+          "line": 9452,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -284173,7 +284197,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_other_tcb_eq",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_other_tcb_eq",
-          "line": 9469,
+          "line": 9519,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -284193,7 +284217,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_binding_cases",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_tcb_binding_cases",
-          "line": 9512,
+          "line": 9562,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -284219,7 +284243,7 @@
           "kind": "def",
           "name": "donationReturnWritesKind",
           "full_name": "SeLe4n.Kernel.donationReturnWritesKind",
-          "line": 9569,
+          "line": 9619,
           "called": [
             "SeLe4n.Model.KernelObject"
           ]
@@ -284228,14 +284252,14 @@
           "kind": "instance",
           "name": "",
           "full_name": null,
-          "line": 9575,
+          "line": 9625,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "donationReturnWritesKind_notification",
           "full_name": "SeLe4n.Kernel.donationReturnWritesKind_notification",
-          "line": 9578,
+          "line": 9628,
           "called": [
             "SeLe4n.Kernel.donationReturnWritesKind",
             "SeLe4n.Model.Notification"
@@ -284245,7 +284269,7 @@
           "kind": "theorem",
           "name": "donationReturnWritesKind_endpoint",
           "full_name": "SeLe4n.Kernel.donationReturnWritesKind_endpoint",
-          "line": 9581,
+          "line": 9631,
           "called": [
             "SeLe4n.Kernel.donationReturnWritesKind",
             "SeLe4n.Model.Endpoint"
@@ -284255,7 +284279,7 @@
           "kind": "theorem",
           "name": "donationReturnWritesKind_cnode",
           "full_name": "SeLe4n.Kernel.donationReturnWritesKind_cnode",
-          "line": 9584,
+          "line": 9634,
           "called": [
             "SeLe4n.Kernel.donationReturnWritesKind",
             "SeLe4n.Model.CNode"
@@ -284265,7 +284289,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_backward_of_kind",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_objects_backward_of_kind",
-          "line": 9599,
+          "line": 9649,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.donationReturnWritesKind",
@@ -284287,7 +284311,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_forward_of_kind",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_objects_forward_of_kind",
-          "line": 9642,
+          "line": 9692,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.donationReturnWritesKind",
@@ -284309,7 +284333,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_kindPreservingWrite",
-          "line": 9687,
+          "line": 9737,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -284333,7 +284357,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_objects_iff_of_kind",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_objects_iff_of_kind",
-          "line": 9722,
+          "line": 9772,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.donationReturnWritesKind",
@@ -284350,7 +284374,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_objects_iff_of_kind",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation_objects_iff_of_kind",
-          "line": 9734,
+          "line": 9784,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
@@ -284369,7 +284393,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation_kindPreservingWrite",
-          "line": 9748,
+          "line": 9798,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
@@ -284386,7 +284410,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_cdt_eq",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq",
-          "line": 9762,
+          "line": 9812,
           "called": [
             "SeLe4n.Kernel.returnDonatedSchedContext",
             "SeLe4n.Kernel.returnDonatedSchedContext_ok_storeChain",
@@ -284401,7 +284425,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objects_invExt'",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_preserves_objects_invExt'",
-          "line": 9781,
+          "line": 9831,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -284417,7 +284441,7 @@
           "kind": "structure",
           "name": "donationPopFrame",
           "full_name": "SeLe4n.Kernel.donationPopFrame",
-          "line": 9803,
+          "line": 9853,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284435,7 +284459,7 @@
           "kind": "theorem",
           "name": "endpoint_backward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.endpoint_backward",
-          "line": 9819,
+          "line": 9869,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Kernel.donationReturnWritesKind_endpoint",
@@ -284447,7 +284471,7 @@
           "kind": "theorem",
           "name": "endpoint_forward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.endpoint_forward",
-          "line": 9823,
+          "line": 9873,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Kernel.donationReturnWritesKind_endpoint",
@@ -284459,7 +284483,7 @@
           "kind": "theorem",
           "name": "notification_backward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.notification_backward",
-          "line": 9827,
+          "line": 9877,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Kernel.donationReturnWritesKind_notification",
@@ -284471,7 +284495,7 @@
           "kind": "theorem",
           "name": "notification_forward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.notification_forward",
-          "line": 9832,
+          "line": 9882,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Kernel.donationReturnWritesKind_notification",
@@ -284483,7 +284507,7 @@
           "kind": "theorem",
           "name": "cnode_backward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.cnode_backward",
-          "line": 9837,
+          "line": 9887,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Kernel.donationReturnWritesKind_cnode",
@@ -284495,7 +284519,7 @@
           "kind": "theorem",
           "name": "tcb_queue_backward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.tcb_queue_backward",
-          "line": 9843,
+          "line": 9893,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Model.TCB",
@@ -284509,7 +284533,7 @@
           "kind": "theorem",
           "name": "tcb_queue_forward",
           "full_name": "SeLe4n.Kernel.donationPopFrame.tcb_queue_forward",
-          "line": 9852,
+          "line": 9902,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Model.TCB",
@@ -284523,7 +284547,7 @@
           "kind": "theorem",
           "name": "getTcb?_map_eq",
           "full_name": "SeLe4n.Kernel.donationPopFrame.getTcb?_map_eq",
-          "line": 9861,
+          "line": 9911,
           "called": [
             "SeLe4n.Kernel.donationPopFrame",
             "SeLe4n.Model.SystemState",
@@ -284537,7 +284561,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_donationPopFrame",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_donationPopFrame",
-          "line": 9893,
+          "line": 9943,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.donationPopFrame",
@@ -284558,7 +284582,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_donationPopFrame",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_donationPopFrame",
-          "line": 9914,
+          "line": 9964,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.donationPopFrame",
@@ -284577,7 +284601,7 @@
           "kind": "theorem",
           "name": "popHeldReplyHead_donationPopFrame",
           "full_name": "SeLe4n.Kernel.popHeldReplyHead_donationPopFrame",
-          "line": 9927,
+          "line": 9977,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.donationPopFrame",
@@ -284594,7 +284618,7 @@
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_elimFrame",
           "full_name": "SeLe4n.Kernel.cleanupPreReceiveDonation_elimFrame",
-          "line": 9935,
+          "line": 9985,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cleanupPreReceiveDonation",
@@ -284609,7 +284633,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objectIndexSet_invExt",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_preserves_objectIndexSet_invExt",
-          "line": 9942,
+          "line": 9992,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284627,7 +284651,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objectIndexSetComplete",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_preserves_objectIndexSetComplete",
-          "line": 9958,
+          "line": 10008,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284650,7 +284674,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_ne_stored",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_objects_ne_stored",
-          "line": 9988,
+          "line": 10038,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284677,7 +284701,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_objects_ne_of_not_reply",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_objects_ne_of_not_reply",
-          "line": 10037,
+          "line": 10087,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284702,7 +284726,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_schedContext",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_post_schedContext",
-          "line": 10105,
+          "line": 10155,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284726,7 +284750,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_getSchedContext?",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_post_getSchedContext?",
-          "line": 10153,
+          "line": 10203,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284745,7 +284769,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_boundThread",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_post_boundThread",
-          "line": 10182,
+          "line": 10232,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -284760,7 +284784,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_post_scReply",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_post_scReply",
-          "line": 10203,
+          "line": 10253,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -284778,7 +284802,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_scheduler_eq",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_scheduler_eq",
-          "line": 10221,
+          "line": 10271,
           "called": [
             "SeLe4n.Kernel.returnDonatedSchedContext",
             "SeLe4n.Kernel.returnDonatedSchedContext_ok_storeChain",
@@ -284794,7 +284818,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tableReferenceFrame",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_tableReferenceFrame",
-          "line": 10241,
+          "line": 10291,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.returnDonatedSchedContext",
@@ -284809,7 +284833,7 @@
           "kind": "theorem",
           "name": "keepDonatedSchedContext_tableReferenceFrame",
           "full_name": "SeLe4n.Kernel.keepDonatedSchedContext_tableReferenceFrame",
-          "line": 10250,
+          "line": 10300,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.keepDonatedSchedContext",
@@ -284824,7 +284848,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_releaseStateAgree",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_releaseStateAgree",
-          "line": 10260,
+          "line": 10310,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -284846,7 +284870,7 @@
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tlbShootdown_eq",
           "full_name": "SeLe4n.Kernel.returnDonatedSchedContext_tlbShootdown_eq",
-          "line": 10288,
+          "line": 10338,
           "called": [
             "SeLe4n.Kernel.returnDonatedSchedContext",
             "SeLe4n.Kernel.returnDonatedSchedContext_ok_storeChain",
@@ -284863,7 +284887,7 @@
           "kind": "def",
           "name": "notificationSignal",
           "full_name": "SeLe4n.Kernel.notificationSignal",
-          "line": 10326,
+          "line": 10376,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.bor",
@@ -284885,7 +284909,7 @@
           "kind": "def",
           "name": "notificationWaitPark",
           "full_name": "SeLe4n.Kernel.notificationWaitPark",
-          "line": 10386,
+          "line": 10436,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.zero",
@@ -284906,7 +284930,7 @@
           "kind": "def",
           "name": "linkNtfnWaiter",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter",
-          "line": 10447,
+          "line": 10497,
           "called": [
             "SeLe4n.Kernel.relinkNtfnNext",
             "SeLe4n.Kernel.storeTcbNtfnLinks",
@@ -284919,7 +284943,7 @@
           "kind": "def",
           "name": "notificationWaitTail?",
           "full_name": "SeLe4n.Kernel.notificationWaitTail?",
-          "line": 10456,
+          "line": 10506,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -284931,7 +284955,7 @@
           "kind": "def",
           "name": "notificationSignalWaiter?",
           "full_name": "SeLe4n.Kernel.notificationSignalWaiter?",
-          "line": 10470,
+          "line": 10520,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -284943,7 +284967,7 @@
           "kind": "def",
           "name": "notificationSignalSuccessor?",
           "full_name": "SeLe4n.Kernel.notificationSignalSuccessor?",
-          "line": 10480,
+          "line": 10530,
           "called": [
             "SeLe4n.Kernel.notificationSignalWaiter?",
             "SeLe4n.Kernel.ntfnSuccessor?",
@@ -284956,7 +284980,7 @@
           "kind": "def",
           "name": "notificationBoundElsewhere",
           "full_name": "SeLe4n.Kernel.notificationBoundElsewhere",
-          "line": 10490,
+          "line": 10540,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -284969,7 +284993,7 @@
           "kind": "def",
           "name": "notificationWait",
           "full_name": "SeLe4n.Kernel.notificationWait",
-          "line": 10504,
+          "line": 10554,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -284984,7 +285008,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_preserves_objects_ne",
-          "line": 10522,
+          "line": 10572,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyTcb_preserves_objects_ne",
@@ -285000,7 +285024,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_preserves_notification",
-          "line": 10534,
+          "line": 10584,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285020,7 +285044,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_tcb_backward_fields",
           "full_name": "SeLe4n.Kernel.storeTcbIpcStateAndMessage_tcb_backward_fields",
-          "line": 10563,
+          "line": 10613,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285048,7 +285072,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_objects_ne",
           "full_name": "SeLe4n.Kernel.storeTcbIpcStateAndMessage_preserves_objects_ne",
-          "line": 10595,
+          "line": 10645,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyTcb_preserves_objects_ne",
@@ -285065,7 +285089,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_notification",
           "full_name": "SeLe4n.Kernel.storeTcbIpcStateAndMessage_preserves_notification",
-          "line": 10605,
+          "line": 10655,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285086,7 +285110,7 @@
           "kind": "theorem",
           "name": "removeRunnable_onlyObjectsSchedulerDiffer",
           "full_name": "SeLe4n.Kernel.removeRunnable_onlyObjectsSchedulerDiffer",
-          "line": 10623,
+          "line": 10673,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.removeRunnable",
@@ -285100,7 +285124,7 @@
           "kind": "theorem",
           "name": "removeRunnable_objects_capacity",
           "full_name": "SeLe4n.Kernel.removeRunnable_objects_capacity",
-          "line": 10628,
+          "line": 10678,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.RobinHood.RHTable",
@@ -285114,7 +285138,7 @@
           "kind": "theorem",
           "name": "removeRunnable_lifecycle",
           "full_name": "SeLe4n.Kernel.removeRunnable_lifecycle",
-          "line": 10632,
+          "line": 10682,
           "called": [
             "SeLe4n.Kernel.removeRunnable",
             "SeLe4n.Kernel.removeRunnable_onlyObjectsSchedulerDiffer",
@@ -285126,7 +285150,7 @@
           "kind": "theorem",
           "name": "removeRunnable_objectIndex",
           "full_name": "SeLe4n.Kernel.removeRunnable_objectIndex",
-          "line": 10635,
+          "line": 10685,
           "called": [
             "SeLe4n.Kernel.removeRunnable",
             "SeLe4n.Kernel.removeRunnable_onlyObjectsSchedulerDiffer",
@@ -285139,7 +285163,7 @@
           "kind": "theorem",
           "name": "removeRunnable_objectIndexSet",
           "full_name": "SeLe4n.Kernel.removeRunnable_objectIndexSet",
-          "line": 10638,
+          "line": 10688,
           "called": [
             "SeLe4n.Kernel.removeRunnable",
             "SeLe4n.Kernel.removeRunnable_onlyObjectsSchedulerDiffer",
@@ -285152,7 +285176,7 @@
           "kind": "theorem",
           "name": "removeRunnable_asidTable",
           "full_name": "SeLe4n.Kernel.removeRunnable_asidTable",
-          "line": 10641,
+          "line": 10691,
           "called": [
             "SeLe4n.Kernel.removeRunnable",
             "SeLe4n.Kernel.removeRunnable_onlyObjectsSchedulerDiffer",
@@ -285164,7 +285188,7 @@
           "kind": "theorem",
           "name": "removeRunnable_objectsAgreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.removeRunnable_objectsAgreeOffRunLinks",
-          "line": 10648,
+          "line": 10698,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.removeRunnable",
@@ -285178,7 +285202,7 @@
           "kind": "theorem",
           "name": "removeRunnable_objects_invExt",
           "full_name": "SeLe4n.Kernel.removeRunnable_objects_invExt",
-          "line": 10652,
+          "line": 10702,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -285192,7 +285216,7 @@
           "kind": "theorem",
           "name": "removeRunnable_scheduler",
           "full_name": "SeLe4n.Kernel.removeRunnable_scheduler",
-          "line": 10657,
+          "line": 10707,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.removeRunnable",
@@ -285212,7 +285236,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_onlyObjectsSchedulerDiffer",
           "full_name": "SeLe4n.Kernel.ensureRunnable_onlyObjectsSchedulerDiffer",
-          "line": 10669,
+          "line": 10719,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Model.SystemState",
@@ -285225,7 +285249,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_objects_capacity",
           "full_name": "SeLe4n.Kernel.ensureRunnable_objects_capacity",
-          "line": 10681,
+          "line": 10731,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.ensureRunnable",
@@ -285237,7 +285261,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_lifecycle",
           "full_name": "SeLe4n.Kernel.ensureRunnable_lifecycle",
-          "line": 10692,
+          "line": 10742,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Kernel.ensureRunnable_onlyObjectsSchedulerDiffer",
@@ -285249,7 +285273,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_objectIndex",
           "full_name": "SeLe4n.Kernel.ensureRunnable_objectIndex",
-          "line": 10695,
+          "line": 10745,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Kernel.ensureRunnable_onlyObjectsSchedulerDiffer",
@@ -285262,7 +285286,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_objectIndexSet",
           "full_name": "SeLe4n.Kernel.ensureRunnable_objectIndexSet",
-          "line": 10698,
+          "line": 10748,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Kernel.ensureRunnable_onlyObjectsSchedulerDiffer",
@@ -285275,7 +285299,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_asidTable",
           "full_name": "SeLe4n.Kernel.ensureRunnable_asidTable",
-          "line": 10701,
+          "line": 10751,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Kernel.ensureRunnable_onlyObjectsSchedulerDiffer",
@@ -285287,7 +285311,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_objectsAgreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.ensureRunnable_objectsAgreeOffRunLinks",
-          "line": 10707,
+          "line": 10757,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Model.SystemState",
@@ -285300,7 +285324,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_replyViews_eq",
           "full_name": "SeLe4n.Kernel.ensureRunnable_replyViews_eq",
-          "line": 10720,
+          "line": 10770,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Model.SystemState",
@@ -285313,7 +285337,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_objects_invExt",
           "full_name": "SeLe4n.Kernel.ensureRunnable_objects_invExt",
-          "line": 10731,
+          "line": 10781,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ensureRunnable",
@@ -285326,7 +285350,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet",
           "full_name": "SeLe4n.Kernel.ensureRunnable_preserves_objectIndexSet",
-          "line": 10743,
+          "line": 10793,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Kernel.ensureRunnable_onlyObjectsSchedulerDiffer",
@@ -285339,7 +285363,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSetComplete",
           "full_name": "SeLe4n.Kernel.ensureRunnable_preserves_objectIndexSetComplete",
-          "line": 10749,
+          "line": 10799,
           "called": [
             "SeLe4n.Kernel.ensureRunnable",
             "SeLe4n.Kernel.ensureRunnable_objectsAgreeOffRunLinks",
@@ -285353,7 +285377,7 @@
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet_invExt",
           "full_name": "SeLe4n.Kernel.ensureRunnable_preserves_objectIndexSet_invExt",
-          "line": 10759,
+          "line": 10809,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -285368,7 +285392,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_scheduler_eq",
-          "line": 10766,
+          "line": 10816,
           "called": [
             "SeLe4n.Kernel.modifyTcb_scheduler_eq",
             "SeLe4n.Kernel.storeTcbIpcState",
@@ -285381,7 +285405,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_machine_eq",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_machine_eq",
-          "line": 10776,
+          "line": 10826,
           "called": [
             "SeLe4n.Kernel.modifyTcb_machine_eq",
             "SeLe4n.Kernel.storeTcbIpcState",
@@ -285394,7 +285418,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_preserves_endpoint",
-          "line": 10782,
+          "line": 10832,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285414,7 +285438,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_preserves_cnode",
-          "line": 10802,
+          "line": 10852,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285434,7 +285458,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_preserves_vspaceRoot",
-          "line": 10822,
+          "line": 10872,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285454,7 +285478,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_cnode_backward",
-          "line": 10843,
+          "line": 10893,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285475,7 +285499,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_endpoint_backward",
-          "line": 10870,
+          "line": 10920,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285496,7 +285520,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
           "full_name": "SeLe4n.Kernel.storeTcbIpcState_notification_backward",
-          "line": 10897,
+          "line": 10947,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyTcb_notification_backward",
@@ -285512,7 +285536,7 @@
           "kind": "theorem",
           "name": "notificationWaitPark_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.notificationWaitPark_preserves_objects_invExt",
-          "line": 10911,
+          "line": 10961,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -285530,7 +285554,7 @@
           "kind": "theorem",
           "name": "notificationWaitPark_badge_path_notification",
           "full_name": "SeLe4n.Kernel.notificationWaitPark_badge_path_notification",
-          "line": 10950,
+          "line": 11000,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.zero",
@@ -285555,7 +285579,7 @@
           "kind": "theorem",
           "name": "notificationWaitPark_wait_path_notification",
           "full_name": "SeLe4n.Kernel.notificationWaitPark_wait_path_notification",
-          "line": 11011,
+          "line": 11061,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285576,7 +285600,7 @@
           "kind": "theorem",
           "name": "notificationWait_ok_cases",
           "full_name": "SeLe4n.Kernel.notificationWait_ok_cases",
-          "line": 11064,
+          "line": 11114,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285592,7 +285616,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_ok_cases",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_ok_cases",
-          "line": 11083,
+          "line": 11133,
           "called": [
             "SeLe4n.Kernel.linkNtfnWaiter",
             "SeLe4n.Kernel.relinkNtfnNext",
@@ -285605,7 +285629,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_preserves_notification",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_preserves_notification",
-          "line": 11093,
+          "line": 11143,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285623,7 +285647,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_preserves_objects_invExt",
-          "line": 11103,
+          "line": 11153,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285638,7 +285662,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_scheduler_eq",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_scheduler_eq",
-          "line": 11109,
+          "line": 11159,
           "called": [
             "SeLe4n.Kernel.linkNtfnWaiter",
             "SeLe4n.Kernel.linkNtfnWaiter_ok_cases",
@@ -285652,7 +285676,7 @@
           "kind": "theorem",
           "name": "modifyTcb_ntfnLinks_tcb_backward",
           "full_name": "SeLe4n.Kernel.modifyTcb_ntfnLinks_tcb_backward",
-          "line": 11117,
+          "line": 11167,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -285673,7 +285697,7 @@
           "kind": "theorem",
           "name": "modifyTcb_ntfnLinks_tcb_forward",
           "full_name": "SeLe4n.Kernel.modifyTcb_ntfnLinks_tcb_forward",
-          "line": 11132,
+          "line": 11182,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -285694,7 +285718,7 @@
           "kind": "theorem",
           "name": "modifyTcb_nonTcb_iff",
           "full_name": "SeLe4n.Kernel.modifyTcb_nonTcb_iff",
-          "line": 11147,
+          "line": 11197,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -285714,7 +285738,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_tcb_backward",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_tcb_backward",
-          "line": 11161,
+          "line": 11211,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285734,7 +285758,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_tcb_forward",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_tcb_forward",
-          "line": 11181,
+          "line": 11231,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285752,7 +285776,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_nonTcb_iff",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_nonTcb_iff",
-          "line": 11195,
+          "line": 11245,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285769,7 +285793,7 @@
           "kind": "theorem",
           "name": "modifyTcb_objects",
           "full_name": "SeLe4n.Kernel.modifyTcb_objects",
-          "line": 11209,
+          "line": 11259,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285788,7 +285812,7 @@
           "kind": "theorem",
           "name": "linkNtfnWaiter_objects",
           "full_name": "SeLe4n.Kernel.linkNtfnWaiter_objects",
-          "line": 11222,
+          "line": 11272,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter",
@@ -285809,7 +285833,7 @@
           "kind": "theorem",
           "name": "notificationWaitPark_block_objects",
           "full_name": "SeLe4n.Kernel.notificationWaitPark_block_objects",
-          "line": 11259,
+          "line": 11309,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.lookupTcb",
@@ -285839,7 +285863,7 @@
           "kind": "theorem",
           "name": "notificationWaitPark_badge_objects",
           "full_name": "SeLe4n.Kernel.notificationWaitPark_badge_objects",
-          "line": 11323,
+          "line": 11373,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.zero",
@@ -285867,7 +285891,7 @@
           "kind": "theorem",
           "name": "notificationWaitTail?_of_objects",
           "full_name": "SeLe4n.Kernel.notificationWaitTail?_of_objects",
-          "line": 11379,
+          "line": 11429,
           "called": [
             "SeLe4n.Kernel.notificationWaitTail?",
             "SeLe4n.Model.Notification",
@@ -285882,7 +285906,7 @@
           "kind": "theorem",
           "name": "notificationSignalWaiter?_eq_wake_head",
           "full_name": "SeLe4n.Kernel.notificationSignalWaiter?_eq_wake_head",
-          "line": 11393,
+          "line": 11443,
           "called": [
             "SeLe4n.Kernel.notificationSignalWaiter?",
             "SeLe4n.Model.Notification",
@@ -285898,7 +285922,7 @@
           "kind": "theorem",
           "name": "notificationSignalSuccessor?_eq_wake",
           "full_name": "SeLe4n.Kernel.notificationSignalSuccessor?_eq_wake",
-          "line": 11407,
+          "line": 11457,
           "called": [
             "SeLe4n.Kernel.notificationSignalSuccessor?",
             "SeLe4n.Kernel.notificationSignalWaiter?_eq_wake_head",
@@ -285914,7 +285938,7 @@
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
           "full_name": "SeLe4n.Kernel.notificationWait_error_alreadyWaiting",
-          "line": 11419,
+          "line": 11469,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.notificationWait",
@@ -285933,7 +285957,7 @@
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
           "full_name": "SeLe4n.Kernel.notificationWait_badge_path_notification",
-          "line": 11438,
+          "line": 11488,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -285948,7 +285972,7 @@
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
           "full_name": "SeLe4n.Kernel.notificationWait_wait_path_notification",
-          "line": 11454,
+          "line": 11504,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.linkNtfnWaiter_preserves_notification",

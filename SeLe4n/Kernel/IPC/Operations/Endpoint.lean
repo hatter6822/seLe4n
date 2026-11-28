@@ -1939,17 +1939,16 @@ what lets a pop at depth `n` hand the context to the right thread.
   `not_mem_donationChainFrom_of_unlinked` is the freshness fact the push
   consumes in its place.
 
-**That none of the three fires on a live path is not yet proven.**  The first
-two are excluded by `replyCallerLinkage` (`ipcInvariantFull`'s sixteenth
-conjunct): a donor that is `.blockedOnReply` carries a resolvable reply object.
-The third is not excluded by any invariant stated today: `donationChainWellFormed`
-constrains only the chains reachable from a scheduling context's head, so a
-pair of replies linked to each other and headed by no context satisfies it, and
-a donor whose reply object is the inner one of that pair is refused here.  The
-missing invariant (no orphan frames: every linked reply frame reachable from a
-scheduling context's head) and the no-refusal theorem over it are WS-SX SX37,
-registered in `docs/REGISTERED_DEBT.md`.  Until then the
-refusal is a defensive check that writes nothing.  This is the same
+**None of the three fires on a live path**, and that is a theorem:
+`donationPushFrame?_ok_of_linked`.  Every donor reaches the push with its reply
+object linked to it by `linkCallerReply` in the same operation, and the link
+admits only a free object (`Reply.isFree`: no caller, no `prev`, no `next`), so
+the linked object resolves, carries no stack link and names the donor.  The
+proof is freshness, not a whole-store invariant: linked frames that no context
+heads do occur on reachable states, as in seL4 (`schedContext_unbindReply`,
+`reply_remove_tcb` and `reply_remove` leave them; WS-SX D67), but none of them is
+free, so no link ever hands one to a push.  The refusal stays as a defensive
+check that writes nothing.  This is the same
 defence-in-depth posture as the pop's own head
 validation and `donateSchedContext`'s AUD-3b `boundThread` guard: the guard is
 O(1), commits nothing when it refuses, and turns a whole-store obligation into a
@@ -2011,6 +2010,57 @@ theorem donationPushFrame?_ok (st : SystemState) (clientTcb : TCB)
           intro hC
           rw [hC] at hConsumed
           cases hConsumed
+
+/-- WS-SX SX37 (D67): **a donor whose reply was just linked is not refused.**
+
+The reply a donation pushes is the donor's own reply object, and every donor
+reaches the push with that object linked to it by `linkCallerReply` in the same
+operation (the Call's caller, or the call-sender a receive takes).  The link is
+the freshness barrier: `linkReply` admits only a `Reply.isFree` object — no
+caller, no `prev`, no `next` — and writes nothing but the caller.  So the linked
+object resolves, carries no stack link and names the donor, and none of
+`donationPushFrame?`'s three refusals fires.
+
+This is the whole hypothesis set: the store's `invExt` (to read the link's
+writes back) and the link itself.  No invariant over the rest of the store is
+needed, and none would do: seL4's `schedContext_unbindReply`, `reply_remove_tcb`
+and `reply_remove` leave linked frames that no context heads, so "every linked
+frame is reachable from a head" is false on reachable states (D67), and a donor
+already reply-blocked on a pushed frame is refused, as it should be. -/
+theorem donationPushFrame?_ok_of_linked (st0 st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (donor : TCB)
+    (hObjInv : st0.objects.invExt)
+    (hLink : SystemState.linkCallerReply caller rid st0 = .ok ((), st))
+    (hDonor : st.getTcb? caller = some donor) :
+    ∃ r : Reply, st.getReply? rid = some r ∧ r.caller = some caller ∧
+      donationPushFrame? st donor = .ok (rid, r) := by
+  have hPre : ∃ r0 : Reply, st0.getReply? rid = some r0 ∧ r0.isFree = true := by
+    unfold SystemState.linkCallerReply at hLink
+    cases hL : SystemState.linkReply rid caller st0 with
+    | error e => rw [hL] at hLink; cases hLink
+    | ok p =>
+      unfold SystemState.linkReply at hL
+      cases hG : st0.getReply? rid with
+      | none => rw [hG] at hL; cases hL
+      | some r0 =>
+        rw [hG] at hL
+        cases hF : r0.isFree with
+        | true => exact ⟨r0, rfl, hF⟩
+        | false => simp [hF] at hL
+  obtain ⟨r0, hG0, hFree⟩ := hPre
+  obtain ⟨-, hP0, hN0⟩ := (Reply.isFree_iff r0).mp hFree
+  have hR := SystemState.linkCallerReply_getReply?_caller_some st0 caller rid r0 hObjInv hG0
+    st hLink
+  obtain ⟨tcb', hT', hRO⟩ :=
+    SystemState.linkCallerReply_replyObject_some st0 caller rid hObjInv st hLink
+  rw [hDonor] at hT'
+  cases hT'
+  refine ⟨_, hR, by simp, ?_⟩
+  unfold donationPushFrame?
+  rw [hRO]
+  simp only []
+  rw [hR]
+  simp [hP0, hN0]
 
 /-- WS-OD (`v0.35.4`): **the two Reply writes of the donation push.**  seL4's
 `reply_push`, stack half: the pushed frame records the frame below it (`prev :=

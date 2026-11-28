@@ -113,12 +113,15 @@
 > SX36 was wrapped at its validated point (D66): the allocation-free
 > after-reply route and its QEMU scenarios became a new SX38, and SX38–SX49
 > became SX39–SX50. SX36 landed at `v0.37.65`.
+> SX37 found D65's invariant false on reachable states (D67): seL4's unbind,
+> suspend and reply leave linked frames no context heads, so SX37 was restated
+> as the push's freshness theorem. SX37 landed at `v0.37.66`.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX50, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32, D34, D36–D66 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D32, D34, D36–D67 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
 > D23–D32 during SX8; D34 when SX9 started; D36 and D37 during SX9; D38 during SX10; D39 when the binding-invariant row
@@ -135,7 +138,8 @@
 > D63 during SX34 (the coordinator's rulings, 2026-11-27); D64 during SX34
 > (SX34's wrap under the owner's D32 rule, 2026-11-27); D65 during SX36 (the
 > owner's, 2026-11-28); D66 during SX36 (SX36's wrap under the owner's D32
-> rule, 2026-11-28).
+> rule, 2026-11-28); D67 during SX37 (the owner's "Freshness theorem",
+> 2026-11-28).
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -1354,7 +1358,8 @@ A different answer changes only the rows that cite it.
   `donationPushFrame?_ok_of_linked` proven from it.  SX36 corrected the
   docstring to say the property is not yet proven and to cite SX37.  The rows
   after SX36 are renumbered (SX37–SX48 became SX38–SX49): the gate is SX38,
-  the lock-set ceiling SX48 and the closure SX49.
+  the lock-set ceiling SX48 and the closure SX49.  The invariant was found
+  false on reachable states and its row restated (D67).
 - **D66. SX36 is wrapped at its validated point, and the allocation-free
   after-reply route is a new row, SX38.** *Decided under the owner's D32 rule
   (2026-11-28).* SX36 moved ReplyRecv's receive capability after the reply
@@ -1381,6 +1386,50 @@ A different answer changes only the rows that cite it.
   the continuation-style lookups and receive endpoint, a multi-session row.
   The rows after SX37 are renumbered (SX38–SX49 became SX39–SX50): the gate is
   SX39, the lock-set ceiling SX49 and the closure SX50.
+- **D67. D65's invariant is false on reachable states, so SX37 is the push's
+  freshness theorem.** *Decided by the owner (2026-11-28, "Freshness
+  theorem").* SX37 measured the writers of reply links and context heads
+  before writing the invariant, and found three seL4-faithful writers that
+  leave linked reply frames no context heads:
+  - **`schedContextUnbindReply`** (seL4-MCS `schedContext_unbindReply`) clears
+    only the head's upward link and the context's head.  Trace: C1, holding
+    context X, Calls passive server S1, so R1 heads X; S1 Calls passive server
+    S2, so R2 heads X with `R2.prev = R1` and `R1.next = .frame R2`;
+    `SchedContext_Unbind` on X (a donated holder is admitted, D22) leaves
+    `X.scReply = none`, `R2.next = none`, `R2.prev = some R1` and
+    `R1.next = .frame R2`.  The finalisation of a context runs the same
+    function before its retype.
+  - **The suspend's head cut** (`cutHeadFrameKeepingContext`, seL4-MCS
+    `reply_remove_tcb`) on a caller whose frame heads a stack three or more
+    deep: the context's head is cleared and the frame below cut off, and that
+    frame keeps its own `prev`.
+  - **A reply to the top of such a stack** (`severReplyFrameBelowStores`,
+    seL4's `reply_remove`, `prev->replyNext = 0`) leaves the frame below the
+    top of an unheaded stack again when it has a frame under it.
+
+  In each case every clause of `donationChainWellFormed` still holds, and seL4
+  itself holds the same links.  Making "every linked frame is reachable from
+  a head" true would mean departing from seL4's link data (an O(depth) unlink
+  in three writers) for no behaviour: nothing ever heads an unheaded frame
+  again.
+
+  **No donation is wrongly refused.**  The frame a donation pushes is the
+  donor's own reply object, and every donor reaches the push with that object
+  linked to it in the same operation by `linkCallerReply` (the Call's caller,
+  or the call-sender a receive takes).  `linkReply` admits only a
+  `Reply.isFree` object, with no caller, no `prev` and no `next`, and an
+  unheaded frame always has a caller (`Reply.wellFormed`), so no link can hand
+  one to a push.  seL4's `reply_push` asserts the same freshness.
+
+  SX37.2's statement as registered, "under the invariant with
+  `replyCallerLinkage` and `donationChainWellFormed`, a donor `.blockedOnReply`
+  is not refused", **is false as written**: the state every donation leaves
+  has its donor blocked on reply with its frame heading the context it lent,
+  and a push for that donor is refused, as it should be.  A bound donor does
+  not help, since `SchedContext_Bind` admits a lender whose frame is on a live
+  stack.  The owner chose the freshness theorem: SX37 is restated as
+  `donationPushFrame?_ok_of_linked` over the link itself, with no new
+  invariant, and D65's invariant is not pursued.
 
 ## 4. Rows
 
@@ -2139,24 +2188,29 @@ installs, and `RefusalCarryingReplyRecv.c`'s size and compile bound.
 - every existing heap reading 0, the retypes aside (**met** on both lanes, first call and steady state, the two reply-capability faults included; the after-reply scenarios are SX38's, D66);
 - the generated C within SX35's bound (**met**: `RefusalCarryingReplyRecv.c` and the equations module's C 6,113,032 bytes together against 12,889,913, the two operand-arm specifications `noncomputable` since no compiled path reaches them; the file compiles in 199 s against 779 s for SX35's; the routed arms in 81 s, 8.5 s and 97 s against 74 s, 8.9 s and 107–115 s; the equations module compiles no match splitter); the IR holds at 1,324 against 1,493.
 
-### SX37 — No orphan frames: the donation push's linked-frame refusal proven unreachable (D65)
+### SX37 — The donation push's linked-frame refusal proven unreachable by freshness (D65, D67)
 
-Registered at `v0.37.65` by SX36 (D65, the owner's "No orphan frames").  SX36
-found that `donationPushFrame?_ok_of_linked`, which `donationPushFrame?`'s
-docstring cited, did not exist and is false over today's invariants:
-`donationChainWellFormed` says nothing of a linked frame no context heads, so a
-donor whose reply object is linked into such a pair is refused.  SX36
-corrected the docstring to say the no-refusal property is not yet proven and to
-cite this row.
+**LANDED at `v0.37.66`.** Registered at `v0.37.65` by SX36 (D65, the owner's
+"No orphan frames").  SX36 found that `donationPushFrame?_ok_of_linked`, which
+`donationPushFrame?`'s docstring cited, did not exist and is false over the
+invariants of the time.  D65 asked for a new invariant, every linked reply
+frame reachable from a scheduling context's head; SX37 found that invariant
+false on reachable states, because seL4's unbind, suspend and reply leave
+linked frames no context heads, and found the row's theorem false as
+registered (D67).  The owner restated the row as the push's freshness theorem
+(D67, "Freshness theorem").
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX37.1 | The invariant: every reply frame carrying a stack link (`Reply.prev` or `Reply.next`) is reachable from a scheduling context's reply head, added to the IPC invariant bundle. | Its preservation over every reply and donation operation: the push and the pop, the reply, the reply-receive's legs, the cancels and the finalisation's unbinds, every writer of `Reply.prev` / `Reply.next` and of a context's reply head; the boot state establishes it. | Tier 3 anchors on the invariant and each preservation theorem |
-| SX37.2 | `donationPushFrame?_ok_of_linked`: under the invariant with `replyCallerLinkage` and `donationChainWellFormed`, a donor `.blockedOnReply` is not refused. `donationPushFrame?`'s docstring restated to cite it. | The theorem. | Tier 3 anchor on the theorem; the debt row in `docs/REGISTERED_DEBT.md` closed |
+| SX37.1 | `donationPushFrame?_ok_of_linked` (`IPC/Operations/Endpoint.lean`): a donor whose reply object `linkCallerReply` has just linked is not refused — the linked object resolves, names the donor and carries no stack link.  `donationPushFrame?`'s docstring restated to cite it and to record the unheaded frames of D67.  Proofs only; no compiled change. | The theorem, over the store's `invExt` and the link alone. | Three Tier 3 anchors on the theorem's hypothesis and conclusion and one negative anchor (no whole-store chain invariant among its hypotheses), each break-tested; the debt row in `docs/REGISTERED_DEBT.md` closed |
+
+The two sub-tasks registered by D65 (the invariant and its preservation, and
+the theorem under it) are retired by D67: the first states something false of
+reachable states, and the second is false as written.
 
 **Acceptance:**
-- the invariant carried by every reply and donation operation;
-- `donationPushFrame?_ok_of_linked` proven from it, and the docstring citing it.
+- `donationPushFrame?_ok_of_linked` proven, and the docstring citing it;
+- no compiled change.
 
 ### SX38 — The after-reply route allocation-free, with its QEMU scenarios (D66)
 
