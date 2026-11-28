@@ -458,6 +458,19 @@ needs it, so a proof over a compiled definition cases on the match's
 discriminant and reduces with `dsimp` or a `simp -iota`, not `split` or a
 `simp` that meets a match it cannot reduce.
 
+SX36 (`v0.37.65`) resolves ReplyRecv's receive capability on the state the
+reply left (`dispatchReplyRecvAfterReply`), keeps the passive server current
+until the scheduling point (`dropReturnedContextCaller`), and carries exactly
+the taint edges of what each refusal did. It was wrapped under D32 (D66): the
+after-reply route runs the general path, and its allocation-free form is
+SX38. **Standing constraints for new code:** a compiled refusal continuation
+over an inlined arm tells the refusal apart first (`noCapRefusalW`), so its
+join point is specialised per constructor and no exit builds an error, and is
+more than one call, so the compiler shares its join point rather than copying
+it into every exit; a specification with no compiled consumer is
+`noncomputable` (`replyRecvOperandArmThenTaintR`, `dispatchReplyRecvCheckedR`),
+checked by the absence of its symbol from every other C file.
+
 ### WS-PK The reachable pack across a trace — PLANNED (registered v0.37.36 by WS-SX SX8, owner decision D29; opens right after WS-SX closes, before any other workstream)
 
 `ipcReachable` (the IPC bundle, `objects.invExt`, the donation-chain facts,

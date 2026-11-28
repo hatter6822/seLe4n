@@ -1,3 +1,64 @@
+## v0.37.65 — ReplyRecv's receive capability resolved after the reply; the passive server current until the scheduling point (WS-SX SX36)
+
+SX36 moves ReplyRecv to seL4's order (D63).  seL4-MCS's `SysReplyRecv`
+runs `handleInvocation` on the reply capability before `handleRecv`
+looks the receive capability up, so a bad receive capability answers
+the caller and then faults on the post-reply state.
+
+- **The receive capability read after the reply (SX36.1).**  Where the
+  reply answers a caller and the entry refuses the receive capability
+  (not found, wrong kind, no receive right, flow-denied), the reply step
+  runs and the receive capability's lookup, checks and flow gate run on
+  the state it left (`dispatchReplyRecvAfterReply`, seL4's order as the
+  theorem `dispatchReplyRecvAfterReply_eq_sel4Order` under
+  `objects.invExt`).  A bad receive capability delivers
+  `CapFault(epCPtr, true)` on the post-reply state.  The reply step keeps
+  every CNode's slots (`CNodeSlotsKept`), so a receive capability that
+  resolves on entry resolves the same way after the reply, and the
+  declared lock set needs no second acquisition.  The compiled route asks
+  the question only on the refusing branches (`replyRecvOperandCheckedKW`)
+  and runs one compiled after-reply route (`replyRecvAfterReplyRunR`).
+- **The passive server current until the scheduling point (SX36.2).**
+  The holder-only deschedule (`descheduleKeepingCurrentOnCore`) keeps a
+  holder current on its core; the scheduling point takes a ReplyRecv
+  caller whose lent context went back, and which is still current with
+  no context, off its core (`dropReturnedContextCaller`).  The signal
+  arm's reply leg does the same (`keep := true`; the `.reply` syscall
+  passes `false`).
+- **The taint flow in the new order.**  The reply leg's edge no longer
+  depends on the receive operand; the after-reply route's receive-leg
+  edges are read on the state the receive capability is read on; and a
+  refusal carries exactly the edges of what it did, on both routes
+  (`replyRecvRefusalTaint`, `replyRecvReceiveLegRefusalTaint`,
+  `replyRecvEntryRefusalTaint`).
+- **No allocation on the reply-receive's refusals.**  The scheduling
+  point reads the caller's code (`contextReturnableAtEntryOfCode`,
+  `dropReturnedContextCallerOfCode`, `scheduleLocalSuccessorFromCode`),
+  so no syscall builds an `Option` for its caller.  The routed arms take
+  the reply-receive's arm in continuation form
+  (`replyRecvOperandArmThenTaintKE`, `replyRecvRoutedArmK`): every
+  refusal is told apart first, each payload down to its words, then the
+  refusal step and the decoder on words (`replyRecvRoutedRefusalW`) run
+  at one join point, so no refusal builds a `KernelError` and the decoder
+  is compiled once, not at every refusal exit.
+- **The two operand-arm specifications generate no code.**
+  `replyRecvOperandArmThenTaintR` and its long form have no compiled
+  consumer, so they are `noncomputable`, as `dispatchReplyRecvCheckedR`
+  is; the routed arms are proven equal to them.
+- **Measured.**  `RefusalCarryingReplyRecv.c` and the equations
+  module's C are 6,113,032 bytes together, against SX35's 12,889,913;
+  the file compiles in 199 s (SX35's: 779 s on the same machine), and
+  the routed reply-receive arms in 81 s, 8.5 s and 97 s.  The equations
+  module compiles no match splitter.  The IR holds read 1,324 (SX35:
+  1,493).  Every heap reading other than a retype's is 0 on both lanes,
+  the two reply-capability faults included.
+- **Two rows split off.**  D65 (the owner's "No orphan frames"): the
+  donation push's no-refusal claim is unproven and false over today's
+  invariants; its docstring now says so, and its proof under a new
+  invariant is SX37.  D66 (SX36's wrap under the owner's D32 rule): the
+  after-reply route allocation-free, with its QEMU scenarios, is SX38.
+  The rows after SX36 are renumbered twice, to SX39–SX50.
+
 ## v0.37.64 — The capability install checked first; the reply-receive proofs compile no splitter (WS-SX SX35)
 
 SX35 is on SX34 and closes what SX34 left under D64.  It changes no
