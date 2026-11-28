@@ -2087,6 +2087,22 @@ installs, and `RefusalCarryingReplyRecv.c`'s size and compile bound.
 - the passive server current until the scheduling point, and never run without a context;
 - every heap reading 0.
 
+### The row after SX36 — The donation push's linked-frame refusal proven unreachable (number pending)
+
+Registered at `v0.37.65` by SX36 (the coordinator's ruling of 2026-11-28); the
+owner picks the invariant, and the row is numbered when the rows after SX36 are
+renumbered.  SX36 found that `donationPushFrame?_ok_of_linked`, which
+`donationPushFrame?`'s docstring cited, did not exist and is false over today's
+invariants: `donationChainWellFormed` says nothing of a linked frame no context
+heads, so a donor whose reply object is linked into such a pair is refused.
+SX36 corrected the docstring to say the no-refusal property is not yet proven.
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| 1 | The invariant the owner chooses: every linked reply frame is reachable from a scheduling context's head, or a blocked-on-reply donor's reply object carries no link (from `linkReply`'s `isFree`). | The invariant carried by every writer of `Reply.prev` / `Reply.next` and of a context's reply head; `donationPushFrame?_ok_of_linked` (no refusal on a donor `.blockedOnReply` under the invariant); the docstring restated to cite it. | Tier 3 anchors on the theorem; the debt row in `docs/REGISTERED_DEBT.md` closed |
+
+**Acceptance:** `donationPushFrame?_ok_of_linked` proven over the chosen invariant, and the docstring citing it.
+
 ### SX37 — The state-hold gate (D51)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
