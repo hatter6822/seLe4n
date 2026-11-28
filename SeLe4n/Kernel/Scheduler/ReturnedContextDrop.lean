@@ -239,6 +239,57 @@ def dropReturnedContextCaller (returnable : Bool) (caller? : Option SeLe4n.Threa
     | none => post
   else post
 
+/-- The entry's gate on the caller's code (0 for none), as the compiled step
+reads it, so no `Option` is built for the caller
+(`contextReturnableAtEntryOfCode_eq`). -/
+@[inline] def contextReturnableAtEntryOfCode (isReplyRecv : Bool) (st : SystemState)
+    (callerCode : Nat) : Bool :=
+  isReplyRecv &&
+    match callerCode with
+    | 0 => false
+    | k + 1 => threadOnLoanAt st ⟨k⟩
+
+theorem contextReturnableAtEntryOfCode_eq (isReplyRecv : Bool) (st : SystemState)
+    (callerCode : Nat) :
+    contextReturnableAtEntryOfCode isReplyRecv st callerCode =
+      contextReturnableAtEntry isReplyRecv st (SeLe4n.ThreadId.ofOptCode callerCode) := by
+  cases callerCode <;> rfl
+
+/-- **The drop on the caller's code**, as the compiled scheduling point reads
+it: the caller as its current-thread code (0 for none, `ThreadId.optCode`) and
+the core's current slot compared as a code, so the step builds no `Option` for
+the caller (`dropReturnedContextCallerOfCode_eq`). -/
+@[inline] def dropReturnedContextCallerOfCode (returnable : Bool) (callerCode : Nat)
+    (post : SystemState) (c : CoreId) : SystemState :=
+  if returnable then
+    match callerCode with
+    | 0 => post
+    | k + 1 =>
+        if post.scheduler.currentCode.get c == k + 1 && threadUnboundAt post ⟨k⟩ then
+          removeRunnableOnCore post ⟨k⟩ c
+        else post
+  else post
+
+/-- The code form is the drop of the caller its code stands for. -/
+theorem dropReturnedContextCallerOfCode_eq (returnable : Bool) (callerCode : Nat)
+    (post : SystemState) (c : CoreId) :
+    dropReturnedContextCallerOfCode returnable callerCode post c =
+      dropReturnedContextCaller returnable (SeLe4n.ThreadId.ofOptCode callerCode) post c := by
+  unfold dropReturnedContextCallerOfCode dropReturnedContextCaller
+  cases returnable with
+  | false => rfl
+  | true =>
+    cases callerCode with
+    | zero => rfl
+    | succ k =>
+      show (if post.scheduler.currentCode.get c == k + 1 && threadUnboundAt post ⟨k⟩ then
+          removeRunnableOnCore post ⟨k⟩ c else post) =
+        (if post.scheduler.currentOnCore c = some ⟨k⟩ ∧ threadUnboundAt post ⟨k⟩ = true then
+          removeRunnableOnCore post ⟨k⟩ c else post)
+      simp only [SchedulerState.currentOnCore, SeLe4n.ThreadId.ofOptCode_eq_some_iff]
+      by_cases hC : post.scheduler.currentCode.get c = k + 1 <;>
+        by_cases hU : threadUnboundAt post ⟨k⟩ = true <;> simp [hC, hU]
+
 /-- A closed gate drops nothing. -/
 theorem dropReturnedContextCaller_of_not_returnable (caller? : Option SeLe4n.ThreadId)
     (post : SystemState) (c : CoreId) :

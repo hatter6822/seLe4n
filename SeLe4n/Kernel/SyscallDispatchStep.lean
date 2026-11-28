@@ -231,6 +231,25 @@ crosses the entry's effects where an optional thread would be a cell. -/
       Architecture.RestoreTarget × Nat)
   | (a, b, c, d, e, f, g, h) => (a, b, c, d, e, f, g, SeLe4n.ThreadId.optCode h)
 
+/-- **The local successor on the caller's code** (0 for none), as the compiled
+step reads it: the caller's presence tested on its code, so the step builds no
+`Option` for the caller (`scheduleLocalSuccessorFromCode_eq`). -/
+@[inline] def scheduleLocalSuccessorFromCode (callerCode : Nat) (post : SystemState)
+    (execCore : CoreId) : SystemState :=
+  if callerCode != 0 && (post.scheduler.currentOnCore execCore).isNone then
+    handleRescheduleOnCoreState post execCore
+  else post
+
+theorem scheduleLocalSuccessorFromCode_eq (callerCode : Nat) (post : SystemState)
+    (execCore : CoreId) :
+    scheduleLocalSuccessorFromCode callerCode post execCore =
+      PriorityInheritance.scheduleLocalSuccessorFrom (SeLe4n.ThreadId.ofOptCode callerCode)
+        post execCore := by
+  rw [PriorityInheritance.scheduleLocalSuccessorFrom_eq_impl]
+  unfold scheduleLocalSuccessorFromCode PriorityInheritance.scheduleLocalSuccessorFromImpl
+    PriorityInheritance.localSuccessorNeededFrom
+  cases callerCode <;> rfl
+
 /-- WS-ZA ZA4: **the step with its outcome as the boundary's words**: what the
 live entry reads of the outcome (`SyscallOutcome.words`) in its place, the
 rest of the result as the step's (`syscallDispatchCrossCoreStepWords_eq`).
@@ -251,15 +270,15 @@ value-returning syscall builds neither its outcome nor its frame. -/
   -- so the dispatch updates the record, its queues and its acknowledgment
   -- vector in place.
   let gen0 := st.tlbShootdown.roundGeneration
-  let returnable := contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
-    (SeLe4n.ThreadId.ofOptCode callerCode)
+  let returnable := contextReturnableAtEntryOfCode (syscallNumberIsReplyRecv syscallId) st
+    callerCode
   match Platform.FFI.syscallDispatchFromAbiWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st with
   | ((tag, w0, w1, w2, w3, w4, w5), st') =>
       let stR := Architecture.stageCallerReturnWords callerCode st' execCore tag w0 w1 w2 w3 w4 w5
       let st1 := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessorFrom (SeLe4n.ThreadId.ofOptCode callerCode)
-          (dropReturnedContextCaller returnable (SeLe4n.ThreadId.ofOptCode callerCode) stR execCore)
+        (scheduleLocalSuccessorFromCode callerCode
+          (dropReturnedContextCallerOfCode returnable callerCode stR execCore)
           execCore) execCore) execCore
       -- The operand list is written over the cell the last round's catch-up
       -- kept (`shootdownPostedOpsTaking`); every read below is of the state
@@ -294,7 +313,9 @@ theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
   unfold syscallDispatchCrossCoreStepWords
   rw [Platform.FFI.syscallDispatchFromAbiWords_eq ctx execCore syscallId x0 x1 x2 x3 x4 x5
     x6 elr spsr spEl0 x30 st st' outcome h]
-  simp only [Architecture.stageCallerReturnFor_eq_words, SchedulerState.currentOnCore,
+  simp only [dropReturnedContextCallerOfCode_eq, contextReturnableAtEntryOfCode_eq,
+    scheduleLocalSuccessorFromCode_eq,
+    Architecture.stageCallerReturnFor_eq_words, SchedulerState.currentOnCore,
     syscallDispatchCrossCoreStep, currentAsCode, SeLe4n.ThreadId.optCode_ofOptCode,
     Architecture.shootdownPostedOpsTaking_eq, Architecture.shootdownPostedOpsOfOne_eq,
     Architecture.shootdownPostedTargetsOne_eq]
