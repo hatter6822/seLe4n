@@ -16,8 +16,9 @@ import SeLe4n.Kernel.RoutedArms.ReplyRecv
 The routed entry's `.replyRecvLong` arm (`syscallEntryCheckedK`): a
 reply-receive of more than the inline words, as its own function, read and
 filled as the long reply's (`replyRecvLongRoutedArm`): slot 0 read, the
-reply-receive dispatched through its long arm
-(`replyRecvLongOperandArmThenTaintR`) on the state it is handed, its
+reply-receive dispatched through its long arm in continuation form
+(`replyRecvLongOperandArmThenTaintKW`, `replyRecvLongOperandArmThenTaintR`'s)
+on the state it is handed, its
 receive capability read after the reply where the reply answers and the entry
 refuses it (`replyRecvOperandCheckedKW`).  The
 replier's TCB is read here, off the state the arm is handed.
@@ -31,10 +32,13 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+set_option maxHeartbeats 400000 in
 /-- **The long reply-receive arm**: slot 0 read, then the
 reply-receive's operand dispatch on the state it is handed; a refusal reported
 under the entry's resolved or lookup continuation as the dispatch told them
-apart, a result under the first. -/
+apart, a result under the first.  The arm inlines the long reply-receive's
+whole checked transition, as the short arm does (`replyRecvRoutedArm`), whose
+compilation takes more than the default heartbeats. -/
 @[noinline] def replyRecvLongRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (length extraCaps label : Nat) (st : SystemState) :
     SystemState :=
@@ -43,8 +47,8 @@ apart, a result under the first. -/
       SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
         (fun _ => replyRecvRoutedArm ctx executingCore tid capWord xc 4 extraCaps label st)
         (fun _ => replyRecvOperandCheckedKW ctx (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
-                  (replyRecvLongOperandArmThenTaintR ctx tcb.registerContext length extraCaps label tid
-                    executingCore (syscallRequiredRight .replyRecv))
+                  (replyRecvLongOperandArmThenTaintKW ctx tcb.registerContext length extraCaps label
+                    tid executingCore (syscallRequiredRight .replyRecv))
                   st entryReportGeneral (entryReportPushOk 1)
                   (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
                     (entryReportPushErrorW 1)
@@ -98,7 +102,10 @@ theorem replyRecvLongRoutedArm_eq (ctx : LabelingContext) (executingCore : Concu
           (longReplyRegs st tid tcb.registerContext length)
           (SeLe4n.CPtr.ofWord
             (SeLe4n.readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg))
-          length extraCaps label) tid executingCore 0 _ st _ _ _ _ _ _ _ tcb rfl hT rfl
+          length extraCaps label) tid executingCore 0 _ _ st _ _ _ _ _ _ _ tcb
+        (funext fun c => funext fun s => funext fun noCap => funext fun kOk => funext fun kErr =>
+          funext fun onL => replyRecvLongOperandArmThenTaintKW_eq ctx _ _ _ _ _ _ _ c s noCap kOk
+            kErr onL) rfl hT rfl
         (fun cap hRes hG => replyRecvLongOperandArmThenTaintR_gateRefused ctx _ _ _ _ _ _ cap st
           hRes hG)
         (replyRecvAnswersOn_eq ctx _ tid tcb st _ hT rfl)).trans ?_

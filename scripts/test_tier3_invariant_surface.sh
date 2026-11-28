@@ -4939,6 +4939,13 @@ run_check "INVARIANT" rg -n -U '^        \| \.error \(e, s\) =>\n          \.err
 # answered caller and sender read before the arm.
 run_check "INVARIANT" rg -n -U '^          \| \.error \(e, s\) =>\n              \.error \(e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvEntryRefusalTaint_eq_step($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvEquations.lean
+# Compiled, the routed arms run the arm in continuation form: a refusal's step
+# applied once to the refusal's state before it is told apart, the arm's own
+# refusal handed on as it came.
+run_check "INVARIANT" rg -n -U '^        noCapRefusalWMap noCap kOk kErr onLookup\n          \(replyRecvEntryRefusalStepW answered sourceCode awaited tid\n            b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as\)\n          \(match endpointReplyRecv(Long)?CheckedArmR ctx ' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n -U '^    replyRecvOperandCheckedKW ctx \(SeLe4n\.CPtr\.ofWord capWord\) tid executingCore xc\n      \(replyRecvOperandArmThenTaintKW ctx ' SeLe4n/Kernel/RoutedArms/ReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOperandArmThenTaintKW_eq($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongOperandArmThenTaintKW_eq($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def dispatchCheckedImplArm [^\n]*\n(    [^\n]*\n|  [^\n]*\n)*[^\n]*replyRecvAfterReplyRunR ctx gate decoded tid executingCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvAnsweringThenR_eq_reporting($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '^              match replyRecvTransferOnCoreR epId tid rid prevCaller mi\.label msg\n                  replyGrant executingCore st with\n              \| \.ok \(summary, st.\) =>\n                  \.ok \(\(\), Architecture\.stageDeliveredMessage st. tid summary\.capInfo\)\n              \| \.error es => \.error es\)$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
