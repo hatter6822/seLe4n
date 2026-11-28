@@ -1939,12 +1939,18 @@ what lets a pop at depth `n` hand the context to the right thread.
   `not_mem_donationChainFrom_of_unlinked` is the freshness fact the push
   consumes in its place.
 
-**None of the three fires on a live path**, and that is a theorem rather than a
-comment: a donor that is `.blockedOnReply` carries a resolvable reply object
-under `replyCallerLinkage` (`ipcInvariantFull`'s sixteenth conjunct), and a
-reply carrying no donation is what `donationChainWellFormed` gives for every
-reply the chain does not already hold — `donationPushFrame?_ok_of_linked` states
-both.  This is the same defence-in-depth posture as the pop's own head
+**That none of the three fires on a live path is not yet proven.**  The first
+two are excluded by `replyCallerLinkage` (`ipcInvariantFull`'s sixteenth
+conjunct): a donor that is `.blockedOnReply` carries a resolvable reply object.
+The third is not excluded by any invariant stated today: `donationChainWellFormed`
+constrains only the chains reachable from a scheduling context's head, so a
+pair of replies linked to each other and headed by no context satisfies it, and
+a donor whose reply object is the inner one of that pair is refused here.  The
+missing invariant (no orphan frames: every linked reply frame reachable from a
+scheduling context's head) and the no-refusal theorem over it are WS-SX SX37,
+registered in `docs/REGISTERED_DEBT.md`.  Until then the
+refusal is a defensive check that writes nothing.  This is the same
+defence-in-depth posture as the pop's own head
 validation and `donateSchedContext`'s AUD-3b `boundThread` guard: the guard is
 O(1), commits nothing when it refuses, and turns a whole-store obligation into a
 consequence of the operation succeeding. -/

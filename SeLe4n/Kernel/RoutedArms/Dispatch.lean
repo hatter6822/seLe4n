@@ -197,6 +197,98 @@ private theorem finish_operandReply {β : Type} (finish : SyscallId → UInt64 �
   exact dispatchOperandCheckedK_congr_lookup _ _ _ _ _ _ _ _ _ _ _
     (finish_lookupFor finish kLook hL hRL sid w).1 (finish_lookupFor finish kLook hL hRL sid w).2
 
+/-- A lookup report at an address the operand dispatch may name -- the
+operand's own, or any address with a failed lookup -- handed on by a `finish`
+that hands each report to its continuation. -/
+private theorem finish_lookupFor_at {β : Type} (finish : SyscallId → UInt64 → SystemState → β)
+    (kLook : SyscallId → SeLe4n.CPtr → KernelError → SystemState → β)
+    (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
+      kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
+    (sid : SyscallId) (w : UInt64) (a : SeLe4n.CPtr) (e : KernelError) (s : SystemState)
+    (h : a = SeLe4n.CPtr.ofWord w ∨ ∃ lf, e = .failedLookup false lf) :
+    finish sid w (entryReportLookupFor a e s) = kLook sid a e s := by
+  rcases h with rfl | ⟨lf, rfl⟩
+  · unfold entryReportLookupFor
+    cases e with
+    | failedLookup b lf =>
+      cases b
+      · exact hRL sid w _ lf s
+      · exact hL sid w _ s
+    | _ => exact hL sid w _ s
+  · exact hRL sid w a.word lf s
+
+/-- The routed reply-receive's after-reply outcome, reported and handed on by a
+`finish` that hands each report to its continuation, is the outcome into those
+continuations (`replyRecvRoutedK`). -/
+private theorem finish_replyRecvRoutedK {β : Type} (finish : SyscallId → UInt64 → SystemState → β)
+    (kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
+    (kLook : SyscallId → SeLe4n.CPtr → KernelError → SystemState → β)
+    (hR : ∀ sid w r, finish sid w (entryReportResolved r) = kRes r)
+    (hL : ∀ sid w e s, finish sid w (entryReportLookup e s) = kLook sid (SeLe4n.CPtr.ofWord w) e s)
+    (hRL : ∀ sid w rw lf s, finish sid w (entryReportLookupAt rw lf s) =
+      kLook sid (SeLe4n.CPtr.ofWord rw) (.failedLookup false lf) s)
+    (ctx : LabelingContext) (w : UInt64) (msgRegs : Array SeLe4n.RegValue)
+    (replyCPtr : SeLe4n.CPtr) (len extraCaps label : Nat) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st : SystemState) (X : SystemState) :
+    finish .replyRecv w
+        (replyRecvRoutedK ctx
+          (replyRecvRoutedDecode (SeLe4n.CPtr.ofWord w) msgRegs replyCPtr len extraCaps label)
+          tid executingCore st entryReportResolved entryReportLookupFor X) =
+      replyRecvRoutedK ctx
+        (replyRecvRoutedDecode (SeLe4n.CPtr.ofWord w) msgRegs replyCPtr len extraCaps label)
+        tid executingCore st kRes (kLook .replyRecv) (finish .replyRecv w X) := by
+  unfold replyRecvRoutedK
+  cases hRo : replyRecvRefusedOnEntry? ctx
+      (replyRecvRoutedDecode (SeLe4n.CPtr.ofWord w) msgRegs replyCPtr len extraCaps label)
+      tid st with
+  | none => rfl
+  | some q =>
+    obtain ⟨gate, rid, pc, b, g⟩ := q
+    obtain ⟨tcb, _, _, hG, -, -⟩ := replyRecvRefusedOnEntry?_some hRo
+    dsimp only
+    have hGa : gate.capAddr = SeLe4n.CPtr.ofWord w := by rw [hG]; rfl
+    unfold replyRecvAfterReplyOutcome
+    generalize replyRecvRoutedR ctx _ tid executingCore (fun s => .error (.illegalState, s)) st = r
+    rcases r with ⟨ke, s⟩ | v
+    · dsimp only
+      have hX : (replyRecvRoutedDecode (SeLe4n.CPtr.ofWord w) msgRegs replyCPtr len extraCaps
+          label).msgInfo.extraCaps = extraCaps := rfl
+      have hI : (replyRecvRoutedDecode (SeLe4n.CPtr.ofWord w) msgRegs replyCPtr len extraCaps
+          label).syscallId = .replyRecv := rfl
+      simp only [hX, hI]
+      have hRF : ∀ (o : Option (SeLe4n.CPtr × LookupFault)),
+          finish .replyRecv w (match o with
+            | some (ra, lf) => entryReportLookupFor ra (.failedLookup false lf) s
+            | none => entryReportResolved (.error (ke, s))) =
+          (match o with
+            | some (ra, lf) => kLook .replyRecv ra (.failedLookup false lf) s
+            | none => kRes (.error (ke, s))) := by
+        intro o
+        cases o with
+        | none => exact hR _ _ _
+        | some p => obtain ⟨ra, lf⟩ := p; exact hRL _ _ ra.word lf s
+      cases syscallOperandLookup SyscallId.replyRecv gate
+          (syscallExtraCapCount SyscallId.replyRecv extraCaps) st with
+      | ok _ => exact hRF _
+      | error _ =>
+        dsimp only
+        cases hS : syscallOperandLookup SyscallId.replyRecv gate
+            (syscallExtraCapCount SyscallId.replyRecv extraCaps) s with
+        | ok _ => exact hRF _
+        | error p =>
+          obtain ⟨a, e'⟩ := p
+          dsimp only
+          by_cases hE : e' = ke
+          · rw [if_pos hE, if_pos hE]
+            apply finish_lookupFor_at finish kLook hL hRL
+            rcases syscallOperandLookup_error_cases _ _ _ _ _ _ hS with ⟨ha, -⟩ | ⟨f, hf, -⟩
+            · exact .inl (ha.trans hGa)
+            · exact .inr ⟨f, hf⟩
+          · rw [if_neg hE, if_neg hE]
+            exact hRF _
+    · exact hR _ _ _
+
 /-- **The routed entry is the continued entry**, for every `finish` that hands
 each report to its continuation: the routed dispatch with its reports handed on
 is the continued entry into those continuations. -/
@@ -262,9 +354,11 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
         finish_operandReply finish kGen kRes kLook hG hR hL hRL]; rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
-      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
-      simp only [replyRecvRoutedArm, dispatchOperandCheckedKW_reportReply,
-        hO, finish_operandReply finish kGen kRes kLook hG hR hL hRL]; rfl
+      simp only [show routedExtraCapCount .replyRecv tcb.registerContext = 0 from rfl,
+        show syscallExtraCapCount .replyRecv msgInfo.extraCaps = 0 from rfl]
+      rw [replyRecvRoutedArm_eq ctx executingCore tid capAddr.word _ _ _ st hC]
+      simp only [hO, finish_replyRecvRoutedK finish kRes kLook hR hL hRL,
+        finish_operandReply finish kGen kRes kLook hG hR hL hRL]; rfl
     next sid capAddr hRt =>
       rw [hRt]; symm
       simp only [invocationRoutedArm, dispatchOperandCheckedKW_report,
@@ -300,8 +394,12 @@ theorem syscallEntryRoutedWith_eq {β : Type} (ctx : LabelingContext)
       rfl
     next capAddr msgInfo hRt =>
       rw [hRt]; symm
-      rw [routedExtraCapCount_of_route (capAddr := capAddr) (msgInfo := msgInfo) _ hRt (by simp)]
-      simp only [replyRecvLongRoutedArm, dispatchOperandCheckedKW_reportReply, replyRecvRoutedArm, hO, ipcBufferReadMrK_comp (finish _ _),
+      simp only [show routedExtraCapCount .replyRecv tcb.registerContext = 0 from rfl,
+        show syscallExtraCapCount .replyRecv msgInfo.extraCaps = 0 from rfl]
+      rw [replyRecvLongRoutedArm_eq ctx executingCore tid capAddr.word _ _ _ st hC]
+      simp only [hO, ipcBufferReadMrK_comp (finish _ _),
+        replyRecvRoutedArm_eq ctx executingCore tid capAddr.word _ _ _ st hC,
+        finish_replyRecvRoutedK finish kRes kLook hR hL hRL,
         finish_operandReply finish kGen kRes kLook hG hR hL hRL]
       rfl
     next sid capAddr msgInfo hRt =>

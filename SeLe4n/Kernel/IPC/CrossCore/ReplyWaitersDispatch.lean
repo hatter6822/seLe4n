@@ -277,8 +277,8 @@ theorem keepDonatedSchedContextResolved_replyViews_eq {st st' : SystemState}
 /-- The reply path's donation return: the context goes back and settles, the
 holder is descheduled — no reply-view field. -/
 theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {t : SeLe4n.ValidThreadId} {b : CoreId} (hInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid t b = .ok st') : st'.replyViews = st.replyViews := by
+    {t : SeLe4n.ValidThreadId} {b : CoreId} {keep : Bool} {c : CoreId} (hInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid t b keep c = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
   split at h
@@ -289,8 +289,9 @@ theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeL
         · cases h
         · rename_i s1 h1
           cases h
-          rw [descheduleAtPlacement_replyViews_eq, settleReturnedContext_replyViews_eq,
-            returnDonatedSchedContextResolved_replyViews_eq hInv h1]
+          refine (descheduleReturnedHolder_induct (fun a b => b.replyViews = a.replyViews) keep c _ _
+            rfl (by dsimp only; rw [descheduleAtPlacement_replyViews_eq])).trans ?_
+          rw [settleReturnedContext_replyViews_eq, returnDonatedSchedContextResolved_replyViews_eq hInv h1]
       · exact keepDonatedSchedContextResolved_replyViews_eq hInv h
     · cases h
 
@@ -393,8 +394,8 @@ unlinks the answered caller; the donation return and the priority reversion
 after it keep the views. -/
 theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId) (st : SystemState)
-    (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent) :
-    (endpointReplyCrossCoreDispatch replier target msg c st).1.replyWaitersConsistent := by
+    (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent) (keep : Bool := false) :
+    (endpointReplyCrossCoreDispatch replier target msg c st keep).1.replyWaitersConsistent := by
   have hB := endpointReplyOnCore_preserves_replyWaitersConsistent replier target msg c st hInv hC
   have hI := endpointReplyOnCore_preserves_objects_invExt replier target msg c st hInv
   unfold endpointReplyCrossCoreDispatch
@@ -471,8 +472,8 @@ theorem faultReplyApplyOnCore_replyViews_eq (st : SystemState) (t : SeLe4n.Threa
 reply, then the restart or abandon of the faulted thread. -/
 theorem faultReplyOnCore_preserves_replyWaitersConsistent (replier faulted : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent) :
-    (faultReplyOnCore replier faulted mi regs c st).1.replyWaitersConsistent := by
+    (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent) (keep : Bool := false) :
+    (faultReplyOnCore replier faulted mi regs c st keep).1.replyWaitersConsistent := by
   unfold faultReplyOnCore
   split
   · exact hC
@@ -480,10 +481,10 @@ theorem faultReplyOnCore_preserves_replyWaitersConsistent (replier faulted : SeL
     · exact hC
     · dsimp only
       have hB := endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent replier faulted
-        IpcMessage.empty c st hInv hC
+        IpcMessage.empty c st hInv hC keep
       have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
-        IpcMessage.empty c st hInv
-      cases hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st with
+        IpcMessage.empty c st hInv keep
+      cases hR : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st keep with
       | mk s1 res =>
         rw [hR] at hB hI
         cases res with

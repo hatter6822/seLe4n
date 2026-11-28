@@ -409,7 +409,8 @@ Fails `.illegalState` for a thread carrying no fault: that is the *ordinary*
 reply's business, and answering it here would let a handler rewrite a
 non-faulted thread's program counter. -/
 def faultReplyOnCore (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
-    (regs : Array SeLe4n.RegValue) (executingCore : CoreId) (st : SystemState) :
+    (regs : Array SeLe4n.RegValue) (executingCore : CoreId) (st : SystemState)
+    (keepCurrent : Bool := false) :
     SystemState × Except KernelError (FaultReplyOutcome × Option (CoreId × SgiKind)) :=
   match st.getTcb? faulted with
   | none => (st, .error .objectNotFound)
@@ -419,7 +420,7 @@ def faultReplyOnCore (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
       | some tf =>
           let outcome := decodeFaultReply tf.fault tf.context mi regs
           match endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty
-              executingCore st with
+              executingCore st keepCurrent with
           | (_, .error e) => (st, .error e)
           | (st', .ok sgi?) =>
               (faultReplyApplyOnCore st' faulted outcome, .ok (outcome, sgi?))
@@ -714,13 +715,14 @@ place of the delivered-message staging, the receive leg and the donation return
 running between unchanged. -/
 def replyTransferOnCore (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool) (executingCore : CoreId)
-    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+    (st : SystemState) (keepCurrent : Bool := false) :
+    Except KernelError (Unit × SystemState) :=
   if threadHasPendingFault st callerTid then
-    match faultReplyOnCore replier callerTid mi regs executingCore st with
+    match faultReplyOnCore replier callerTid mi regs executingCore st keepCurrent with
     | (st', .ok _) => .ok ((), st')
     | (_, .error e) => .error e
   else
-    match endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+    match endpointReplyCrossCoreDispatch replier callerTid msg executingCore st keepCurrent with
     | (st', .ok _) =>
         -- seL4's `doReplyTransfer` → `doIPCTransfer` under the reply
         -- capability's grant right: the replier's extra capabilities go to the
@@ -738,9 +740,9 @@ hypothesis rather than be re-proved. -/
 theorem replyTransferOnCore_of_no_fault (replier callerTid : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
     (c : CoreId) (st : SystemState)
-    (hNoFault : threadHasPendingFault st callerTid = false) :
-    replyTransferOnCore replier callerTid mi regs msg grant c st =
-      (match endpointReplyCrossCoreDispatch replier callerTid msg c st with
+    (hNoFault : threadHasPendingFault st callerTid = false) (keep : Bool := false) :
+    replyTransferOnCore replier callerTid mi regs msg grant c st keep =
+      (match endpointReplyCrossCoreDispatch replier callerTid msg c st keep with
        | (st', .ok _) =>
            match replyTransferCaps st replier callerTid grant st' with
            | .ok (summary, st'') =>
@@ -757,13 +759,13 @@ theorem replyTransferOnCore_of_no_fault_inert (replier callerTid : SeLe4n.Thread
     (c : CoreId) (st : SystemState) (ct : TCB)
     (hNoFault : threadHasPendingFault st callerTid = false)
     (hT : st.getTcb? callerTid = some ct)
-    (hW : replyTransferInert st replier ct grant = true) :
-    replyTransferOnCore replier callerTid mi regs msg grant c st =
-      (match endpointReplyCrossCoreDispatch replier callerTid msg c st with
+    (hW : replyTransferInert st replier ct grant = true) (keep : Bool := false) :
+    replyTransferOnCore replier callerTid mi regs msg grant c st keep =
+      (match endpointReplyCrossCoreDispatch replier callerTid msg c st keep with
        | (st', .ok _) => .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
        | (_, .error e) => .error e) := by
-  rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant c st hNoFault]
-  rcases endpointReplyCrossCoreDispatch replier callerTid msg c st with ⟨st', _ | _⟩
+  rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant c st hNoFault keep]
+  rcases endpointReplyCrossCoreDispatch replier callerTid msg c st keep with ⟨st', _ | _⟩
   · rfl
   · simp only [replyTransferCaps_of_inert st replier callerTid grant ct hT hW st',
       CapTransferSummary.capInfo_empty]
@@ -773,9 +775,9 @@ the restart-or-abandon, and no delivered-message staging. -/
 theorem replyTransferOnCore_of_fault (replier callerTid : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
     (c : CoreId) (st : SystemState)
-    (hFault : threadHasPendingFault st callerTid = true) :
-    replyTransferOnCore replier callerTid mi regs msg grant c st =
-      (match faultReplyOnCore replier callerTid mi regs c st with
+    (hFault : threadHasPendingFault st callerTid = true) (keep : Bool := false) :
+    replyTransferOnCore replier callerTid mi regs msg grant c st keep =
+      (match faultReplyOnCore replier callerTid mi regs c st keep with
        | (st', .ok _) => .ok ((), st')
        | (_, .error e) => .error e) := by
   simp [replyTransferOnCore, hFault]
@@ -821,13 +823,14 @@ coincide under it (`replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed`). -
 def replyTransferOnCoreChecked (ctx : LabelingContext)
     (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool) (executingCore : CoreId)
-    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+    (st : SystemState) (keepCurrent : Bool := false) :
+    Except KernelError (Unit × SystemState) :=
   if threadHasPendingFault st callerTid then
-    match faultReplyOnCore replier callerTid mi regs executingCore st with
+    match faultReplyOnCore replier callerTid mi regs executingCore st keepCurrent with
     | (st', .ok _) => .ok ((), st')
     | (_, .error e) => .error e
   else
-    match endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg executingCore st with
+    match endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg executingCore st keepCurrent with
     | (st', .ok _) =>
         match replyTransferCaps st replier callerTid grant st' with
         | .ok (summary, st'') =>
@@ -839,15 +842,15 @@ def replyTransferOnCoreChecked (ctx : LabelingContext)
 reply (`replyRecvCallerAwaitsReply`): it runs the reply leg. -/
 theorem replyRecvCallerAwaitsReply_of_faultReplyOnCore_ok {replier faulted : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {c : CoreId} {st st1 : SystemState}
-    {x : FaultReplyOutcome × Option (CoreId × SgiKind)}
-    (h : faultReplyOnCore replier faulted mi regs c st = (st1, .ok x)) :
+    {x : FaultReplyOutcome × Option (CoreId × SgiKind)} {keep : Bool}
+    (h : faultReplyOnCore replier faulted mi regs c st keep = (st1, .ok x)) :
     replyRecvCallerAwaitsReply st faulted = true := by
   unfold faultReplyOnCore at h
   split at h
   · cases h
   split at h
   · cases h
-  cases hD : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st with
+  cases hD : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st keep with
   | mk s1 r =>
     cases r with
     | error e => rw [hD] at h; simp at h
@@ -858,16 +861,16 @@ reply (`replyRecvCallerAwaitsReply`), on both of its branches. -/
 theorem replyRecvCallerAwaitsReply_of_replyTransferOnCoreChecked_ok {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
     {msg : IpcMessage} {grant : Bool} {c : CoreId} {st : SystemState} {x : Unit × SystemState}
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok x) :
+    {keep : Bool} (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep = .ok x) :
     replyRecvCallerAwaitsReply st callerTid = true := by
   unfold replyTransferOnCoreChecked at h
   split at h
-  · cases hF : faultReplyOnCore replier callerTid mi regs c st with
+  · cases hF : faultReplyOnCore replier callerTid mi regs c st keep with
     | mk s1 r =>
       cases r with
       | error e => rw [hF] at h; simp at h
       | ok y => exact replyRecvCallerAwaitsReply_of_faultReplyOnCore_ok hF
-  · cases hD : endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st with
+  · cases hD : endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep with
     | mk s1 r =>
       cases r with
       | error e => rw [hD] at h; simp at h
@@ -886,9 +889,10 @@ theorem replyTransferOnCoreChecked_congr_words (ctx : LabelingContext)
     (regs₁ regs₂ : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool) (c : CoreId)
     (st : SystemState) (hl : mi₁.label = mi₂.label)
     (hw : ∀ i fb, i ≤ 10 →
-      Architecture.replyWordOr mi₁ regs₁ i fb = Architecture.replyWordOr mi₂ regs₂ i fb) :
-    replyTransferOnCoreChecked ctx replier callerTid mi₁ regs₁ msg grant c st =
-      replyTransferOnCoreChecked ctx replier callerTid mi₂ regs₂ msg grant c st := by
+      Architecture.replyWordOr mi₁ regs₁ i fb = Architecture.replyWordOr mi₂ regs₂ i fb)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier callerTid mi₁ regs₁ msg grant c st keep =
+      replyTransferOnCoreChecked ctx replier callerTid mi₂ regs₂ msg grant c st keep := by
   have h := fun f fc => Architecture.decodeFaultReply_congr f fc mi₁ mi₂ regs₁ regs₂ hl hw
   unfold replyTransferOnCoreChecked faultReplyOnCore
   simp only [h]
@@ -900,11 +904,12 @@ fault branch was added. -/
 theorem replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed (ctx : LabelingContext)
     (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool) (c : CoreId) (st : SystemState)
-    (hAllow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf callerTid) = true) :
-    replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st
-      = replyTransferOnCore replier callerTid mi regs msg grant c st := by
+    (hAllow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf callerTid) = true)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep
+      = replyTransferOnCore replier callerTid mi regs msg grant c st keep := by
   unfold replyTransferOnCoreChecked replyTransferOnCore
-  rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx replier callerTid msg c st hAllow]
+  rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx replier callerTid msg c st hAllow keep]
 
 -- ============================================================================
 -- §5  RR4.20 — the flow gate on fault delivery (the live arm)
@@ -1280,9 +1285,9 @@ theorem faultReplyOnCore_replenishQueueOnCore_ne (replier faulted : SeLe4n.Threa
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (executingCore : CoreId)
     (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointReplyDispatchReplenishCores replier faulted IpcMessage.empty
-      executingCore st) :
+      executingCore st) (keep : Bool := false) :
     (faultReplyOnCore replier faulted mi regs executingCore
-        st).1.scheduler.replenishQueueOnCore c
+        st keep).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold faultReplyOnCore
   split
@@ -1293,14 +1298,14 @@ theorem faultReplyOnCore_replenishQueueOnCore_ne (replier faulted : SeLe4n.Threa
     · rename_i tf hTf
       simp only
       cases hDisp : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore
-          st with
+          st keep with
       | mk stDisp res =>
         cases res with
         | error e => simp only []
         | ok sgi? =>
           simp only [faultReplyApplyOnCore_replenishQueueOnCore]
           have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier faulted
-            IpcMessage.empty executingCore st c hObjInv hne
+            IpcMessage.empty executingCore st c hObjInv hne keep
           rw [hDisp] at h0
           exact h0
 
@@ -1318,13 +1323,14 @@ theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.
     (executingCore : CoreId) (st stOut : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ replyTransferReplenishCores replier callerTid msg executingCore st)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st
+    {keep : Bool}
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st keep
       = .ok ((), stOut)) :
     stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold replyTransferOnCore replyTransferReplenishCores at *
   by_cases hF : threadHasPendingFault st callerTid
   · rw [if_pos hF] at hne hStep
-    cases hFR : faultReplyOnCore replier callerTid mi regs executingCore st with
+    cases hFR : faultReplyOnCore replier callerTid mi regs executingCore st keep with
     | mk stF resF =>
       rw [hFR] at hStep
       cases resF with
@@ -1332,12 +1338,12 @@ theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.
       | ok _ =>
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         have h0 := faultReplyOnCore_replenishQueueOnCore_ne replier callerTid mi regs
-          executingCore st c hObjInv hne
+          executingCore st c hObjInv hne keep
         rw [hFR] at h0
         rw [← hStep.2]
         exact h0
   · rw [if_neg hF] at hne hStep
-    cases hDisp : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+    cases hDisp : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st keep with
     | mk stDisp res =>
       rw [hDisp] at hStep
       cases res with
@@ -1353,7 +1359,7 @@ theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.
           rw [← hStep.2, Architecture.stageDeliveredMessage_scheduler_eq,
             receiveTransferCaps_scheduler_eq hX]
           have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier callerTid msg
-            executingCore st c hObjInv hne
+            executingCore st c hObjInv hne keep
           rw [hDisp] at h0
           exact h0
 

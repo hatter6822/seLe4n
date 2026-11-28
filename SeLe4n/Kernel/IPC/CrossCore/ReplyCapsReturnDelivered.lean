@@ -148,12 +148,15 @@ theorem ipcBufferReadsAgree_returnUnheldSchedContextInPlace (st : SystemState)
   · exact (ipcBufferReadsAgree_popLinks st scId _ hr r.prev _ _ hNo).1
 
 theorem ipcBufferReadsAgree_replyDonationPopInPlace (st : SystemState) (c holder : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (home : Concurrency.CoreId) (hNo : st.objects.noResizeDue) :
-    ipcBufferReadsAgree (replyDonationPopInPlace st c holder scId home) st := by
+    (scId : SeLe4n.SchedContextId) (home : Concurrency.CoreId) (hNo : st.objects.noResizeDue)
+    (keep : Bool := false) (core : Concurrency.CoreId := Concurrency.bootCoreId) :
+    ipcBufferReadsAgree (replyDonationPopInPlace st c holder scId home keep core) st := by
   have hP : ipcBufferReadsAgree (popDonationSettledInPlace st c holder scId home) st :=
     (ipcBufferReadsAgree_settleReturnedContext _ home scId).trans
       (ipcBufferReadsAgree_returnDonatedSchedContextInPlace st holder c scId hNo)
-  unfold replyDonationPopInPlace descheduleAtPlacement descheduleAt
+  unfold replyDonationPopInPlace
+  refine descheduleReturnedHolder_induct (fun _ b => ipcBufferReadsAgree b st) keep core _ holder hP ?_
+  unfold descheduleAtPlacement descheduleAt
   split
   · exact (ipcBufferReadsAgree_removeRunnableOnCore _ _ _).trans hP
   · exact hP
@@ -269,9 +272,11 @@ before the reply's writes. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
     (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability)
+    (keepCurrent : Bool := false) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
-    (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home)
+    (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home
+      keepCurrent core)
     server core).1
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
@@ -304,12 +309,13 @@ theorem replyTransferChecked_donatedCaps_inPlace (ctx : LabelingContext) (st : S
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb)
     (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .reply capAddr mi) :
-    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
+      stcb.registerContext = .reply capAddr mi)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st keep =
       .ok ((), performReplyDonatedCapsDelivered st c server rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) layout rf len badgeWord
         badged core stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
-        (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
+        (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0] keep) := by
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid msg ct hT hSRes hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
@@ -334,21 +340,22 @@ theorem replyTransferChecked_donatedCaps_inPlace (ctx : LabelingContext) (st : S
     simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   have hNoP := replyDonationPopInPlace_noResizeDue _ c server scId (determineTargetCore st c) hNoS
+    keep core
   have hAX := (ipcBufferReadsAgree_propagatePipChainCrossCore _ server core hNoP).trans
     ((ipcBufferReadsAgree_replyDonationPopInPlace _ c server scId (determineTargetCore st c)
-      hNoS).trans (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo))
+      hNoS keep core).trans (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo))
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
-    hDon cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+    hDon keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
-  rw [replyDonationPopInPlace_msg c id _ id _ c server scId _ hNoS hNe,
+  rw [replyDonationPopInPlace_msg c id _ id _ c server scId _ hNoS hNe keep core,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoP]
   unfold replyTransferCaps
   rw [replyCapRequest_of_routedReply st replier stcb capAddr mi hS hR, hTgt]
@@ -401,8 +408,9 @@ theorem replyTransferChecked_unheldCaps_inPlace (ctx : LabelingContext) (st : Sy
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb)
     (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .reply capAddr mi) :
-    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
+      stcb.registerContext = .reply capAddr mi)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st keep =
       .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len badgeWord badged stcb.spaceCells[2] stcb.ipcBuffer
         stcb.spaceCells[0] (routedExtraCaps stcb.registerContext) ct.spaceCells[2] ct.ipcBuffer
@@ -436,12 +444,12 @@ theorem replyTransferChecked_unheldCaps_inPlace (ctx : LabelingContext) (st : Sy
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hAns, hcv, SystemState.unlinkReplyWaiterOpt]
-  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   rw [returnUnheldSchedContextInPlace_msg c id _ id _ c scId hNoS, settleReturnedContext_msg]
   unfold replyTransferCaps
@@ -493,8 +501,9 @@ theorem replyTransferChecked_unlinkedCaps_inPlace (ctx : LabelingContext) (st : 
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb)
     (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
-      stcb.registerContext = .reply capAddr mi) :
-    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
+      stcb.registerContext = .reply capAddr mi)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st keep =
       .ok ((), performReplyUnlinkedCapsDelivered st c rid layout rf len badgeWord badged
         stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps stcb.registerContext)
         ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
@@ -504,7 +513,7 @@ theorem replyTransferChecked_unlinkedCaps_inPlace (ctx : LabelingContext) (st : 
     have : (4 : Nat) ≤ maxMessageRegisters := by decide
     omega
   obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid msg core hSz' hT hIpc
-    hRO hG
+    hRO hG keep
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hNF : threadHasPendingFault st c = false := by
@@ -514,7 +523,7 @@ theorem replyTransferChecked_unlinkedCaps_inPlace (ctx : LabelingContext) (st : 
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [hD]
   simp only []

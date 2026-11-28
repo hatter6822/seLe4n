@@ -193,10 +193,10 @@ theorem replyRecvAnswerCaller_readyKeptStage {S : SeLe4n.ThreadId → Prop}
 theorem faultReplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hD : st.currentDequeuedUnique) :
-    readyKeptStage S st (faultReplyOnCore replier faulted mi regs c st).1 := by
+    (hD : st.currentDequeuedUnique) (keep : Bool := false) :
+    readyKeptStage S st (faultReplyOnCore replier faulted mi regs c st keep).1 := by
   have hE := endpointReplyCrossCoreDispatch_runQueueStage replier faulted IpcMessage.empty c st
-    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD) keep
   unfold faultReplyOnCore
   split
   · exact .refl _
@@ -212,22 +212,22 @@ theorem faultReplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
 theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
-    {st st' : SystemState} (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    {st st' : SystemState} (hD : st.currentDequeuedUnique) {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     readyKeptStage S st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
-  · have hF := faultReplyOnCore_readyKeptStage (S := S) replier callerTid mi regs c st hD
+  · have hF := faultReplyOnCore_readyKeptStage (S := S) replier callerTid mi regs c st hD keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h
     | ok _ => intro h hF; cases h; exact hF
   · have hE := endpointReplyCrossCoreDispatchChecked_runQueueStage ctx replier callerTid msg c st
-      (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+      (blockedCurrentNowhere_of_currentDequeuedUnique hD) keep
     revert h hE
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h _; cases h
@@ -489,6 +489,139 @@ theorem replyRecvTransferStoppedState_readyKeptStage {epId : SeLe4n.ObjId}
   obtain ⟨hIa, hRa⟩ := AS.1.links hIp hRp
   generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a
     at AS AK hHa hCura hActa hIa hRa hTail
+  have RR := receiveReturnSchedContext_runQueueStage true st1a tid
+  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true hIa hHa hCura hActa
+  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
+    (receiveReturnSchedContext true st1a tid) hHR hCurR hNI hActR
+  have rR := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
+    (receiveReturnSchedContext true st1a tid) hHR hCurR hNI hActR
+  have P := hE.trans hPopS
+  have K := (readyKeptStage.of_stage P).trans P.1 (AK.trans AS.1 ((readyKeptStage.of_stage RR).trans
+    RR.1 rR))
+  have hAll := (((hE.trans hPopS).entry.trans AS).trans RR.entry).trans hR
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c
+    (receiveReturnSchedContext true st1a tid) = q at hAll K hTail
+  rcases hTail with hS | ⟨st2, next, summary, sgi', hV, hS⟩
+  · rw [hS]; exact K.trans hAll.1 (.of_stage (replyRecvNothingReceived_runQueueStage _ _ _ _))
+  subst hV
+  rcases hS with hS | ⟨sc, holder, -, hS⟩
+  · rw [hS]; exact K.trans hAll.1 (.of_stage (replyRecvNothingReceived_runQueueStage _ _ _ _))
+  rw [hS]
+  exact K.trans hAll.1 (.of_stage ((replyRecvHolderDeschedule_runQueueStage tid holder st2).trans
+    (replyRecvNothingReceived_runQueueStage _ _ _ _)))
+
+/-- **The after-reply composite's stop blocks no thread but the receiver**
+(WS-SX SX36.1): `replyRecvTransferStoppedState_readyKeptStage` for the composite
+whose receive capability is read after the reply, with its one further stop --
+the receive's endpoint refused on the answered state -- the nothing-received
+outcome there. -/
+theorem replyRecvTransferThenStoppedState_readyKeptStage
+    {recvEp : SystemState → Except KernelError SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hQ : queueHeadBlockedConsistent st)
+    (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false) :
+    readyKeptStage (· = tid) st
+      (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+        (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant c) st) := by
+  rcases replyRecvTransferThenR_stoppedState_cases recvEp tid rid prevCaller label msg grant c st
+    with hE | ⟨hA, e, hB⟩
+  · rw [hE]; exact .refl _
+  generalize _root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+    (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant c) st = s at hB ⊢
+  revert hB
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = answer
+  generalize replyRecvLegMessage answer msg = m
+  generalize (if answer.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  intro hB
+  rcases endpointReplyRecvAnsweringBodyThenR_stopped hInv hA hB with
+    ⟨-, hS⟩ | ⟨sgi, ret?, popped, hR1, hPop1, hInvP, hTail⟩
+  · rw [hS]; exact .refl _
+  have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller m c st).2 = .ok sgi? →
+      (endpointReplyOnCore tid prevCaller m c st).1.readyOrAbsent prevCaller ∧
+      prevCaller ≠ tid ∧ isIdleThreadId prevCaller = false := by
+    intro sgi hOk
+    obtain ⟨-, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+    have hT := getTcb?_of_lookupTcb _ _ _ hL
+    refine ⟨fun x hx => endpointReplyOnCore_ok_target_ready _ _ _ _ _ hInv hOk hx, ?_,
+      notIdle_of_blocked hD hT (by rw [hS]; exact fun h => by cases h)⟩
+    rintro rfl
+    obtain ⟨tcb, hT0, hRun, -⟩ := hD.runnable hCur
+    rw [hT] at hT0
+    cases hT0
+    rw [hS] at hRun
+    cases hRun
+  have hE := endpointReplyOnCore_runQueueStage tid prevCaller m c st
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+  have hC1 : (endpointReplyOnCore tid prevCaller m c st).1.scheduler.currentOnCore c = some tid :=
+    (endpointReplyOnCore_currentOnCore tid prevCaller m c st c).trans hCur
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt tid prevCaller m c st hInv
+  have hEB := endpointReplyOnCore_endpoint_backward tid prevCaller m c st hInv
+  have hCB := endpointReplyOnCore_currentOnCore tid prevCaller m c st
+  have hQ1 : ∀ sgi?, (endpointReplyOnCore tid prevCaller m c st).2 = .ok sgi? →
+      queueHeadBlockedConsistent (endpointReplyOnCore tid prevCaller m c st).1 := fun _ hOk =>
+    endpointReplyOnCore_preserves_queueHeadBlockedConsistent tid prevCaller m c st hInv hQ hOk
+  generalize endpointReplyOnCore tid prevCaller m c st = p
+    at hE hC1 hInv1 hEB hCB hQ1 hPrev hR1 hPop1 hTail
+  obtain ⟨st1, r⟩ := p
+  dsimp only at hE hC1 hInv1 hEB hCB hQ1 hPrev hR1 hPop1 hTail
+  subst hR1
+  obtain ⟨hRdy1, hNe, hNIp⟩ := hPrev _ rfl
+  have hH1 := (endpointHeadsWakeable_of hD hQ).of_frame hEB hCB (hQ1 _ rfl)
+  have hPop := hPop1
+  have hX := receiveTransferCaps_eq_done req none target popped
+  generalize receiveTransferCapsDone req none target popped = Dn at hX hTail
+  obtain ⟨xs, st1p⟩ := Dn
+  dsimp only at hTail
+  have hPopS := (replyRecvPopDonation_runQueueStage hPop).trans (receiveTransferCaps_runQueueStage hX)
+  have hIq : popped.objects.invExt :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    ((replyRecvPopDonation_runQueueStage hPop).1.links hI1 hR1).1
+  have hPE : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st1p.objects[oid]? = some (.endpoint ep) →
+      st1.objects[oid]? = some (.endpoint ep) := by
+    obtain ⟨hQE, -, -⟩ := replyRecvPopDonation_frame hInv1 hPop
+    obtain ⟨hXE, -, -⟩ := receiveTransferCaps_ipcFrame hIq hX
+    exact fun oid ep hE => hQE oid ep (hXE oid ep hE)
+  have hPC : ∀ c, st1p.scheduler.currentOnCore c = st1.scheduler.currentOnCore c := by
+    obtain ⟨-, hQC, -⟩ := replyRecvPopDonation_frame hInv1 hPop
+    intro c
+    rw [← hQC c, receiveTransferCaps_scheduler_eq hX]
+  have hPT : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st1p.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st1.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+    obtain ⟨-, -, hQT⟩ := replyRecvPopDonation_frame hInv1 hPop
+    obtain ⟨-, -, hXT⟩ := receiveTransferCaps_ipcFrame hIq hX
+    intro y tcb' hT
+    obtain ⟨t1, h1, e1⟩ := hXT y tcb' hT
+    obtain ⟨t0, h0, e0⟩ := hQT y t1 h1
+    exact ⟨t0, h0, e0.trans e1⟩
+  have hA1 : st1.activeAt tid :=
+    activeKeptStage.of_stage hE hInv hRf tid (hD.runnable hCur).activeAt
+  have hAp : st1p.activeAt tid :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
+  have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
+      (hQ1 _ rfl))
+  obtain ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+  obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
+  have AS := replyRecvAnswerCaller_runQueueEntryStage answer st1p prevCaller xs.capInfo
+    ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1) hNIp
+  have AK : readyKeptStage (· = tid) st1p (replyRecvAnswerCaller answer st1p prevCaller xs.capInfo) :=
+    replyRecvAnswerCaller_readyKeptStage answer _ prevCaller _
+  obtain ⟨hHa, hCura, hActa⟩ := replyRecvAnswerCaller_receiveEntryFacts answer xs.capInfo hIp hHp
+    ((hPC c).trans hC1) hAp hNe
+  obtain ⟨hIa, hRa⟩ := AS.1.links hIp hRp
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a
+    at AS AK hHa hCura hActa hIa hRa hTail
+  rcases hTail with ⟨-, -, hS⟩ | ⟨epId, -, hTail⟩
+  · -- the receive's endpoint, read on the answered state, refused
+    rw [hS]
+    have P0 := hE.trans hPopS
+    have E0 := P0.entry.trans AS
+    exact ((readyKeptStage.of_stage P0).trans P0.1 AK).trans E0.1
+      (.of_stage (replyRecvNothingReceived_runQueueStage _ _ _ _))
   have RR := receiveReturnSchedContext_runQueueStage true st1a tid
   obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true hIa hHa hCura hActa
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
@@ -1666,7 +1799,8 @@ theorem replyTransferOnCoreChecked_keeps_receiveCompletesSignal {ctx : LabelingC
     {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st1 : SystemState}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hSig : receiveCompletesSignal ctx st tid = true) (hRdy : receiverIpcReady st tid = true)
-    (hR : replyTransferOnCoreChecked ctx tid prevCaller mi regs msg grant c st = .ok ((), st1)) :
+    {keep : Bool}
+    (hR : replyTransferOnCoreChecked ctx tid prevCaller mi regs msg grant c st keep = .ok ((), st1)) :
     receiveCompletesSignal ctx st1 tid = true ∧ receiverIpcReady st1 tid = true ∧
       receiverBoundNotification st1 tid = receiverBoundNotification st tid := by
   have K := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hInv hR
@@ -1729,13 +1863,13 @@ theorem replyRecvCompletesSignalArm_completes {ctx : LabelingContext}
     (hSig : receiveCompletesSignal ctx st tid = true) (hRdy : receiverIpcReady st tid = true) :
     replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st =
       match replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
-          msg.registers msg grant c st with
+          msg.registers msg grant c st true with
       | .error e => .error e
       | .ok ((), st1) =>
           completeSignalArm ctx tid (receiverBoundNotification st tid) c st1 := by
   unfold replyRecvCompletesSignalArm
   generalize hR : replyTransferOnCoreChecked ctx tid prevCaller
-    (replyRecvReplyMessageInfo label msg) msg.registers msg grant c st = r
+    (replyRecvReplyMessageInfo label msg) msg.registers msg grant c st true = r
   cases r with
   | error e => rfl
   | ok v =>
@@ -1973,10 +2107,10 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
       st stPost ∧ readyKeptStage (· = tid) st stPost from
     readyKeptStage.trans_links hP.1.1.links hP.2 (readyKeptStage.of_stage
       (SystemState.RunQueueStage.of_objectsAgreeOffTaint
-        (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-        (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-        (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])))
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+        (checkedArmTaint_objectsAgreeOffTaint _) checkedArmTaint_invExt
+        (by rw [checkedArmTaint_scheduler]) (by rw [checkedArmTaint_scheduler])
+        (by rw [checkedArmTaint_scheduler]) (by rw [checkedArmTaint_scheduler])))
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact ⟨dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _
     stPost P hD,
     dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
@@ -2061,19 +2195,61 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        hEq | ⟨_, hd, -, -, hEq⟩ | hA
+        hEq | ⟨_, hd, -, -, hEq⟩ | hA | hB
       · rw [hEq]; exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _⟩
       · rw [hEq]
         exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e⟩
-      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+      · obtain ⟨t, _, _, _, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
         rw [hCur1] at hCt
         cases hCt
         rw [hEq]
+        refine replyRecvEntryRefusalTaint_induct
+          (fun x => SystemState.RunQueueEntryStage
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x ∧
+            readyKeptStage (· = tid)
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx =>
+            have hS := SystemState.RunQueueStage.of_objectsAgreeOffTaint
+              (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+              applySyscallTaint_invExt (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler])
+            ⟨SystemState.RunQueueEntryStage.trans hx.1 hS.entry,
+              readyKeptStage.trans_links hx.1.1.links hx.2 (readyKeptStage.of_stage hS)⟩) ?_
         exact ⟨replyRecvTransferStoppedState_runQueueEntryStage E1.objInv E1.refined E1.dequeued
             E1.queueHeads hCur1 hNI,
           replyRecvTransferStoppedState_readyKeptStage E1.objInv E1.refined E1.dequeued
             E1.queueHeads hCur1 hNI⟩
-    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+      · -- WS-SX SX36.1: the after-reply stop blocks no thread but the receiver
+        obtain ⟨t, -, decoded', gate, rid, prev, badge, grant, -, hCt, -, -, -, -, hEq⟩ := hB
+        rw [hCur1] at hCt
+        cases hCt
+        rw [hEq]
+        refine replyRecvAfterReplyRefusalTaint_induct
+          (fun x => SystemState.RunQueueEntryStage
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x ∧
+            readyKeptStage (· = tid)
+              (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx =>
+            have hS := SystemState.RunQueueStage.of_objectsAgreeOffTaint
+              (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+              applySyscallTaint_invExt (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler])
+            ⟨SystemState.RunQueueEntryStage.trans hx.1 hS.entry,
+              readyKeptStage.trans_links hx.1.1.links hx.2 (readyKeptStage.of_stage hS)⟩) ?_
+        rcases replyRecvAnsweringThenR_stoppedState_cases ctx (replyRecvReceiveEndpoint ctx gate tid)
+            decoded' tid e rid prev badge grant _ with h0 | ⟨st1, hR, h1⟩ | h2
+        · rw [h0]; exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _⟩
+        · rw [h1]
+          exact ⟨replyTransferOnCoreChecked_runQueueEntryStage E1.objInv E1.dequeued hR,
+            replyTransferOnCoreChecked_readyKeptStage E1.dequeued hR⟩
+        · rw [h2]
+          exact ⟨replyRecvTransferThenStoppedState_runQueueEntryStage E1.objInv E1.refined
+              E1.dequeued E1.queueHeads hCur1 hNI,
+            replyRecvTransferThenStoppedState_readyKeptStage E1.objInv E1.refined E1.dequeued
+              E1.queueHeads hCur1 hNI⟩
+    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke =
@@ -2085,10 +2261,36 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
           = some tid := by
       intro f hF
       rcases cancelReceiveBusyReply_cases_of_fault E1.objInv hCur1 hE hF with
-        hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
-      · exact ⟨E1.queueHeads, hCur1⟩
-      · exact ⟨cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
+        hEq | ⟨_, hd, -, -, hEq⟩ | hB
+      · rw [hEq]; exact ⟨E1.queueHeads, hCur1⟩
+      · rw [hEq]
+        exact ⟨cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
           by rw [cancelReplyHolder_currentOnCore]; exact hCur1⟩
+      · -- WS-SX SX36.1: the after-reply fault fires on the entry state, on the
+        -- state the signal arm's reply left, or on the nothing-received state
+        rcases hB.fault_stop E1.objInv hCur1 hE hF with ⟨s0, hTS, hS | ⟨prev, mi, regs, msg, grant,
+            st1, hR, hS⟩ | ⟨rid, prev, label, msg, grant, st1, popped, st1p, sgi, ret?, xs, hR, hPop,
+            hX, hS⟩⟩ <;>
+          refine hTS (fun x => queueHeadBlockedConsistent x ∧ x.scheduler.currentOnCore e = some tid)
+            (fun _ _ x hx => ⟨queueHeadBlockedConsistent_of_readViewAgreement
+              (ipcReadViewAgreement.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) hx.1,
+              by rw [applySyscallTaint_scheduler]; exact hx.2⟩) ?_ <;>
+          rw [hS]
+        · exact ⟨E1.queueHeads, hCur1⟩
+        · obtain ⟨tcb0, hT0, hRun, -⟩ := E1.dequeued.runnable hCur1
+          refine ⟨(replyTransferOnCoreChecked_receiveLegFacts E1.objInv E1.queueHeads
+            (fun x hx => by rw [hT0] at hx; cases hx; exact hRun) hR).1, ?_⟩
+          -- The signal arm's reply keeps the executing core's current thread: the
+          -- answered caller waits for its reply, so it is not that ready thread.
+          have hNe : prev ≠ tid := by
+            rintro rfl
+            have hA := replyRecvCallerAwaitsReply_of_replyTransferOnCoreChecked_ok hR
+            unfold replyRecvCallerAwaitsReply lookupTcb at hA
+            cases hRes : prev.isReserved <;> simp [hRes, hT0, hRun] at hA
+          exact replyTransferOnCoreChecked_keep_currentOnCore E1.objInv hR hCur1 hNe
+        · exact replyRecvNothingReceivedAfterReply_entryFacts E1.objInv E1.queueHeads E1.dequeued
+            hCur1 hR hPop hX
     obtain ⟨hS, hK⟩ := hC
     obtain ⟨hIR, hRR⟩ := hS.1.links E1.objInv E1.refined
     have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
@@ -2231,7 +2433,17 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
   have B := (stageCallerReturnFor_runQueueStage ((Architecture.IpcBufferRead.syncUserWords
     (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
     st' e outcome)
-  have ABC := A.trans ((B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
+  have B2 := dropReturnedContextCaller_runQueueStage
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv trapped.syscallId) (Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+      ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e))
+    ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+    (Architecture.stageCallerReturnFor ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+      st' e outcome) e
+  have ABC := A.trans (((B.entry.trans B2.entry).trans (scheduleLocalSuccessorFrom_runQueueEntryStage
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
       bytes n).scheduler.currentOnCore e) _ e)).toOn _)
   have Full := (hS.entry.toOn _).trans (ABC.trans
@@ -2241,19 +2453,26 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
       bytes n).scheduler.currentOnCore e) st' outcome hDInv
-  have hCov := stepCovers_trans (stepCovers_trans hDc hStage)
+  obtain ⟨hDrop, hDropInv⟩ := dropReturnedContextCaller_stepCovers e
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv trapped.syscallId) (Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+      ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e))
+    ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e) _ hStageInv
+  have hCov := stepCovers_trans (stepCovers_trans (stepCovers_trans hDc hStage) hDrop)
     (scheduleLocalSuccessorFrom_stepCovers e
       ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
-        bytes n).scheduler.currentOnCore e) _ hStageInv)
+        bytes n).scheduler.currentOnCore e) _ hDropInv)
   have r : readyKeptStage (fun t => (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some t)
       _ _ :=
     (syscallDispatchFromAbi_readyKeptStage ES hD).trans_links A.1.links
-      ((readyKeptStage.of_stage B).trans B.entry.1 fun hI hR =>
-        .of_stateMono (scheduleLocalSuccessorFrom_stateMono
+      ((readyKeptStage.of_stage B).trans B.entry.1 ((readyKeptStage.of_stage B2).trans B2.entry.1
+        fun hI hR => .of_stateMono (scheduleLocalSuccessorFrom_stateMono
           ((Architecture.IpcBufferRead.syncUserWords
             (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
-          _ e hI hR))
+          _ e hI hR)))
   refine BlockedNotResident.clearLedgers' ?_
   exact settleThenActivateOnCore_blockedNotResident hBNR hC hInvM hRM
     (residentKeptOffCore_trans (residentKeptOffCore_of_eq hM0) hCov.residentKept)

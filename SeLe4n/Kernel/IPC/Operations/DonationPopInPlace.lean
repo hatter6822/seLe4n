@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Operations.DonationInPlace
 import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.Scheduler.ReturnedContextDrop
 
 /-!
 # seL4-MCS's `reply_pop`, each object written in its slot
@@ -304,11 +305,14 @@ reply's then takes the holder off its core (`replyDonationPopInPlace`). -/
   SchedContextOps.settleReturnedContext (returnDonatedSchedContextInPlace st holder c scId) home scId
 
 /-- The pop of the reply's donation, in place: the pop and its settle
-(`popDonationSettledInPlace`), then the holder taken off its core.  `home` is
-the caller's home core, read by the caller before the first write. -/
+(`popDonationSettledInPlace`), then the holder taken off its core, or, with
+`keepCurrent`, left current where `core` runs it (`descheduleReturnedHolder`,
+the reply-receive whose receive completes a signal).  `home` is the caller's
+home core, read by the caller before the first write. -/
 @[noinline] def replyDonationPopInPlace (st : SystemState) (c holder : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (home : CoreId) : SystemState :=
-  descheduleAtPlacement (popDonationSettledInPlace st c holder scId home) holder
+    (scId : SeLe4n.SchedContextId) (home : CoreId) (keepCurrent : Bool := false)
+    (core : CoreId := bootCoreId) : SystemState :=
+  descheduleReturnedHolder keepCurrent core (popDonationSettledInPlace st c holder scId home) holder
 
 
 end DonationPop

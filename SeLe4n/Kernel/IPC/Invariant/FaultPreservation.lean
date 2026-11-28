@@ -414,8 +414,9 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
     -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation, at the same state.
     (hUnheld : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
       unheldReplyPopCoherent
-        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted) :
-    ipcInvariantFull (faultReplyOnCore replier faulted mi regs c st).1 := by
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted)
+    (keep : Bool := false) :
+    ipcInvariantFull (faultReplyOnCore replier faulted mi regs c st keep).1 := by
   cases hTcb : st.getTcb? faulted with
   | none => simpa only [faultReplyOnCore, hTcb] using hInv
   | some tcb =>
@@ -424,11 +425,11 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       | some tf =>
           have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
             faulted IpcMessage.empty c st hInv hObjInv hDonationReturned hHolderDonation
-            hAllBudgetsNone hStackValid hUnheld
+            hAllBudgetsNone hStackValid hUnheld keep
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
-            faulted IpcMessage.empty c st hObjInv
+            faulted IpcMessage.empty c st hObjInv keep
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
-            with ⟨stR, res⟩
+            keep with ⟨stR, res⟩
           rw [hStep] at hRep hRepObj
           simp only at hRep hRepObj
           cases res with

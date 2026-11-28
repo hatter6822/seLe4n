@@ -71,7 +71,7 @@ def payloadWords : Sel4Error → Nat
 
 /-- seLe4n's error for each seL4 code, with a representative payload.  The
 label seLe4n writes for it is `errorLabelBase` plus its discriminant until
-WS-SX SX45 (D1) writes seL4's code; the payload words are seL4's already. -/
+WS-SX SX47 (D1) writes seL4's code; the payload words are seL4's already. -/
 def kernelError : Sel4Error → KernelError
   | .invalidArgument => .invalidArgument 1
   | .invalidCapability => .invalidCapability 1
@@ -263,27 +263,27 @@ def sel4LabelRowsCore : List LabelRow := [
   unitRow 1 "UntypedRetype" (src "decodeUntypedInvocation" "object/untyped.c" 26) (obj .untyped)
     6 1 [illegalOperation, truncatedMessage, invalidArgument, rangeError, failedLookup,
       deleteFirst, notEnoughMemory]
-    (.deviation .untypedRetype "SX46.1" (some 7)
+    (.deviation .untypedRetype "SX48.1" (some 7)
       "seLe4n reads a seventh word, the carved object's id (MR6); seL4 places the object at the untyped's free index"),
   { label := 2, name := "TCBReadRegisters",
     decode := src "decodeReadRegisters" "object/tcb.c" 1001, capType := obj .tcb,
     minLength := 2, extraCaps := 0, returns := .message,
     errors := [truncatedMessage, invalidArgument, rangeError, illegalOperation], blocks := false,
-    status := .absent "SX46.1" },
+    status := .absent "SX48.1" },
   unitRow 3 "TCBWriteRegisters" (src "decodeWriteRegisters" "object/tcb.c" 1046) (obj .tcb)
-    2 0 [truncatedMessage, invalidArgument, illegalOperation] (.absent "SX46.1"),
+    2 0 [truncatedMessage, invalidArgument, illegalOperation] (.absent "SX48.1"),
   unitRow 4 "TCBCopyRegisters" (src "decodeCopyRegisters" "object/tcb.c" 958) (obj .tcb)
-    1 1 [truncatedMessage, invalidArgument, invalidCapability] (.absent "SX46.1"),
+    1 1 [truncatedMessage, invalidArgument, invalidCapability] (.absent "SX48.1"),
   unitRow 5 "TCBConfigure" (src "decodeTCBConfigure" "object/tcb.c" 1101) (obj .tcb)
-    3 3 [truncatedMessage, illegalOperation, invalidCapability, alignmentError] (.absent "SX46.1"),
+    3 3 [truncatedMessage, illegalOperation, invalidCapability, alignmentError] (.absent "SX48.1"),
   unitRow 6 "TCBSetPriority" (src "decodeSetPriority" "object/tcb.c" 1217) (obj .tcb)
     1 1 [truncatedMessage, invalidCapability, rangeError] (.implemented .tcbSetPriority),
   unitRow 7 "TCBSetMCPriority" (src "decodeSetMCPriority" "object/tcb.c" 1261) (obj .tcb)
     1 1 [truncatedMessage, invalidCapability, rangeError] (.implemented .tcbSetMCPriority),
   unitRow 8 "TCBSetSchedParams" (src "decodeSetSchedParams" "object/tcb.c" 1338) (obj .tcb)
-    2 3 [truncatedMessage, invalidCapability, rangeError, illegalOperation] (.absent "SX43.2"),
+    2 3 [truncatedMessage, invalidCapability, rangeError, illegalOperation] (.absent "SX45.2"),
   unitRow 9 "TCBSetTimeoutEndpoint" (src "decodeSetTimeoutEndpoint" "object/tcb.c" 1306) (obj .tcb)
-    0 1 [truncatedMessage, invalidCapability] (.absent "SX43.1"),
+    0 1 [truncatedMessage, invalidCapability] (.absent "SX45.1"),
   unitRow 10 "TCBSetIPCBuffer" (src "decodeSetIPCBuffer" "object/tcb.c" 1457) (obj .tcb)
     1 1 [truncatedMessage, alignmentError, illegalOperation, invalidCapability]
     (.implemented .tcbSetIPCBuffer),
@@ -298,18 +298,18 @@ def sel4LabelRowsCore : List LabelRow := [
   unitRow 15 "TCBUnbindNotification" (src "decodeUnbindNotification" "object/tcb.c" 1675)
     (obj .tcb) 0 0 [illegalOperation] (.implemented .tcbUnbindNotification),
   unitRow 16 "TCBSetTLSBase" (src "decodeSetTLSBase" "object/tcb.c" 785) (obj .tcb)
-    1 0 [truncatedMessage] (.absent "SX46.1"),
+    1 0 [truncatedMessage] (.absent "SX48.1"),
   { label := 17, name := "TCBSetFlags", decode := src "decodeSetFlags" "object/tcb.c" 829,
     capType := obj .tcb, minLength := 2, extraCaps := 0, returns := .message,
-    errors := [truncatedMessage], blocks := false, status := .absent "SX46.1" },
+    errors := [truncatedMessage], blocks := false, status := .absent "SX48.1" },
   unitRow 18 "CNodeRevoke" (src "decodeCNodeInvocation" "object/cnode.c" 195) (obj .cnode)
-    2 0 [truncatedMessage, failedLookup] (.deviation .cspaceRevoke "SX44.1" (some 1)
+    2 0 [truncatedMessage, failedLookup] (.deviation .cspaceRevoke "SX46.1" (some 1)
       "seLe4n names the target by a slot word; seL4 by index and depth"),
   unitRow 19 "CNodeDelete" (src "decodeCNodeInvocation" "object/cnode.c" 200) (obj .cnode)
-    2 0 [truncatedMessage, failedLookup] (.deviation .cspaceDelete "SX44.1" (some 1)
+    2 0 [truncatedMessage, failedLookup] (.deviation .cspaceDelete "SX46.1" (some 1)
       "seLe4n names the target by a slot word; seL4 by index and depth"),
   unitRow 20 "CNodeCancelBadgedSends" (src "decodeCNodeInvocation" "object/cnode.c" 218)
-    (obj .cnode) 2 0 [truncatedMessage, failedLookup, illegalOperation] (.absent "SX44.4"),
+    (obj .cnode) 2 0 [truncatedMessage, failedLookup, illegalOperation] (.absent "SX46.4"),
   unitRow 21 "CNodeCopy" (src "decodeCNodeInvocation" "object/cnode.c" 116) (obj .cnode)
     5 1 [truncatedMessage, failedLookup, deleteFirst, illegalOperation] (.implemented .cspaceCopy),
   unitRow 22 "CNodeMint" (src "decodeCNodeInvocation" "object/cnode.c" 136) (obj .cnode)
@@ -317,9 +317,9 @@ def sel4LabelRowsCore : List LabelRow := [
   unitRow 23 "CNodeMove" (src "decodeCNodeInvocation" "object/cnode.c" 157) (obj .cnode)
     4 1 [truncatedMessage, failedLookup, deleteFirst] (.implemented .cspaceMove),
   unitRow 24 "CNodeMutate" (src "decodeCNodeInvocation" "object/cnode.c" 163) (obj .cnode)
-    5 1 [truncatedMessage, failedLookup, deleteFirst, illegalOperation] (.absent "SX44.2"),
+    5 1 [truncatedMessage, failedLookup, deleteFirst, illegalOperation] (.absent "SX46.2"),
   unitRow 25 "CNodeRotate" (src "decodeCNodeInvocation" "object/cnode.c" 232) (obj .cnode)
-    8 2 [truncatedMessage, failedLookup, deleteFirst, illegalOperation] (.absent "SX44.3"),
+    8 2 [truncatedMessage, failedLookup, deleteFirst, illegalOperation] (.absent "SX46.3"),
   unitRow 26 "IRQIssueIRQHandler" (src "decodeIRQControlInvocation" "object/interrupt.c" 23)
     (some .irqControl) 3 1 [truncatedMessage, rangeError, failedLookup, deleteFirst, revokeFirst]
     (.implemented .irqControlGet),
@@ -335,11 +335,11 @@ open Sel4Error in
 /-- Labels 30–56: domains, scheduling, the VSpace and the ARM objects. -/
 def sel4LabelRowsArch : List LabelRow := [
   unitRow 30 "DomainSetSet" (src "decodeDomainSetSetInvocation" "object/domain.c" 24) none
-    1 1 [truncatedMessage, invalidArgument] (.absent "SX46.1"),
+    1 1 [truncatedMessage, invalidArgument] (.absent "SX48.1"),
   unitRow 31 "DomainScheduleConfigure" (src "decodeDomainScheduleConfigure" "object/domain.c" 67)
-    none 3 0 [truncatedMessage, invalidArgument, rangeError] (.absent "SX46.1"),
+    none 3 0 [truncatedMessage, invalidArgument, rangeError] (.absent "SX48.1"),
   unitRow 32 "DomainScheduleSetStart" (src "decodeDomainScheduleSetStart" "object/domain.c" 130)
-    none 1 0 [truncatedMessage, rangeError] (.absent "SX46.1"),
+    none 1 0 [truncatedMessage, rangeError] (.absent "SX48.1"),
   unitRow 33 "SchedControlConfigureFlags"
     (src "decodeSchedControl_ConfigureFlags" "object/schedcontrol.c" 80) (some .schedControl)
     5 1 [truncatedMessage, rangeError, invalidCapability] (.implemented .schedContextConfigure),
@@ -364,15 +364,15 @@ def sel4LabelRowsArch : List LabelRow := [
   unitRow 39 "ARMVSpaceClean_Data"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1420) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 40 "ARMVSpaceInvalidate_Data"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1421) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 41 "ARMVSpaceCleanInvalidate_Data"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1422) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 42 "ARMVSpaceUnify_Instruction"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1423) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
@@ -388,7 +388,7 @@ def sel4LabelRowsArch : List LabelRow := [
   unitRow 45 "ARMPageTableUnmap"
     (src "decodeARMPageTableInvocation" "arch/arm/64/kernel/vspace.c" 1545) (obj .pageTable)
     0 0 [revokeFirst, illegalOperation]
-    (.deviation .pageTableUnmap "SX39.1" none
+    (.deviation .pageTableUnmap "SX41.1" none
       "seLe4n refuses a table with live mappings (revocationRequired); seL4 unmaps and clears it"),
   unitRow 46 "ARMPageMap" (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1626)
     (obj .frame) 3 1
@@ -398,35 +398,35 @@ def sel4LabelRowsArch : List LabelRow := [
     (obj .frame) 0 0 [] (.implemented .vspaceUnmap),
   unitRow 48 "ARMPageClean_Data" (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1725)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 49 "ARMPageInvalidate_Data"
     (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1726)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 50 "ARMPageCleanInvalidate_Data"
     (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1727)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 51 "ARMPageUnify_Instruction"
     (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1728)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   { label := 52, name := "ARMPageGetAddress",
     decode := src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1813,
     capType := obj .frame, minLength := 0, extraCaps := 0, returns := .message, errors := [],
-    blocks := false, status := .absent "SX46.1" },
+    blocks := false, status := .absent "SX48.1" },
   unitRow 53 "ARMASIDControlMakePool"
     (src "decodeARMMMUInvocation" "arch/arm/64/kernel/vspace.c" 1851) none 2 2
     [truncatedMessage, invalidCapability, failedLookup, deleteFirst, illegalOperation]
-    (.absent "SX46.1"),
+    (.absent "SX48.1"),
   unitRow 54 "ARMASIDPoolAssign" (src "decodeARMMMUInvocation" "arch/arm/64/kernel/vspace.c" 1823)
-    none 0 1 [truncatedMessage, invalidCapability, deleteFirst] (.absent "SX46.1"),
+    none 0 1 [truncatedMessage, invalidCapability, deleteFirst] (.absent "SX48.1"),
   unitRow 55 "ARMIRQIssueIRQHandlerTrigger"
     (src "Arch_decodeIRQControlInvocation" "arch/arm/object/interrupt.c" 36) (some .irqControl)
-    4 1 [truncatedMessage, rangeError, failedLookup, deleteFirst, revokeFirst] (.absent "SX46.1"),
+    4 1 [truncatedMessage, rangeError, failedLookup, deleteFirst, revokeFirst] (.absent "SX48.1"),
   unitRow 56 "ARMIRQIssueIRQHandlerTriggerCore"
     (src "Arch_decodeIRQControlInvocation" "arch/arm/object/interrupt.c" 150) (some .irqControl)
-    0 1 [rangeError, failedLookup, deleteFirst, revokeFirst, invalidArgument] (.absent "SX46.1") ]
+    0 1 [rangeError, failedLookup, deleteFirst, revokeFirst, invalidArgument] (.absent "SX48.1") ]
 
 /-- A model-only label: no seL4 source. -/
 def modelRow (label : Nat) (name : String) (capType : CapType) (minLength : Nat)

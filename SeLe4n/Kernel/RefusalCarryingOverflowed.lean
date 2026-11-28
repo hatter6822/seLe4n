@@ -149,8 +149,9 @@ theorem dispatchShortArgsCheckedR_eq (ctx : LabelingContext) (decoded : SyscallD
         | exact applySyscallTaintAfter_untypedRetype st tid decoded h pe pl pt post
     · exact applySyscallTaintAfter_routed st tid decoded hI pe pl pt post
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
+    (hNR := fun h => by rw [h] at hR; cases hR)
   intro st tcb ref _ hRef
-  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
+  simp only [dispatchCheckedArmThenTaint_of_ne (decoded := decoded) (fun h => by rw [h] at hR; cases hR), RefusalCarrying.ofKernel,
     syscallInvokeTyped, syscallResolveCap, SyscallGate.lookupSlot_mk, hRef, hTaint]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap

@@ -11,6 +11,7 @@ import SeLe4n.Kernel.KernelRecords.IpcStages
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecv
 import SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Ipc
+import SeLe4n.Kernel.IPC.Invariant.EndpointsAndIpcStatesBack
 
 /-!
 # The reply-receive keeps the records
@@ -167,72 +168,6 @@ theorem replyRecvReceiveLegFacts {answer : Option Architecture.FaultReplyOutcome
   · exact hZ
   · rw [hZ]; exact hReady z hz
 
-/-- **The caller's answer writes IPC state nowhere and adds no endpoint**: the
-staged frame and the restart write the caller's TCB only, keeping its IPC
-state; the abandon deschedules it first, which moves only run links. -/
-theorem replyRecvAnswerCaller_ipcBackward (answer : Option Architecture.FaultReplyOutcome)
-    (S : SystemState) (p : SeLe4n.ThreadId) (capInfo : Nat) (hInv : S.objects.invExt) :
-    (∀ (e : SeLe4n.ObjId) (ep : Endpoint),
-      (replyRecvAnswerCaller answer S p capInfo).objects[e]? = some (.endpoint ep) →
-        S.objects[e]? = some (.endpoint ep)) ∧
-    (∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
-      (replyRecvAnswerCaller answer S p capInfo).objects[y.toObjId]? = some (.tcb tcb') →
-        ∃ tcb, S.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) := by
-  have upd : ∀ (X : SystemState) (f : TCB → TCB), X.objects.invExt →
-      (∀ x, (f x).ipcState = x.ipcState) →
-      (∀ (e : SeLe4n.ObjId) (ep : Endpoint), (X.updateTcb p f).objects[e]? = some (.endpoint ep) →
-        X.objects[e]? = some (.endpoint ep)) ∧
-      (∀ (y : SeLe4n.ThreadId) (tcb' : TCB), (X.updateTcb p f).objects[y.toObjId]? = some (.tcb tcb') →
-        ∃ tcb, X.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) := by
-    intro X f hI hf
-    refine ⟨fun e ep h => updateTcb_objects_back_nonTcb hI (fun _ h => by cases h) h,
-      fun y t' h => ?_⟩
-    obtain ⟨t, ht, hs⟩ := updateTcb_getTcb?_back hI hf
-      ((SystemState.getTcb?_eq_some_iff _ _ _).mpr h)
-    exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp ht, hs⟩
-  have refl : (∀ (e : SeLe4n.ObjId) (ep : Endpoint), S.objects[e]? = some (.endpoint ep) →
-        S.objects[e]? = some (.endpoint ep)) ∧
-      (∀ (y : SeLe4n.ThreadId) (tcb' : TCB), S.objects[y.toObjId]? = some (.tcb tcb') →
-        ∃ tcb, S.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) :=
-    ⟨fun _ _ h => h, fun _ t h => ⟨t, h, rfl⟩⟩
-  cases answer with
-  | none =>
-    show (∀ (e : SeLe4n.ObjId) (ep : Endpoint),
-      (Architecture.stageDeliveredMessage S p capInfo).objects[e]? = some (.endpoint ep) →
-        S.objects[e]? = some (.endpoint ep)) ∧
-      (∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
-        (Architecture.stageDeliveredMessage S p capInfo).objects[y.toObjId]? = some (.tcb tcb') →
-          ∃ tcb, S.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
-    unfold Architecture.stageDeliveredMessage
-    split
-    · split
-      · split
-        · exact upd S _ hInv (fun _ => rfl)
-        · exact refl
-      · exact refl
-    · exact refl
-  | some o =>
-    cases o with
-    | restart frame => exact upd S _ hInv (fun _ => rfl)
-    | abandon =>
-      show (∀ (e : SeLe4n.ObjId) (ep : Endpoint),
-        (faultAbandonOnCore S p (faultAbandonCore S p)).objects[e]? = some (.endpoint ep) →
-          S.objects[e]? = some (.endpoint ep)) ∧
-        (∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
-          (faultAbandonOnCore S p (faultAbandonCore S p)).objects[y.toObjId]? = some (.tcb tcb') →
-            ∃ tcb, S.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
-      unfold faultAbandonOnCore
-      obtain ⟨hE, hT⟩ := upd (removeRunnableOnCore S p (faultAbandonCore S p))
-        (fun tcb => { tcb.setPendingFault none with threadState := .Inactive })
-        (removeRunnableOnCore_objects_invExt S p _ hInv) (fun _ => rfl)
-      refine ⟨fun e ep h => removeRunnableOnCore_objects_back_nonTcb S p _
-        (fun _ h => by cases h) (hE e ep h), fun y t' h => ?_⟩
-      obtain ⟨u, hu, hU⟩ := hT y t' h
-      obtain ⟨t0, h0, e0⟩ := removeRunnableOnCore_getTcb?_back S p (faultAbandonCore S p)
-        ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hu)
-      have hs : t0.ipcState = u.ipcState := by have := congrArg TCB.ipcState e0; exact this
-      exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ _ _).mp h0, hs.trans hU⟩
-
 /-- **What the receive leg reads, at the answered state**: the caller's answer
 keeps every endpoint head blocked, keeps the server `.ready`, and adds no
 endpoint. -/
@@ -254,4 +189,21 @@ theorem replyRecvAnswerCaller_receiveLegFacts (answer : Option Architecture.Faul
   obtain ⟨y, hy, hS⟩ := hT tid x ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
   rw [← hS]; exact hReady y ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hy)
 
+
+/-- **A `.ready` thread whose object survives with its kind is ready
+again**: a step that keeps every object's kind keeps the thread's TCB. -/
+theorem CallerReady.of_kind {st s : SystemState} {t : SeLe4n.ThreadId} (h : CallerReady st t)
+    (hK : ∀ id : SeLe4n.ObjId, (s.objects[id]?).map KernelObject.objectType =
+      (st.objects[id]?).map KernelObject.objectType)
+    (hR : ∀ x, s.getTcb? t = some x → x.ipcState = .ready) : CallerReady s t := by
+  obtain ⟨tcb, hT, -⟩ := h
+  have hk := hK t.toObjId
+  rw [hT] at hk
+  cases hs : s.objects[t.toObjId]? with
+  | none => rw [hs] at hk; cases hk
+  | some o =>
+    rw [hs] at hk
+    cases o with
+    | tcb x => exact ⟨x, hs, hR x ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hs)⟩
+    | _ => simp [KernelObject.objectType] at hk
 end SeLe4n.Kernel

@@ -70,9 +70,11 @@ in place, the server's priority walk, the transfer, then the long frame. -/
     (replier : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId)
     (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
-    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability)
+    (keepCurrent : Bool := false) : SystemState :=
   replyCapsLongTail (PriorityInheritance.propagatePipChainCrossCore
-      (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home)
+      (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home
+        keepCurrent core)
       server core).1
     c replier rf len badgeWord badged sv sb sroot count rv rb rroot
 
@@ -132,9 +134,10 @@ theorem replyTransferChecked_capsLong_inPlace (ctx : LabelingContext) (st : Syst
       (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi' regs
-        (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
+        (longReplyMessage st replier rf mi.length badgeWord badged) g core st keep =
       .ok ((), performReplyCapsDeliveredLong st c server rid rf mi.length replier badgeWord
         badged core stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
         (if g then routedExtraCaps rf else 0) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
@@ -144,13 +147,13 @@ theorem replyTransferChecked_capsLong_inPlace (ctx : LabelingContext) (st : Syst
   have hNF : threadHasPendingFault st c = false := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
   obtain ⟨sgi, hD⟩ := replyDispatch_inPlace st replier c server ct ep rid
-    (longReplyMessage st replier rf mi.length badgeWord badged) core hSz' hT hIpc hRO hSRes hG
+    (longReplyMessage st replier rf mi.length badgeWord badged) core hSz' hT hIpc hRO hSRes hG keep
   have hNo := replyWakesInPlace_noResizeDue hG
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   have hA := (ipcBufferReadsAgree_propagatePipChainCrossCore _ server core hNoS).trans
     (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo)
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [hD]
   simp only []
@@ -186,13 +189,14 @@ theorem replyTransferChecked_donatedCapsLong_inPlace (ctx : LabelingContext) (st
       (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi' regs
-        (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
+        (longReplyMessage st replier rf mi.length badgeWord badged) g core st keep =
       .ok ((), performReplyDonatedCapsDeliveredLong st c server rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) rf mi.length replier
         badgeWord badged core stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
-        (if g then routedExtraCaps rf else 0) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
+        (if g then routedExtraCaps rf else 0) ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0] keep) := by
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid (longReplyMessage st replier rf mi.length badgeWord badged) ct hT hSRes hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
@@ -214,21 +218,22 @@ theorem replyTransferChecked_donatedCapsLong_inPlace (ctx : LabelingContext) (st
     simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   have hNoP := replyDonationPopInPlace_noResizeDue _ c server scId (determineTargetCore st c) hNoS
+    keep core
   have hAX := (ipcBufferReadsAgree_propagatePipChainCrossCore _ server core hNoP).trans
     ((ipcBufferReadsAgree_replyDonationPopInPlace _ c server scId (determineTargetCore st c)
-      hNoS).trans (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo))
+      hNoS keep core).trans (ipcBufferReadsAgree_storeReplyRendezvousReady st c server rid hNo))
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
-    hDon cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+    hDon keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
-  rw [replyDonationPopInPlace_msg c id _ id _ c server scId _ hNoS hNe,
+  rw [replyDonationPopInPlace_msg c id _ id _ c server scId _ hNoS hNe keep core,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoP]
   unfold replyTransferCaps
   rw [replyCapRequest_of_routedReplyLong st replier stcb rf capAddr mi sid g hS hRf hR hRead, hTgt]
@@ -258,9 +263,10 @@ theorem replyTransferChecked_unheldCapsLong_inPlace (ctx : LabelingContext) (st 
       (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi' regs
-        (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
+        (longReplyMessage st replier rf mi.length badgeWord badged) g core st keep =
       .ok ((), performReplyUnheldCapsDeliveredLong st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) rf mi.length replier badgeWord badged stcb.spaceCells[2]
         stcb.ipcBuffer stcb.spaceCells[0] (if g then routedExtraCaps rf else 0) ct.spaceCells[2]
@@ -291,12 +297,12 @@ theorem replyTransferChecked_unheldCapsLong_inPlace (ctx : LabelingContext) (st 
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hAns, hcv, SystemState.unlinkReplyWaiterOpt]
-  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   rw [returnUnheldSchedContextInPlace_msg c id _ id _ c scId hNoS, settleReturnedContext_msg]
   unfold replyTransferCaps
@@ -338,16 +344,17 @@ theorem replyTransferChecked_unlinkedCapsLong_inPlace (ctx : LabelingContext) (s
       (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
-      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi' regs
-        (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
+        (longReplyMessage st replier rf mi.length badgeWord badged) g core st keep =
       .ok ((), performReplyUnlinkedCapsDeliveredLong st c rid rf mi.length replier badgeWord badged
         stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] (if g then routedExtraCaps rf else 0)
         ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
   have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
   obtain ⟨hLen, hSz'⟩ := routedReplyLong_length st replier rf capAddr mi sid badgeWord badged hR
   obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid
-    (longReplyMessage st replier rf mi.length badgeWord badged) core hSz' hT hIpc hRO hG
+    (longReplyMessage st replier rf mi.length badgeWord badged) core hSz' hT hIpc hRO hG keep
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hNF : threadHasPendingFault st c = false := by
@@ -357,7 +364,7 @@ theorem replyTransferChecked_unlinkedCapsLong_inPlace (ctx : LabelingContext) (s
   have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
     unfold receiverCapTarget? capTargetOf; rw [hTc]
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [hD]
   simp only []

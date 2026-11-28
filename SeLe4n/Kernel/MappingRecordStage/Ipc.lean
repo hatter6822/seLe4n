@@ -514,8 +514,8 @@ theorem popUnheldReplyHead_mappingStage {st st' : SystemState} {rid : SeLe4n.Rep
           (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
 
 theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
-    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} {keep : Bool} {executingCore : CoreId}
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep executingCore = .ok st') :
     MappingStage st st' := by
   rcases applyReplyDonationOnCore_ok_decompose _ _ _ _ _ h with
     ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩ | ⟨_, _, _, -, -, -, hK⟩
@@ -529,11 +529,12 @@ theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe
         (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
         fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
           (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)).trans
-      (descheduleAtPlacement_mappingStage _ holderVtid.val)
+      (descheduleReturnedHolder_induct (fun a b => MappingStage a b) keep executingCore _ _
+        (MappingStage.refl _) (descheduleAtPlacement_mappingStage _ holderVtid.val))
 
 theorem endpointReplyCrossCoreDispatch_mappingStage {replier target : SeLe4n.ThreadId}
-    {msg : IpcMessage} {executingCore : CoreId} {st : SystemState} :
-    MappingStage st (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
+    {msg : IpcMessage} {executingCore : CoreId} {st : SystemState} (keep : Bool := false) :
+    MappingStage st (endpointReplyCrossCoreDispatch replier target msg executingCore st keep).1 := by
   unfold endpointReplyCrossCoreDispatch
   have hR := endpointReplyOnCore_mappingStage (replier := replier) (target := target)
     (msg := msg) (executingCore := executingCore) (st := st)
@@ -557,12 +558,12 @@ theorem endpointReplyCrossCoreDispatch_mappingStage {replier target : SeLe4n.Thr
 
 theorem endpointReplyCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {executingCore : CoreId}
-    {st : SystemState} :
+    {st : SystemState} (keep : Bool := false) :
     MappingStage st (endpointReplyCrossCoreDispatchChecked ctx replier target msg
-      executingCore st).1 := by
+      executingCore st keep).1 := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch_mappingStage
+  · exact endpointReplyCrossCoreDispatch_mappingStage keep
   · exact MappingStage.refl _
 
 /-- The fault reply's decoded outcome is a kind-preserving TCB write: the
@@ -580,8 +581,9 @@ theorem faultReplyApplyOnCore_mappingStage (st : SystemState) (faulted : SeLe4n.
       (fun h => faultAbandonOnCore_kindPreservingWrite _ _ _ h)
 
 theorem faultReplyOnCore_mappingStage {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
-    {regs : Array SeLe4n.RegValue} {executingCore : CoreId} {st : SystemState} :
-    MappingStage st (faultReplyOnCore replier faulted mi regs executingCore st).1 := by
+    {regs : Array SeLe4n.RegValue} {executingCore : CoreId} {st : SystemState}
+    (keep : Bool := false) :
+    MappingStage st (faultReplyOnCore replier faulted mi regs executingCore st keep).1 := by
   unfold faultReplyOnCore
   split
   · exact MappingStage.refl _
@@ -589,9 +591,9 @@ theorem faultReplyOnCore_mappingStage {replier faulted : SeLe4n.ThreadId} {mi : 
   · exact MappingStage.refl _
   dsimp only
   have hR := endpointReplyCrossCoreDispatch_mappingStage (replier := replier) (target := faulted)
-    (msg := IpcMessage.empty) (executingCore := executingCore) (st := st)
-  generalize endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st = r
-    at hR
+    (msg := IpcMessage.empty) (executingCore := executingCore) (st := st) keep
+  generalize endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st
+    keep = r at hR
   obtain ⟨st1, res⟩ := r
   dsimp only at hR ⊢
   cases res with
@@ -603,24 +605,26 @@ theorem faultReplyOnCore_mappingStage {replier faulted : SeLe4n.ThreadId} {mi : 
 theorem replyTransferOnCoreChecked_mappingStage {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
     {msg : IpcMessage} {grant : Bool} {executingCore : CoreId} {st st' : SystemState}
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st
+    {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st keep
       = .ok ((), st')) :
     MappingStage st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
   · have hF := faultReplyOnCore_mappingStage (replier := replier) (faulted := callerTid)
-      (mi := mi) (regs := regs) (executingCore := executingCore) (st := st)
+      (mi := mi) (regs := regs) (executingCore := executingCore) (st := st) keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs executingCore st = r
+    generalize faultReplyOnCore replier callerTid mi regs executingCore st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h; cases h
     | ok _ => intro h hF; cases h; exact hF
   · have hR := endpointReplyCrossCoreDispatchChecked_mappingStage (ctx := ctx)
       (replier := replier) (target := callerTid) (msg := msg) (executingCore := executingCore)
-      (st := st)
+      (st := st) keep
     revert h hR
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg executingCore st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg executingCore st
+      keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h; cases h

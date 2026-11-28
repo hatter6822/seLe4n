@@ -117,16 +117,50 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
           ).objects.invExt := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        hX | ⟨_, hd, -, -, hX⟩ | hA
+        hX | ⟨_, hd, -, -, hX⟩ | hA | hB
       · rw [hX]; exact ⟨hSp, stepCovers_refl _ _, iW⟩
       rotate_left
       · -- WS-SX SX34: a reply-receive's stopped state covers the other cores and
         -- writes only the answered caller's saved registers
-        obtain ⟨_, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
+        have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+            ).residentsHaveTcbs := by
+          rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT
+        obtain ⟨c1, i1⟩ := cancelReceiveBusyReply_stepCovers (otherCore e) ctx e _ iW
+        refine ⟨contextMatchesCurrentOnCore_of_stepCovers_writtenFree c1 ?_ hSp, c1, i1⟩
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, -, hX⟩ := hA.stopped
         rw [hX]
-        obtain ⟨c1, i1⟩ := replyRecvTransferStoppedState_stepCovers (otherCore e) iW
-        exact ⟨replyRecvTransferStoppedState_contextMatchesCurrentOnCore E1.dequeued
-          (by rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT) hBNR1 iW hSp, c1, i1⟩
+        refine replyRecvEntryRefusalTaint_induct
+          (fun x => savedRegsWrittenFree (otherCore e)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx => hx.trans (savedRegsWrittenFree.of_kept (W := fun _ => False)
+              (savedRegsKeptExcept.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) fun _ h => h.elim)) ?_
+        exact (replyRecvTransferStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW).1
+      · -- WS-SX SX36.1: the after-reply stop covers the other cores and writes
+        -- only the answered caller's saved registers
+        have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+            ).residentsHaveTcbs := by
+          rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT
+        obtain ⟨c1, i1⟩ := cancelReceiveBusyReply_stepCovers (otherCore e) ctx e _ iW
+        refine ⟨contextMatchesCurrentOnCore_of_stepCovers_writtenFree c1 ?_ hSp, c1, i1⟩
+        obtain ⟨t, -, decoded', gate, rid, prev, badge, grant, -, hCt, -, -, -, -, hX⟩ := hB
+        rw [hC0] at hCt
+        cases hCt
+        rw [hX]
+        refine replyRecvAfterReplyRefusalTaint_induct
+          (fun x => savedRegsWrittenFree (otherCore e)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) x)
+          (fun _ _ x hx => hx.trans (savedRegsWrittenFree.of_kept (W := fun _ => False)
+              (savedRegsKeptExcept.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) fun _ h => h.elim)) ?_
+        rcases replyRecvAnsweringThenR_stoppedState_cases ctx (replyRecvReceiveEndpoint ctx gate tid)
+            decoded' tid e rid prev badge grant _ with h0 | ⟨st1, hR, h1⟩ | h2
+        · rw [h0]; exact .refl _
+        · rw [h1]; exact replyTransferOnCoreChecked_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW hR
+        · rw [h2]
+          exact (replyRecvTransferThenStoppedState_savedRegsWrittenFree E1.dequeued hRT1 hBNR1 iW).1
       · rw [hX]
         obtain ⟨c1, i1⟩ := cancelReplyHolder_stepCovers (otherCore e) _ hd e iW
         refine ⟨contextMatchesCurrentOnCore_of_savedRegs
@@ -235,6 +269,28 @@ theorem scheduleLocalSuccessorFrom_preserves_contextMatchesCurrentOnCore {e : Co
     · exact h
   · exact h
 
+/-- **The scheduling point's drop keeps the executing core's bank match**
+(WS-SX SX36.2): it passes the state through, or vacates the core's current
+slot, after which the core matches vacuously. -/
+theorem dropReturnedContextCaller_preserves_contextMatchesCurrentOnCore {e : CoreId}
+    (returnable : Bool) (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (h : contextMatchesCurrentOnCore post e) :
+    contextMatchesCurrentOnCore (dropReturnedContextCaller returnable caller? post e) e := by
+  unfold dropReturnedContextCaller
+  by_cases hR : returnable = true
+  · rw [if_pos hR]
+    cases caller? with
+    | none => exact h
+    | some t =>
+      dsimp only
+      by_cases hC : post.scheduler.currentOnCore e = some t ∧ threadUnboundAt post t = true
+      · rw [if_pos hC]
+        apply contextMatchesCurrentOnCore_of_none
+        rw [removeRunnableOnCore_scheduler]
+        simp [hC.1]
+      · rw [if_neg hC]; exact h
+  · rw [if_neg hR]; exact h
+
 section
 /- As in `OffCoreContextMatches`: the composites read the bank match only
 through the lemmas above. -/
@@ -243,7 +299,7 @@ attribute [local irreducible] contextMatchesCurrentOnCore
 /-- WS-ZA ZA6.28: **the syscall seam keeps the executing core's bank match**,
 from a match before the dispatch and after the argument spill: the dispatch and
 the commit's staging keep it (`syscallDispatchFromAbi_stagedContextMatches`),
-and the local scheduling point, the residency settle, the activation and the
+and the drop of a caller whose lent context went back, the local scheduling point, the residency settle, the activation and the
 ledger clears keep it. -/
 theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : LabelingContext}
     {e : CoreId} {syscallId : UInt32}
@@ -264,10 +320,16 @@ theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : Labeling
     hAwayCur hM hSpill hD
   have iStage := (stageCallerReturnFor_stepCovers e (S.scheduler.currentOnCore e) st' outcome
     hDInv).2
+  have hDrop := dropReturnedContextCaller_preserves_contextMatchesCurrentOnCore
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) S (S.scheduler.currentOnCore e))
+    (S.scheduler.currentOnCore e) _ hStage
+  have iDrop := dropReturnedContextCaller_objects_invExt
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) S (S.scheduler.currentOnCore e))
+    (S.scheduler.currentOnCore e) _ e iStage
   have hSucc := scheduleLocalSuccessorFrom_preserves_contextMatchesCurrentOnCore
-    (S.scheduler.currentOnCore e) _ iStage hStage
+    (S.scheduler.currentOnCore e) _ iDrop hDrop
   have iSucc := scheduleLocalSuccessorFrom_preserves_objects_invExt e
-    (S.scheduler.currentOnCore e) _ iStage
+    (S.scheduler.currentOnCore e) _ iDrop
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact contextMatchesCurrentOnCore_clearLedgers'
     (activateThreadOnCore_preserves_contextMatchesCurrentOnCore _ e

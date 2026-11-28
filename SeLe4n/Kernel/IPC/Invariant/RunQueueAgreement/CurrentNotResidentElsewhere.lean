@@ -534,13 +534,21 @@ theorem syscallDispatchEntryState_preserves_currentNotResidentElsewhere (ctx : L
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
       bytes n).scheduler.currentOnCore e) st' outcome hDInv
-  have hCov := stepCovers_trans (stepCovers_trans hDc hStage)
+  obtain ⟨hDrop, hDropInv⟩ := dropReturnedContextCaller_stepCovers e
+    (contextReturnableAtEntry (syscallNumberIsReplyRecv trapped.syscallId)
+      (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+        bytes n)
+      ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+        bytes n).scheduler.currentOnCore e))
+    ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+      bytes n).scheduler.currentOnCore e) _ hStageInv
+  have hCov := stepCovers_trans (stepCovers_trans (stepCovers_trans hDc hStage) hDrop)
     (scheduleLocalSuccessorFrom_stepCovers e
       ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
-        bytes n).scheduler.currentOnCore e) _ hStageInv)
+        bytes n).scheduler.currentOnCore e) _ hDropInv)
   refine CurrentNotResidentElsewhere.clearLedgers'
     (settleThenActivateOnCore_currentNotResidentElsewhere hC
-      (scheduleLocalSuccessorFrom_preserves_objects_invExt e _ _ hStageInv)
+      (scheduleLocalSuccessorFrom_preserves_objects_invExt e _ _ hDropInv)
       (currentKeptOffCore_trans (currentKeptOffCore_of_eq fun _ _ => by rw [hS0]) hCov.currentKept)
       (residentKeptOffCore_trans (residentKeptOffCore_of_eq hM0) hCov.residentKept) ?_)
   rw [syscallDispatchCrossCoreStep_of_ok hD] at hU''
@@ -622,9 +630,17 @@ theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident (ctx : Labeli
   have hSInv := settleResidencyOnCore_preserves_objects_invExt e _
     (scheduleLocalSuccessorFrom_preserves_objects_invExt e ((Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e) _
-      (stageCallerReturnFor_stepCovers e ((Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
-        st' outcome hDInv).2)
+      (dropReturnedContextCaller_stepCovers e
+        (contextReturnableAtEntry (syscallNumberIsReplyRecv trapped.syscallId)
+          (Architecture.IpcBufferRead.syncUserWords
+            (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+          ((Architecture.IpcBufferRead.syncUserWords
+            (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e))
+        ((Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e) _
+        (stageCallerReturnFor_stepCovers e ((Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+          st' outcome hDInv).2).2)
   have hTail : currentsRecordUnlinked (syscallDispatchCrossCoreStep ctx e trapped.syscallId
       trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
       trapped.pstate trapped.sp trapped.x30

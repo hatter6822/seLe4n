@@ -182,6 +182,14 @@ theorem dispatchVacatedCore (st : SystemState) (c : CoreId) (hInv : st.objects.i
     · rename_i st' h; exact handleRescheduleSgiOnCore hInv h
     · exact refl _
 
+/-- The scheduling point's drop of a caller whose lent context went back
+(WS-SX SX36.2): a run-queue removal, or nothing. -/
+theorem dropReturnedContextCaller (returnable : Bool) (caller? : Option SeLe4n.ThreadId)
+    (st : SystemState) (c : CoreId) :
+    chainObjectsKept st (_root_.SeLe4n.Kernel.dropReturnedContextCaller returnable caller? st c) :=
+  dropReturnedContextCaller_induct (fun a b => chainObjectsKept a b) returnable caller? st c
+    (refl _) (fun t => removeRunnableOnCore st t c)
+
 theorem scheduleLocalSuccessorFrom (caller? : Option SeLe4n.ThreadId) (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) :
     chainObjectsKept st (PriorityInheritance.scheduleLocalSuccessorFrom caller? st c) := by

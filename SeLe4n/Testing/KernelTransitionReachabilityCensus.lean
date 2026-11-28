@@ -1187,22 +1187,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointSendDualChecked
   , `SeLe4n.Kernel.endpointSendDualWithCaps
   , `SeLe4n.Kernel.endpointSweepBody
-  -- The operand dispatch's report of an arm's result, in the specification
-  -- forms (`dispatchOperandCheckedK`): every routed arm pushes the result from
-  -- its words (`entryReportPushOk 1`, `entryReportPushErrorW 1`), equal to it
-  -- by `liftReport_entryReportResolved`.
-  , `SeLe4n.Kernel.entryReportResolved
-  -- The reply capability's failed lookup as a report, in the specification
-  -- form (`replyLookupRefusal`): the entry pushes it from the lookup's words
-  -- (`entryReportPushLookupAtW` through `replyLookupRefusalW`), equal to it by
-  -- `liftReport_replyLookupRefusalW`.
-  , `SeLe4n.Kernel.entryReportLookupAt
-  -- The operand dispatch's report of a failed lookup, in the specification
-  -- form (`dispatchOperandCheckedK`'s lookup continuation): every routed arm
-  -- pushes it from the lookup's address and words (`entryReportLookupAtW`) or
-  -- the empty slot's refusal (`entryReportLookup`), equal to it by
-  -- `dispatchOperandCheckedKW_report`.
-  , `SeLe4n.Kernel.entryReportLookupFor
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
@@ -1231,6 +1215,17 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchCallCheckedR
   , `SeLe4n.Kernel.dispatchReplyCheckedR
   , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  -- WS-SX SX36: the reply-receive's specification route in seL4's order,
+  -- which `dispatchReplyRecvCheckedR` runs; the compiled entry runs the
+  -- continuation form (`replyRecvRoutedK`), proven to hand on what it returns
+  -- (`replyRecvRoutedR_eq`).
+  , `SeLe4n.Kernel.replyRecvRoutedR
+  -- The reply-receive's operand arms with their taint steps, which the routed
+  -- arms run in continuation form, every refusal told apart in one decoder
+  -- (`replyRecvRoutedArmK_eq`, `replyRecvLongRoutedArmK_eq`,
+  -- `replyRecvRoutedRefusal_eq`).
+  , `SeLe4n.Kernel.replyRecvOperandArmThenTaintR
+  , `SeLe4n.Kernel.replyRecvLongOperandArmThenTaintR
   -- The signal's, wait's, receive's, invocation's, audited call's and
   -- five-word invocations' route specifications and their operand dispatch,
   -- which the compiled entry runs as the routed arms and the operand's

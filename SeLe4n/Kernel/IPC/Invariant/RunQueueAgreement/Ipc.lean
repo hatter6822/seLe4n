@@ -336,8 +336,9 @@ theorem endpointReplyOnCore_runQueueStage (replier target : SeLe4n.ThreadId) (ms
            run_queue_current_nowhere; done))
 
 theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    {targetV : SeLe4n.ValidThreadId} {ownerHome : Concurrency.CoreId}
-    (h : applyReplyDonationOnCore st rid targetV ownerHome = .ok st') :
+    {targetV : SeLe4n.ValidThreadId} {ownerHome : Concurrency.CoreId} {keep : Bool}
+    {c : Concurrency.CoreId}
+    (h : applyReplyDonationOnCore st rid targetV ownerHome keep c = .ok st') :
     RunQueueStage st st' := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
@@ -353,12 +354,13 @@ theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeL
        exact (SchedContextOps.settleReturnedContext_runQueueStage
          (returnDonatedSchedContextResolved_runQueueFrameStage hRet)
          (fun S hs hI hS _ => returnDonatedSchedContextResolved_wellFormed hI hRet hs hS)).trans
-         (descheduleAt_runQueueStage _ _ _))
+         (descheduleReturnedHolder_induct (fun a b => RunQueueStage a b) _ _ _ _
+           (RunQueueStage.refl _) (descheduleAt_runQueueStage _ _ _)))
 
 theorem endpointReplyCrossCoreDispatch_runQueueStage (replier target : SeLe4n.ThreadId)
     (msg : IpcMessage) (c : Concurrency.CoreId) (st : SystemState)
-    (hBlk : blockedCurrentNowhere st) :
-    RunQueueStage st (endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+    (hBlk : blockedCurrentNowhere st) (keep : Bool := false) :
+    RunQueueStage st (endpointReplyCrossCoreDispatch replier target msg c st keep).1 := by
   have hE := endpointReplyOnCore_runQueueStage replier target msg c st hBlk
   unfold endpointReplyCrossCoreDispatch
   generalize endpointReplyOnCore replier target msg c st = p at hE ⊢
@@ -377,18 +379,19 @@ theorem endpointReplyCrossCoreDispatch_runQueueStage (replier target : SeLe4n.Th
 
 theorem endpointReplyCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : Concurrency.CoreId)
-    (st : SystemState) (hBlk : blockedCurrentNowhere st) :
-    RunQueueStage st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+    (st : SystemState) (hBlk : blockedCurrentNowhere st) (keep : Bool := false) :
+    RunQueueStage st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st keep).1 := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch_runQueueStage _ _ _ _ _ hBlk
+  · exact endpointReplyCrossCoreDispatch_runQueueStage _ _ _ _ _ hBlk keep
   · exact RunQueueStage.refl _
 
 /-- A reply dispatch that succeeds ran a reply that succeeded. -/
 theorem endpointReplyCrossCoreDispatch_ok_reply {replier target : SeLe4n.ThreadId}
+    {keep : Bool}
     {msg : IpcMessage} {c : Concurrency.CoreId} {st : SystemState}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
-    (hOk : (endpointReplyCrossCoreDispatch replier target msg c st).2 = .ok sgi?) :
+    (hOk : (endpointReplyCrossCoreDispatch replier target msg c st keep).2 = .ok sgi?) :
     ∃ s, (endpointReplyOnCore replier target msg c st).2 = .ok s := by
   unfold endpointReplyCrossCoreDispatch at hOk
   cases hRep : endpointReplyOnCore replier target msg c st with
@@ -418,10 +421,10 @@ theorem faultReplyApplyOnCore_runQueueEntryStage (st : SystemState) (faulted : S
 reply and so no idle thread, then the decoded outcome. -/
 theorem faultReplyOnCore_runQueueEntryStage (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : Concurrency.CoreId) (st : SystemState)
-    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique) :
-    SystemState.RunQueueEntryStage st (faultReplyOnCore replier faulted mi regs c st).1 := by
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique) (keep : Bool := false) :
+    SystemState.RunQueueEntryStage st (faultReplyOnCore replier faulted mi regs c st keep).1 := by
   have hE := endpointReplyCrossCoreDispatch_runQueueStage replier faulted IpcMessage.empty c st
-    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD) keep
   unfold faultReplyOnCore
   split
   · exact (RunQueueStage.refl _).entry
@@ -443,22 +446,22 @@ theorem faultReplyOnCore_runQueueEntryStage (replier faulted : SeLe4n.ThreadId) 
 theorem replyTransferOnCore_runQueueEntryStage {replier callerTid : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
     {c : Concurrency.CoreId} {st st' : SystemState}
-    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCore replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique) {keep : Bool}
+    (h : replyTransferOnCore replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
-  have hF := faultReplyOnCore_runQueueEntryStage replier callerTid mi regs c st hInv hD
+  have hF := faultReplyOnCore_runQueueEntryStage replier callerTid mi regs c st hInv hD keep
   have hE := endpointReplyCrossCoreDispatch_runQueueStage replier callerTid msg c st
-    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD) keep
   unfold replyTransferOnCore at h
   split at h
   · revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro _ h; cases h
     | ok _ => intro hF h; cases h; exact hF
   · revert h hE
-    generalize endpointReplyCrossCoreDispatch replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatch replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro _ h; cases h
@@ -478,22 +481,22 @@ theorem replyTransferOnCoreChecked_runQueueEntryStage {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : Concurrency.CoreId}
     {st st' : SystemState}
-    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique) {keep : Bool}
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st keep = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
-  have hF := faultReplyOnCore_runQueueEntryStage replier callerTid mi regs c st hInv hD
+  have hF := faultReplyOnCore_runQueueEntryStage replier callerTid mi regs c st hInv hD keep
   have hE := endpointReplyCrossCoreDispatchChecked_runQueueStage ctx replier callerTid msg c st
-    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD) keep
   unfold replyTransferOnCoreChecked at h
   split at h
   · revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    generalize faultReplyOnCore replier callerTid mi regs c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro _ h; cases h
     | ok _ => intro hF h; cases h; exact hF
   · revert h hE
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro _ h; cases h
@@ -603,7 +606,7 @@ theorem replyRecvNothingReceived_runQueueStage (rs : SeLe4n.ThreadId) (c : Concu
   | none => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _
   | some p =>
     obtain ⟨_, holder⟩ := p
-    exact (descheduleAt_runQueueStage _ _ _).trans
+    exact (descheduleKeepingCurrentOnCore_runQueueStage _ _ _).trans
       (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)
 
 theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThread : SeLe4n.ThreadId}

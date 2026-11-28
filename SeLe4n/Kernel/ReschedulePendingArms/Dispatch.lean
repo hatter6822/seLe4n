@@ -2251,10 +2251,10 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
   cases h
   suffices hP : stepCovers e st stPost ∧ stPost.objects.invExt from
     ⟨stepCovers_trans hP.1 (stepCovers_of_scheduler_eq
-        (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
-        (applySyscallTaint_scheduler _ _ _)),
-      applySyscallTaint_invExt hP.2⟩
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+        (keyInputsEq_of_objectsAgreeOffTaint (checkedArmTaint_objectsAgreeOffTaint _))
+        (checkedArmTaint_scheduler _)),
+      checkedArmTaint_invExt hP.2⟩
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD
 
 /-- **The checked syscall entry covers** on the executing core: the register

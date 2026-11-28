@@ -432,11 +432,11 @@ theorem dispatchSyscallChecked_queueLabelsStage (ctx : LabelingContext)
   · cases h
   rename_i stPost hD
   cases h
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   refine (dispatchWithCapChecked_queueLabelsStage ctx decoded tid executingCore _ cap _ stPost
     hInv hD).trans (QueueLabelsStage.of_parts (EndpointWaitersShrink.of_views ?_).waiters
       (NtfnLabelsKept.of_views ?_ ctx) (EndpointQueueLabelsKept.of_views ?_ ctx)) <;>
     exact RecordsFrame.views_of_erasure RecordsFrame.erasure_taint
-      (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+      (checkedArmTaint_objectsAgreeOffTaint _)
 
 end SeLe4n.Kernel

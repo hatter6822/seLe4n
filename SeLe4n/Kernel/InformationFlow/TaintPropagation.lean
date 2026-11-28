@@ -780,13 +780,26 @@ supplies without disturbing what the waiter received. -/
 def waitTaintEdges (tid : SeLe4n.ThreadId) (nid : SeLe4n.ObjId) : List TaintFlowEdge :=
   [{ sink := tid.toObjId, source := nid }]
 
+/-- **The edges a syscall declares whatever its receive operand resolves to**:
+a `.replyRecv`'s reply leg (`replyRecvReplyLegEdges`), none for every other
+syscall.  The reply runs before the receive capability is read (seL4's
+`handleInvocation` before `handleRecv`), so the reply's delivery to the caller
+does not depend on the receive operand: a receive capability refused on entry
+whose reply still answers runs the reply (the after-reply route), and its
+content must carry its provenance to the caller there too. -/
+def replyRecvOperandFreeEdges (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : List TaintFlowEdge :=
+  if decoded.syscallId = .replyRecv then replyRecvReplyLegEdges st tid decoded else []
+
 /-- WS-SM SM9.D.8-.D.11: **the edges a content-moving syscall declares.**
 
 Keyed on the decoded syscall and the resolved operand, so the plan names the
 object the arm acts on.  A capability that does not resolve, or resolves to the
-wrong shape, declares nothing — which is correct rather than fail-open: the arm
-itself rejects such a call with `.invalidCapability` before any content
-moves.
+wrong shape, declares nothing the operand would name — which is correct rather
+than fail-open: the arm itself rejects such a call with `.invalidCapability`
+before any content moves.  The one flow that does not wait for the operand is a
+`.replyRecv`'s reply leg (`replyRecvOperandFreeEdges`), which every shape
+declares, since its reply runs before its receive capability is read.
 
 The syscall match is **total with no wildcard**, exactly as `contentFlowClass`
 is: a syscall added tomorrow fails to elaborate here too, so a ninth
@@ -797,7 +810,7 @@ refusals described above, sound for every present and future target shape. -/
 def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List TaintFlowEdge :=
   match syscallOperandCap? st tid decoded.capAddr with
-  | none => []
+  | none => replyRecvOperandFreeEdges st tid decoded
   | some cap =>
     match decoded.syscallId with
     | .send =>
@@ -816,7 +829,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
         match cap.target with
         | .object epId =>
             receiverTaintEdges st tid epId ++ replyRecvReplyLegEdges st tid decoded
-        | _ => []
+        | _ => replyRecvReplyLegEdges st tid decoded
     | .reply =>
         match cap.target with
         | .replyCap rid => replyTaintEdges st tid rid
@@ -1165,6 +1178,37 @@ def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
                        cleared := contentFlowClears st tid decoded,
                        bypassed := contentFlowBypassed st tid decoded,
                        originates }
+
+/-- **A reply-receive's reply leg, as a plan of its own**: the edge from the
+server to the caller its reply answers (`replyRecvReplyLegEdges`), nothing
+cleared, bypassed or originated.  The flow a reply-receive whose reply was
+delivered carries, whatever its receive leg then did. -/
+def replyRecvReplyLegPlan (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) : TaintPlan :=
+  { edges := replyRecvReplyLegEdges st tid decoded }
+
+/-- **A reply-receive's receive leg, as a plan of its own**: the edges into the
+receiver from its bound notification and from the head sender of the endpoint
+it receives on (`receiverTaintEdges`), read on the state the receive runs on,
+nothing cleared, bypassed or originated. -/
+def replyRecvReceiveLegPlan (st : SystemState) (tid : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : TaintPlan :=
+  { edges := receiverTaintEdges st tid epId }
+
+/-- **The reply an answering reply-receive delivered, as a plan of its own**:
+the one edge from the server to the caller its reply answered, nothing
+cleared, bypassed or originated.  The flow a refused reply-receive carries
+where its reply reached the caller. -/
+def replyRecvAnsweredPlan (prevCaller tid : SeLe4n.ThreadId) : TaintPlan :=
+  { edges := [{ sink := prevCaller.toObjId, source := tid.toObjId }] }
+
+/-- **The message a receive copied from the sender it took, as a plan of its
+own**: the one edge from that sender into the receiver, nothing cleared,
+bypassed or originated.  The flow a refused reply-receive carries where its
+receive copied the sender's message; a bound notification's word is never
+part of it, since no refusal delivers one. -/
+def replyRecvReceivedSenderPlan (tid sender : SeLe4n.ThreadId) : TaintPlan :=
+  { edges := [{ sink := tid.toObjId, source := sender.toObjId }] }
 
 /-- WS-SM SM9.D.7: an inert syscall plans no content movement — the property the
 reach gate checks the *other* half of (that nothing it calls moves content
@@ -1826,6 +1870,41 @@ theorem joinTaintAt_toWords_of_decode (s : SystemState) (k : SeLe4n.ObjId)
     {T : DeclassificationTaint} {w : TaintWords} (h : w.decode = T) :
     joinTaintAt s k T.toWords = joinTaintAt s k w :=
   joinTaintAt_congr s k (by rw [DeclassificationTaint.decode_toWords, h])
+
+/-- The object of the thread a taint code names (`SeLe4n.ThreadId.optCode`'s
+`s + 1` for thread `s`); for the code `0`, naming none, the object of thread
+`0`, which a step taking that code never reads. -/
+@[inline] def threadObjOfCode (code : Nat) : SeLe4n.ObjId :=
+  (⟨code - 1⟩ : SeLe4n.ThreadId).toObjId
+
+/-- The object of the notification a bound-signal code names
+(`boundSignalTaintCode`'s `k + 1` for the notification `⟨k⟩`); for the code `0`,
+naming none, the object `⟨0⟩`, which a step taking that code never reads. -/
+@[inline] def notifObjOfCode (code : Nat) : SeLe4n.ObjId := ⟨code - 1⟩
+
+/-- The send's taint step, without the plan: the sender's words `wT`, captured
+before the arm, join the receiver's taint words (`sendTaintStep_eq`).  It builds
+no edge list and no plan record. -/
+@[inline] def sendTaintStep (headCode : Nat) (tid : SeLe4n.ThreadId)
+    (wT : TaintWords) (post : SystemState) : SystemState :=
+  match headCode with
+  | r + 1 =>
+      let receiver : SeLe4n.ThreadId := ⟨r⟩
+      joinTaintAt post receiver.toObjId wT
+  | 0 => post
+
+/-- The receive's taint step, without the plan: the bound notification's words
+`wN`, captured before the arm at `notifObjOfCode signalCode`, then the sender's
+words `wS`, captured at `threadObjOfCode sourceCode`, join the receiver's taint
+words in the order the plan lists their edges (`receiveTaintStep_eq`). -/
+@[inline] def receiveTaintStep (signalCode sourceCode : Nat) (tid : SeLe4n.ThreadId)
+    (wN wS : TaintWords) (post : SystemState) : SystemState :=
+  let p := match signalCode with
+    | .succ _ => joinTaintAt post tid.toObjId wN
+    | 0 => post
+  match sourceCode with
+  | .succ _ => joinTaintAt p tid.toObjId wS
+  | 0 => p
 
 /-- WS-ZA ZA5.11: **the taint step** — flows, then clears, then origination
 (the cleared and bypassed keys left out), each a join or a clear of the words
@@ -2772,14 +2851,14 @@ theorem taintPropagation_reply_to_caller (st post : SystemState) (tid : SeLe4n.T
 
 /-- WS-SM SM9.D.9 (**replyRecv → previous caller**): the reply half of the
 server's steady-state loop carries the server's provenance to the caller the
-reply object records — the hop a receive-leg-only plan would lose. -/
+reply object records — the hop a receive-leg-only plan would lose.  Whatever
+the receive operand resolves to (WS-SX SX36): the reply runs before the receive
+capability is read, so its edge does not wait on the operand. -/
 theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
-    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (cap rcap : Capability)
-    (epId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (rcap : Capability)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (hClass : contentFlowClass decoded.syscallId = .movesContent)
     (hSid : decoded.syscallId = .replyRecv)
-    (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
-    (hTarget : cap.target = .object epId)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hRCap : syscallOperandCap? st tid decoded.replyCPtr = some rcap)
     (hRTarget : rcap.target = .replyCap rid)
@@ -2788,15 +2867,25 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     (hServer : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       prevCaller.toObjId).contains t = true := by
+  have hLeg : ({ sink := prevCaller.toObjId, source := tid.toObjId } : TaintFlowEdge) ∈
+      replyRecvReplyLegEdges st tid decoded := by
+    simp only [replyRecvReplyLegEdges, hXc, hRCap, hRTarget, Option.isSome_none,
+      Bool.false_eq_true, ↓reduceIte]
+    simp [replyTaintEdges, hCaller]
   have hMem : ({ sink := prevCaller.toObjId, source := tid.toObjId } : TaintFlowEdge) ∈
       contentFlowEdges st tid decoded := by
-    simp only [contentFlowEdges, hCap, hSid, hTarget, List.mem_append]
-    refine Or.inr ?_
-    simp only [replyRecvReplyLegEdges, hXc, hRCap, hRTarget]
-    simp [replyTaintEdges, hCaller]
+    unfold contentFlowEdges
+    cases hCap : syscallOperandCap? st tid decoded.capAddr with
+    | none => simpa only [replyRecvOperandFreeEdges, hSid, ↓reduceIte] using hLeg
+    | some cap =>
+      rcases cap with ⟨target, _, _⟩
+      simp only [hSid]
+      cases target <;> simp only [List.mem_append] <;> first | exact Or.inr hLeg | exact hLeg
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
   refine taintPropagation_edge _ st post _ hIn ?_ hLive hServer
-  rw [hCleared]; simp [contentFlowClears, hCap, hSid]
+  rw [hCleared]
+  unfold contentFlowClears
+  cases syscallOperandCap? st tid decoded.capAddr <;> simp [hSid]
 
 /-- WS-SM SM9.D.10 (**signal → notification, stored**): when no waiter is present
 the badge is stored on the notification, so it carries the signaller's provenance

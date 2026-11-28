@@ -86,23 +86,6 @@ theorem capTargetOf (tcb : TCB) : capTargetOf X tcb = capTargetOf st tcb := by
 
 end ipcBufferReadsAgree
 
-/-! ### The transfer always answers -/
-
-theorem receiveTransferCaps_ok (req : Option (Capability × Array SeLe4n.CPtr))
-    (ep : Option SeLe4n.ObjId) (tgt : Option (TCB × Option CSpaceAddr)) (Z : SystemState) :
-    ∃ s Z', receiveTransferCaps req ep tgt Z = .ok (s, Z') := by
-  unfold receiveTransferCaps
-  rcases req with _ | ⟨root, addrs⟩
-  · exact ⟨_, _, rfl⟩
-  · simp only []
-    split
-    · exact ⟨_, _, rfl⟩
-    · rcases tgt with _ | ⟨rt, slot?⟩
-      · exact ⟨_, _, rfl⟩
-      · obtain ⟨⟨s, Z'⟩, h⟩ := ipcUnwrapCapsLoop_ok (resolveExtraCaps root addrs true Z) ep rt
-          (resolveExtraCaps root addrs true Z).size 0 slot? #[] Z
-        exact ⟨s, Z', h⟩
-
 /-! ### The frame with the transfer's report -/
 
 /-- The message-info word a frame of a register-routed message carries, with

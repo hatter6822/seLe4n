@@ -708,8 +708,9 @@ theorem dispatchSyscallChecked_bankAgree {ctx : LabelingContext}
   · cases h
   rename_i stPost hD
   cases h
-  suffices hP : bankAgree e tid stPost from (bankFrame.of_taint _ _ _).bankAgree hP
-  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  suffices hP : bankAgree e tid stPost from
+    checkedArmTaint_induct (bankAgree e tid) (fun _ _ _ h => (bankFrame.of_taint _ _ _).bankAgree h) hP
+  obtain ⟨-, cap, -, -, -, hD⟩ := dispatchSyscallArmChecked_ok hD
   exact dispatchWithCapChecked_bankAgree P hRT hB hBNR hYA hYN hPlaced hD hA
 
 /-- WS-ZA ZA6.28: **the checked syscall entry keeps the executing core's

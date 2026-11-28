@@ -1314,7 +1314,7 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
     (match bracketPlan bracketState with
      | some (tid, decoded, stSpilled) =>
        decide (decoded.syscallId = .tcbSuspend) &&
-       (match abiEntryLockOperands decoded tid stSpilled with
+       (match abiEntryLockOperands harnessLabelingContext decoded tid stSpilled with
         | some ops =>
           decide (Concurrency.lockSetForSyscall decoded.syscallId ops stSpilled
                     = bracketDecl bracketState) &&
@@ -1412,7 +1412,7 @@ private def runAbiSchedFootprintChecks : IO Unit := do
     (match bracketPlan bracketState with
      | some (tid, decoded, stSpilled) =>
        decide (decoded.syscallId = .tcbSuspend) &&
-       (match abiEntryLockOperands decoded tid stSpilled with
+       (match abiEntryLockOperands harnessLabelingContext decoded tid stSpilled with
         | some ops =>
           decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stSpilled
                     = bracketSchedDecl bracketState) &&
@@ -1425,7 +1425,7 @@ private def runAbiSchedFootprintChecks : IO Unit := do
   assertBool "both domains resolve ONE decode and ONE operand record"
     (match bracketPlan bracketState with
      | some (tid, decoded, stSpilled) =>
-       (match abiEntryLockOperands decoded tid stSpilled with
+       (match abiEntryLockOperands harnessLabelingContext decoded tid stSpilled with
         | some ops =>
           decide (Concurrency.lockSetForSyscall decoded.syscallId ops stSpilled
                     = bracketDecl bracketState) &&
@@ -1439,7 +1439,7 @@ private def runAbiSchedFootprintChecks : IO Unit := do
   assertBool "the five scheduler operands do not move the OBJECT domain's answer"
     (match bracketPlan bracketState with
      | some (tid, decoded, stSpilled) =>
-       (match abiEntryLockOperands decoded tid stSpilled with
+       (match abiEntryLockOperands harnessLabelingContext decoded tid stSpilled with
         | some ops =>
           decide (Concurrency.lockSetForSyscall decoded.syscallId
                     { ops with message := none,

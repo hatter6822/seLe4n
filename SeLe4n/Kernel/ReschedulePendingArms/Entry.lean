@@ -235,11 +235,41 @@ theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
     (ec : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
     stepCovers e st (cancelReceiveBusyReply ctx ec st) ∧
       (cancelReceiveBusyReply ctx ec st).objects.invExt := by
-  rcases cancelReceiveBusyReply_cases_holder ctx ec st with h | ⟨_, _, -, -, h⟩ | hA
+  rcases cancelReceiveBusyReply_cases_holder ctx ec st with h | ⟨_, _, -, -, h⟩ | hA | hB
   · rw [h]; exact ⟨stepCovers_refl e st, hInv⟩
   · rw [h]; exact cancelReplyHolder_stepCovers e st _ ec hInv
-  · obtain ⟨_, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
-    rw [h]; exact replyRecvTransferStoppedState_stepCovers e hInv
+  · obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, -, h⟩ := hA.stopped
+    rw [h]
+    exact replyRecvEntryRefusalTaint_induct (fun x => stepCovers e st x ∧ x.objects.invExt)
+      (fun _ _ _ h => ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq
+          (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+          (applySyscallTaint_scheduler _ _ _)), applySyscallTaint_invExt h.2⟩)
+      (replyRecvTransferStoppedState_stepCovers e hInv)
+  · -- WS-SX SX36.1: a reply-receive whose receive was refused after its reply
+    exact hB.induct (fun a b => stepCovers e a b ∧ b.objects.invExt)
+      (fun s h => ⟨stepCovers_refl e s, h⟩)
+      (fun _ _ _ _ h1 h2 => ⟨stepCovers_trans h1.1 h2.1, h2.2⟩)
+      (fun _ _ _ _ _ h => endpointReplyOnCore_stepCovers e h)
+      (fun _ _ _ _ _ h hP => replyRecvPopDonation_stepCovers e h hP)
+      (fun _ _ _ _ _ h hX =>
+        have hK := receiveTransferCaps_keyFrame h hX
+        ⟨hK.stepCovers (congrArg MachineState.residentCode (receiveTransferCaps_preserves_machine hX))
+          (banksKeptOffCore_of_eq
+            (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hX))), hK.2.2⟩)
+      (fun a s t n h => by
+        cases a with
+        | none =>
+          have hK := stageDeliveredMessage_keyFrame s t n h
+          exact ⟨hK.stepCovers, hK.2.2⟩
+        | some o => exact faultReplyApplyOnCore_stepCovers e s t o h)
+      (fun s t h => receiveReturnSchedContext_stepCovers e true s t h)
+      (fun _ _ _ _ _ h => endpointReceiveDualWithCapsOnCore_stepCovers e h)
+      (fun s t h => descheduleAtPlacement_stepCovers e s t h)
+      (fun s t c h => propagatePipChainCrossCore_stepCovers e c _ s t h)
+      (fun _ _ _ _ _ _ _ _ _ hs hT => replyTransferOnCoreChecked_stepCovers e hs hT)
+      (fun _ _ _ _ h => ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq
+          (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+          (applySyscallTaint_scheduler _ _ _)), applySyscallTaint_invExt h.2⟩) hInv
 
 /-- **The ABI dispatch covers** on the executing core: the argument spill moves
 no key, the checked entry covers, a capability fault is a covered delivery, and
@@ -356,7 +386,8 @@ theorem activateThreadOnCore_stepCovers (c : CoreId) (st : SystemState)
     (hBank := fun d hd => activateThreadOnCore_regsOnCore_ne st c d hd)
 
 /-- **The syscall seam covers** on the executing core: the ABI dispatch, the
-caller's return staging, the local scheduling point, the residency settlement
+caller's return staging, the drop of a caller whose lent context went back, the
+local scheduling point, the residency settlement
 and the activation.  (A refused dispatch fires no SGI, so it owes nothing.) -/
 theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
@@ -367,14 +398,23 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-      (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e) e) := by
+      (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e)
+        (dropReturnedContextCaller
+          (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+            (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e)
+          (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e)
+        e) e) e) := by
   obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced hAwayCur h
   have hSInv := settleResidencyOnCore_preserves_objects_invExt e _
     (scheduleLocalSuccessorFrom_preserves_objects_invExt e (st.scheduler.currentOnCore e) _
-      (stageCallerReturnFor_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv).2)
+      (dropReturnedContextCaller_stepCovers e
+        (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+          (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e) _
+        (stageCallerReturnFor_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv).2).2)
   exact stepCovers_trans (stepCovers_trans hD
-    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv))
+    (syscallCommitTail_stepCovers e
+      (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+        (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e) st' outcome hDInv))
     (activateThreadOnCore_stepCovers e _ hSInv)
 
 /-- WS-ZA ZA6.32: **the mask covers**: it writes the machine's mask and the
@@ -461,14 +501,22 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st'))
     (hId : ∀ oid (tcb : TCB), (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-      (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e) e).getObject? oid =
+      (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e)
+        (dropReturnedContextCaller
+          (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+            (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e)
+          (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e)
+        e) e) e).getObject? oid =
       some (.tcb tcb) → tcb.tid.toObjId = oid)
     {c : CoreId} {k : SgiKind}
     (hMem : (c, k) ∈ PriorityInheritance.computeCrossCoreSgis st
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessor st
-          (Architecture.stageCallerReturn st st' e outcome) e) e) e) e) :
+        (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e)
+          (dropReturnedContextCaller
+            (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st
+              (st.scheduler.currentOnCore e)) (st.scheduler.currentOnCore e)
+            (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore e) st' e outcome) e)
+          e) e) e) e) :
     (c, SgiKind.reschedule) ∈ sgisOfRaised (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2
         x3 x4 x5 x6 elr spsr spEl0 x30 st).1.2.1 ∨
       st.scheduler.reschedulePendingOnCore c = true := by

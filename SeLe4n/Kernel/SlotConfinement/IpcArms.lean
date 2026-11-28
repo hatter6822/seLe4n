@@ -253,8 +253,8 @@ leg still collapses to the one deschedule, and at a replier the state places
 nowhere the core list is empty because the step is the identity. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
-    (ownerHome : CoreId) (hObjInv : st.objects.invExt)
-    (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    (ownerHome : CoreId) (hObjInv : st.objects.invExt) {keep : Bool} {executingCore : CoreId}
+    (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome keep executingCore = .ok st') :
     observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
   rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid
     ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩ |
@@ -289,7 +289,247 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
           (observableSlotsConfinedToCores_nil_of_scheduler_regs_eq hRetSched
             (fun _ => by rw [returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet]))
           (settleReturnedContext_confinedToCores stRet ownerHome scId))
-      (descheduleAtPlacement_confinedToCores stSet holderVtid.val)
+      (descheduleReturnedHolder_induct
+        (fun a b => observableSlotsConfinedToCores a b (descheduleAtPlacementCores a holderVtid.val))
+        keep executingCore _ _ (observableSlotsConfinedToCores_refl _ _)
+        (descheduleAtPlacement_confinedToCores stSet holderVtid.val))
+
+-- ============================================================================
+-- §5b-bis  WS-SX SX36.2 — the keep flag names no core the declared set does not
+-- ============================================================================
+--
+-- The signal arm's reply passes `keepCurrent = true`, and its write sets are the
+-- `.reply` arm's, read at `keepCurrent = false`.  The lemmas below are why that
+-- is exact rather than an over-approximation: the two returns land on the same
+-- state except where the holder is the executing core's current thread, and
+-- there the plain return only removes it from the core the pre-state places it
+-- on, which `replyDonationDescheduleCores` already names.  So every later read
+-- of placements, home cores and blocking edges agrees, or names that core.
+
+/-- **The two returns, side by side**: the keep return and the plain one succeed
+on the same state, or the keep return left the holder current on `c` and the
+plain one is its `descheduleAtPlacement`, at the core the pre-state names. -/
+theorem applyReplyDonationOnCore_keep_cases {st sk sf : SystemState} {rid : SeLe4n.ReplyId}
+    {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId} {keep : Bool} {c : CoreId}
+    (hObjInv : st.objects.invExt)
+    (hk : applyReplyDonationOnCore st rid targetVtid ownerHome keep c = .ok sk)
+    (hf : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok sf) :
+    sk = sf ∨ ∃ holder : SeLe4n.ThreadId, sf = descheduleAtPlacement sk holder ∧
+      sk.objects.invExt ∧ sk.scheduler.currentOnCore c = some holder ∧
+      descheduleAtPlacementCores sk holder = replyDonationDescheduleCores st rid := by
+  rw [applyReplyDonationOnCore_characterisation st rid targetVtid ownerHome keep c] at hk
+  rw [applyReplyDonationOnCore_characterisation st rid targetVtid ownerHome] at hf
+  cases hTrig : replyFrameHeadHolder? st rid with
+  | none =>
+    rw [hTrig] at hk hf
+    left; rw [hk] at hf; exact Except.ok.inj hf
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
+    rw [hTrig] at hk hf
+    simp only [] at hk hf
+    cases hHV : SeLe4n.ThreadId.toValid? holder with
+    | none => rw [hHV] at hk; cases hk
+    | some holderVtid =>
+      rw [hHV] at hk hf
+      simp only [] at hk hf
+      cases hA : donationRecipientAcceptable st targetVtid.val with
+      | false =>
+        rw [hA] at hk hf
+        simp only [Bool.false_eq_true, ↓reduceIte] at hk hf
+        left; rw [hk] at hf; exact Except.ok.inj hf
+      | true =>
+        rw [hA] at hk hf
+        simp only [↓reduceIte] at hk hf
+        cases hR : returnDonatedSchedContextResolved st holderVtid.val scId targetVtid.val with
+        | error e => rw [hR] at hk; cases hk
+        | ok stRet =>
+          rw [hR] at hk hf
+          simp only [] at hk hf
+          have hk' := (Except.ok.inj hk).symm
+          have hf' := (Except.ok.inj hf).symm
+          subst hk' hf'
+          cases keep with
+          | false => exact Or.inl rfl
+          | true =>
+            rw [descheduleReturnedHolder_true, descheduleReturnedHolder_false]
+            by_cases hC : (SchedContextOps.settleReturnedContext stRet ownerHome scId).scheduler.currentOnCore c
+                = some holder
+            · rw [descheduleKeepingCurrentOnCore_of_current _ _ _ hC]
+              obtain ⟨n, _, hRet⟩ := returnDonatedSchedContextResolved_ok_decompose hR
+              have hHEq : holderVtid.val = holder :=
+                SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
+              rw [hHEq] at hRet
+              refine Or.inr ⟨holder, rfl, ?_, hC, ?_⟩
+              · exact SchedContextOps.settleReturnedContext_objects_invExt stRet ownerHome scId
+                  (returnDonatedSchedContext_preserves_objects_invExt st stRet _ _ _ hObjInv n hRet)
+              · have hRetSched := returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet
+                unfold replyDonationDescheduleCores; rw [hTrig]; simp only []
+                rw [descheduleAtPlacementCores_congr_of_runCores_current_eq _
+                  (fun y => by rw [SchedContextOps.settleReturnedContext_getTcb?])
+                  (fun c => SchedContextOps.settleReturnedContext_currentOnCore stRet ownerHome scId c)]
+                unfold descheduleAtPlacementCores
+                rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched
+                  (returnDonatedSchedContext_runCoresAgree st stRet _ _ _ hObjInv _ hRet)]
+            · rw [descheduleKeepingCurrentOnCore_of_not_current _ _ _ hC]
+              exact Or.inl rfl
+
+/-- The chain walk's cores do not see a run-link-only deschedule: it moves no
+home core and no blocking edge, and keeps the store's count. -/
+theorem pipChainWriteSet_descheduleAtPlacement (s0 : SystemState) (holder x : SeLe4n.ThreadId)
+    (ec : CoreId) (h0 : s0.objects.invExt) :
+    pipChainWriteSet (descheduleAtPlacement s0 holder) x ec
+        (descheduleAtPlacement s0 holder).objects.size
+      = pipChainWriteSet s0 x ec s0.objects.size := by
+  have hA := descheduleAtPlacement_objectsAgreeOffRunLinks s0 holder
+  have hI := descheduleAtPlacement_preserves_objects_invExt s0 holder h0
+  rw [hA.objects_size_eq hI h0]
+  exact pipChainWriteSet_congr ec _ _ _ x hI h0
+    (fun t => descheduleAtPlacement_determineTargetCore s0 holder t)
+    (fun t => blockingServer_of_objectsAgreeOffRunLinks _ _ t hA)
+
+/-- **The keep return's chain walk names the plain return's cores**, exactly. -/
+theorem applyReplyDonationOnCore_keep_pipChainWriteSet {st sk sf : SystemState}
+    {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
+    {keep : Bool} {c : CoreId} (hObjInv : st.objects.invExt)
+    (hk : applyReplyDonationOnCore st rid targetVtid ownerHome keep c = .ok sk)
+    (hf : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok sf)
+    (x : SeLe4n.ThreadId) (ec : CoreId) :
+    pipChainWriteSet sf x ec sf.objects.size = pipChainWriteSet sk x ec sk.objects.size := by
+  rcases applyReplyDonationOnCore_keep_cases hObjInv hk hf with h | ⟨holder, hsf, hInvK, _, _⟩
+  · rw [h]
+  · subst hsf; exact pipChainWriteSet_descheduleAtPlacement sk holder x ec hInvK
+
+/-- **The keep return's abandon core** is the plain return's, or the core the
+pre-state places the holder on. -/
+theorem applyReplyDonationOnCore_keep_faultAbandonCore {st sk sf : SystemState}
+    {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
+    {keep : Bool} {c : CoreId} (hObjInv : st.objects.invExt)
+    (hk : applyReplyDonationOnCore st rid targetVtid ownerHome keep c = .ok sk)
+    (hf : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok sf) (t : SeLe4n.ThreadId) :
+    faultAbandonCore sk t = faultAbandonCore sf t ∨
+      faultAbandonCore sk t ∈ replyDonationDescheduleCores st rid := by
+  rcases applyReplyDonationOnCore_keep_cases hObjInv hk hf with h | ⟨holder, hsf, _, hCur, hCores⟩
+  · exact Or.inl (by rw [h])
+  · subst hsf
+    by_cases hT : t = holder
+    · subst hT
+      right
+      rw [← hCores]
+      unfold faultAbandonCore descheduleAtPlacementCores
+      cases hP : placedCoreOf? sk t with
+      | some p => simp
+      | none => exact absurd hCur ((placedCoreOf?_none_iff sk t).mp hP c).2
+    · left
+      unfold faultAbandonCore
+      rw [descheduleAtPlacement_placedCoreOf?_ne sk holder t hT,
+        descheduleAtPlacement_determineTargetCore]
+
+/-- The chain walk moves no placement and no home core, so no abandon core. -/
+theorem faultAbandonCore_propagatePipChainCrossCore (st : SystemState) (s : SeLe4n.ThreadId)
+    (ec : CoreId) (fuel : Nat) (h : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    faultAbandonCore (propagatePipChainCrossCore st s ec fuel).1 t = faultAbandonCore st t := by
+  unfold faultAbandonCore
+  rw [placedCoreOf?_congr_of_bits t (fun c' =>
+      ⟨propagatePipChainCrossCore_queuedOn fuel st s t ec c' h,
+        by rw [propagatePipChainCrossCore_currentOnCore]⟩),
+    propagatePipChainCrossCore_determineTargetCore ec fuel st s h t]
+
+/-- **The keep dispatch's abandon core** is the plain dispatch's, or a core the
+declared `.reply` write set already names. -/
+theorem endpointReplyCrossCoreDispatch_keep_faultAbandonCore (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (ec : CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
+    (keep : Bool) {Dk Df : SystemState} {rk rf : Option (CoreId × Concurrency.SgiKind)}
+    (hk : endpointReplyCrossCoreDispatch replier target msg ec st keep = (Dk, .ok rk))
+    (hf : endpointReplyCrossCoreDispatch replier target msg ec st = (Df, .ok rf))
+    (t : SeLe4n.ThreadId) :
+    faultAbandonCore Dk t = faultAbandonCore Df t ∨
+      faultAbandonCore Dk t ∈ endpointReplyDispatchWriteSet replier target msg ec st := by
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier target msg ec st hObjInv
+  unfold endpointReplyCrossCoreDispatch at hk hf
+  unfold endpointReplyDispatchWriteSet
+  cases hRep : endpointReplyOnCore replier target msg ec st with
+  | mk st1 res =>
+    rw [hRep] at hk hf hInv1
+    cases res with
+    | error e => simp only [] at hk; exact absurd hk (by simp)
+    | ok sgi =>
+      simp only [] at hk hf ⊢
+      cases hSrv : recordedReplyServer? st target with
+      | none =>
+        rw [hSrv] at hk hf
+        simp only [] at hk hf ⊢
+        cases hRid : answeredReplyObject? st target with
+        | none =>
+          rw [hRid] at hk hf
+          simp only [] at hk hf
+          simp only [Prod.mk.injEq] at hk hf
+          obtain ⟨rfl, -⟩ := hk; obtain ⟨rfl, -⟩ := hf; exact Or.inl rfl
+        | some rid =>
+          rw [hRid] at hk hf
+          simp only [] at hk hf ⊢
+          cases hTV : SeLe4n.ThreadId.toValid? target with
+          | none => rw [hTV] at hk; simp only [] at hk; exact absurd hk (by simp)
+          | some targetV =>
+            rw [hTV] at hk hf
+            simp only [] at hk hf ⊢
+            cases hDk : applyReplyDonationOnCore st1 rid targetV (determineTargetCore st1 target)
+                keep ec with
+            | error e => rw [hDk] at hk; simp only [] at hk; exact absurd hk (by simp)
+            | ok sk =>
+              rw [applyReplyDonationOnCore_flag_false] at hf
+              cases hDf : applyReplyDonationOnCore st1 rid targetV (determineTargetCore st1 target)
+                with
+              | error e => rw [hDf] at hf; simp only [] at hf; exact absurd hf (by simp)
+              | ok sf =>
+                rw [hDk] at hk; rw [hDf] at hf
+                simp only [] at hk hf ⊢
+                simp only [Prod.mk.injEq] at hk hf
+                obtain ⟨rfl, -⟩ := hk; obtain ⟨rfl, -⟩ := hf
+                rcases applyReplyDonationOnCore_keep_faultAbandonCore hInv1 hDk hDf t with h | h
+                · exact Or.inl h
+                · exact Or.inr (List.mem_append_right _ h)
+      | some expected =>
+        rw [hSrv] at hk hf
+        simp only [] at hk hf ⊢
+        cases hEV : SeLe4n.ThreadId.toValid? expected with
+        | none => rw [hEV] at hk; simp only [] at hk; exact absurd hk (by simp)
+        | some _expectedV =>
+          rw [hEV] at hk hf
+          simp only [] at hk hf ⊢
+          cases hRid : answeredReplyObject? st target with
+          | none =>
+            rw [hRid] at hk hf
+            simp only [] at hk hf
+            simp only [Prod.mk.injEq] at hk hf
+            obtain ⟨rfl, -⟩ := hk; obtain ⟨rfl, -⟩ := hf; exact Or.inl rfl
+          | some rid =>
+            rw [hRid] at hk hf
+            simp only [] at hk hf ⊢
+            cases hTV : SeLe4n.ThreadId.toValid? target with
+            | none => rw [hTV] at hk; simp only [] at hk; exact absurd hk (by simp)
+            | some targetV =>
+              rw [hTV] at hk hf
+              simp only [] at hk hf ⊢
+              cases hDk : applyReplyDonationOnCore st1 rid targetV
+                  (determineTargetCore st1 target) keep ec with
+              | error e => rw [hDk] at hk; simp only [] at hk; exact absurd hk (by simp)
+              | ok sk =>
+                rw [applyReplyDonationOnCore_flag_false] at hf
+                cases hDf : applyReplyDonationOnCore st1 rid targetV
+                    (determineTargetCore st1 target) with
+                | error e => rw [hDf] at hf; simp only [] at hf; exact absurd hf (by simp)
+                | ok sf =>
+                  rw [hDk] at hk; rw [hDf] at hf
+                  simp only [] at hk hf ⊢
+                  have hInvK := applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hInv1 hDk
+                  have hInvF := applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hInv1 hDf
+                  simp only [Prod.mk.injEq] at hk hf
+                  obtain ⟨rfl, -⟩ := hk; obtain ⟨rfl, -⟩ := hf
+                  rw [faultAbandonCore_propagatePipChainCrossCore _ _ _ _ hInvK,
+                    faultAbandonCore_propagatePipChainCrossCore _ _ _ _ hInvF]
+                  rcases applyReplyDonationOnCore_keep_faultAbandonCore hInv1 hDk hDf t with h | h
+                  · exact Or.inl h
+                  · exact Or.inr (List.mem_append_left _ (List.mem_append_right _ h))
 
 -- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointReplyDispatchWriteSet` moved to
 -- `IPC/CrossCore/EndpointReplyDispatch.lean` §6, beside the dispatch it mirrors, so
@@ -308,9 +548,9 @@ anything; the success arm composes the reply, the donation return and the chain
 walk at the states the dispatch really produces. -/
 theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.ThreadId)
     (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt) (keep : Bool := false) :
     observableSlotsConfinedToCores st
-      (endpointReplyCrossCoreDispatch replier target msg executingCore st).1
+      (endpointReplyCrossCoreDispatch replier target msg executingCore st keep).1
       (endpointReplyDispatchWriteSet replier target msg executingCore st) := by
   have hReply := endpointReplyOnCore_confinedToCores replier target msg executingCore st
     hObjInv
@@ -334,9 +574,13 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
           | some targetV =>
             simp only []
             cases hDon : applyReplyDonationOnCore st1 rid targetV
-                (determineTargetCore st1 target) with
+                (determineTargetCore st1 target) keep executingCore with
             | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
             | ok st2 =>
+              have hB := applyReplyDonationOnCore_toBool_keep st1 rid targetV
+                (determineTargetCore st1 target) keep executingCore
+              cases hR0 : applyReplyDonationOnCore st1 rid targetV (determineTargetCore st1 target)
+              · rw [hDon, hR0] at hB; cases hB
               simp only []
               exact observableSlotsConfinedToCores_trans hReply
                 (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
@@ -364,18 +608,27 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
             | some targetV =>
               simp only []
               cases hDon : applyReplyDonationOnCore st1 rid targetV
-                  (determineTargetCore st1 target) with
+                  (determineTargetCore st1 target) keep executingCore with
               | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
               | ok st2 =>
+                have hB := applyReplyDonationOnCore_toBool_keep st1 rid targetV
+                  (determineTargetCore st1 target) keep executingCore
+                have hInv1 : st1.objects.invExt := by
+                  have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
+                    executingCore st hObjInv
+                  rwa [hRep] at h1
+                cases hR0 : applyReplyDonationOnCore st1 rid targetV
+                    (determineTargetCore st1 target) with
+                | error _ => rw [hDon, hR0] at hB; cases hB
+                | ok st2f =>
                 simp only []
+                -- The declared chain walk is read at the plain return's state; the
+                -- keep return's names the same cores (§5b-bis).
+                rw [applyReplyDonationOnCore_keep_pipChainWriteSet hInv1 hDon hR0]
                 exact observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans hReply
                     (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
-                      (determineTargetCore st1 target)
-                      (by
-                        have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
-                          executingCore st hObjInv
-                        rwa [hRep] at h1) hDon))
+                      (determineTargetCore st1 target) hInv1 hDon))
                   (propagatePipChainCrossCore_confinedToCores executingCore
                     st2.objects.size st2 expected)
 
@@ -458,12 +711,12 @@ state the apply runs on.  Every arm on which the seam commits nothing returns
 the pre-state and so is confined to `[]`, which widens into anything. -/
 theorem faultReplyOnCore_confinedToCores (replier faulted : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (executingCore : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (st : SystemState) (hObjInv : st.objects.invExt) (keep : Bool := false) :
     observableSlotsConfinedToCores st
-      (faultReplyOnCore replier faulted mi regs executingCore st).1
+      (faultReplyOnCore replier faulted mi regs executingCore st keep).1
       (faultReplyWriteSet replier faulted mi regs executingCore st) := by
   have hDispatch := endpointReplyCrossCoreDispatch_confinedToCores replier faulted
-    IpcMessage.empty executingCore st hObjInv
+    IpcMessage.empty executingCore st hObjInv keep
   unfold faultReplyOnCore faultReplyWriteSet
   cases hTcb : st.getTcb? faulted with
   | none => exact observableSlotsConfinedToCores_of_eq _ rfl
@@ -474,16 +727,42 @@ theorem faultReplyOnCore_confinedToCores (replier faulted : SeLe4n.ThreadId)
     | some tf =>
       simp only []
       cases hDisp : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty
-          executingCore st with
+          executingCore st keep with
       | mk stDisp res =>
         rw [hDisp] at hDispatch
         cases res with
         | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
         | ok sgi? =>
+          have hB := endpointReplyCrossCoreDispatch_snd_toBool_keep replier faulted
+            IpcMessage.empty executingCore st keep
+          rw [hDisp] at hB
+          cases hD0 : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st
+            with
+          | mk s0 r0 =>
+            rw [hD0] at hB
+            cases r0 with
+            | error _ => cases hB
+            | ok _ =>
           simp only []
-          exact observableSlotsConfinedToCores_trans hDispatch
-            (faultReplyApplyOnCore_confinedToCores stDisp faulted
-              (Architecture.decodeFaultReply tf.fault tf.context mi regs))
+          -- The outcome's core is read at the plain dispatch's state; the keep
+          -- dispatch's is that one or a core the dispatch's own set names (§5b-bis).
+          refine observableSlotsConfinedToCores_mono (fun x hx => ?_)
+            (observableSlotsConfinedToCores_trans hDispatch
+              (faultReplyApplyOnCore_confinedToCores stDisp faulted
+                (Architecture.decodeFaultReply tf.fault tf.context mi regs)))
+          rcases List.mem_append.mp hx with hx | hx
+          · exact List.mem_append_left _ hx
+          · unfold faultReplyApplyCores at hx ⊢
+            cases hOut : Architecture.decodeFaultReply tf.fault tf.context mi regs with
+            | restart _ => rw [hOut] at hx; simp at hx
+            | abandon =>
+              rw [hOut] at hx
+              simp only [List.mem_singleton] at hx ⊢
+              subst hx
+              rcases endpointReplyCrossCoreDispatch_keep_faultAbandonCore replier faulted
+                  IpcMessage.empty executingCore st hObjInv keep hDisp hD0 faulted with h | h
+              · rw [h]; exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
+              · exact List.mem_append_left _ h
 
 /-- **Cut C6d** (**the live `.reply` arm's bound**): `replyTransferOnCore` — the
 transition `API.dispatchWithCapChecked`'s `.reply` arm routes through — writes no core
@@ -495,18 +774,18 @@ composes the dispatch with the delivered-message staging, which writes a
 register *context* and no per-core slot. -/
 theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool)
-    (executingCore : CoreId) (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st
+    (executingCore : CoreId) (st st' : SystemState) (hObjInv : st.objects.invExt) {keep : Bool}
+    (hStep : replyTransferOnCore replier callerTid mi regs msg grant executingCore st keep
       = .ok ((), st')) :
     observableSlotsConfinedToCores st st'
       (replyTransferWriteSet replier callerTid mi regs msg executingCore st) := by
   by_cases hF : threadHasPendingFault st callerTid = true
-  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant executingCore st hF]
+  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant executingCore st hF keep]
       at hStep
     rw [replyTransferWriteSet_of_fault replier callerTid mi regs msg executingCore st hF]
     have hFR := faultReplyOnCore_confinedToCores replier callerTid mi regs executingCore st
-      hObjInv
-    cases hFRO : faultReplyOnCore replier callerTid mi regs executingCore st with
+      hObjInv keep
+    cases hFRO : faultReplyOnCore replier callerTid mi regs executingCore st keep with
     | mk stF res =>
       rw [hFRO] at hFR hStep
       cases res with
@@ -518,12 +797,12 @@ theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId
         exact hFR
   · have hNF : threadHasPendingFault st callerTid = false := by
       simpa using hF
-    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant executingCore st hNF]
-      at hStep
+    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant executingCore st hNF
+      keep] at hStep
     rw [replyTransferWriteSet_of_no_fault replier callerTid mi regs msg executingCore st hNF]
     have hDispatch := endpointReplyCrossCoreDispatch_confinedToCores replier callerTid msg
-      executingCore st hObjInv
-    cases hDisp : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+      executingCore st hObjInv keep
+    cases hDisp : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st keep with
     | mk stDisp res =>
       rw [hDisp] at hDispatch hStep
       cases res with

@@ -206,7 +206,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                 ops.replyGrant.bind fun grant =>
                   LockSet.ofList?
                     (schedLockSet_replyRecvArmOnCore epId ops.caller rid prevCaller
-                      mi.label msg grant executingCore st)
+                      mi.label msg grant ops.replyRecvReceiveRefused executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
   -- one that destroys the last capability to a thread or a scheduling context
@@ -559,7 +559,7 @@ def declaredSchedulerLockSetForAbiEntry (ctx : LabelingContext) (executingCore :
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
-    (abiEntryLockOperands decoded tid stSpilled).bind
+    (abiEntryLockOperands ctx decoded tid stSpilled).bind
       (fun ops => schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled)
 
 /-- **Cut C4b**: an entry whose plan does not resolve declares nothing — the
@@ -593,7 +593,7 @@ theorem declaredSchedulerLockSetForAbiEntry_undeclared_none (ctx : LabelingConte
   unfold declaredSchedulerLockSetForAbiEntry
   rw [hPlan]
   simp only
-  cases hOps : abiEntryLockOperands decoded tid stSpilled with
+  cases hOps : abiEntryLockOperands ctx decoded tid stSpilled with
   | none => rfl
   | some ops =>
       simp only [Option.bind_some]
@@ -612,7 +612,7 @@ theorem declaredSchedulerLockSetForAbiEntry_shares_decode (ctx : LabelingContext
     (stSpilled : SystemState) (ops : SyscallLockOperands)
     (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = some (tid, decoded, stSpilled))
-    (hOps : abiEntryLockOperands decoded tid stSpilled = some ops) :
+    (hOps : abiEntryLockOperands ctx decoded tid stSpilled = some ops) :
     declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
         = lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled ∧
     declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
@@ -844,7 +844,7 @@ def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : C
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
-    (abiEntryLockOperands decoded tid stSpilled).bind
+    (abiEntryLockOperands ctx decoded tid stSpilled).bind
       (fun ops => unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled)
 
 /-- **Cut C6h**: an entry whose plan does not resolve declares nothing — the
@@ -877,7 +877,7 @@ theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
   · rfl
   · rw [hPlan] at hSched
     simp only at hSched ⊢
-    rcases hOps : abiEntryLockOperands decoded tid stSpilled with _ | ops
+    rcases hOps : abiEntryLockOperands ctx decoded tid stSpilled with _ | ops
     · rfl
     · rw [hOps] at hSched
       simp only [Option.bind_some] at hSched ⊢
@@ -897,7 +897,7 @@ theorem declaredUnifiedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
     (stSpilled : SystemState) (ops : Concurrency.SyscallLockOperands)
     (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = some (tid, decoded, stSpilled))
-    (hOps : abiEntryLockOperands decoded tid stSpilled = some ops) :
+    (hOps : abiEntryLockOperands ctx decoded tid stSpilled = some ops) :
     declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled := by
   unfold declaredUnifiedLockSetForAbiEntry

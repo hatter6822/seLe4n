@@ -102,9 +102,11 @@ priority walk, then the fault answer (`performFaultAnswer`). -/
 @[noinline] def performFaultReplyDonatedAnswer (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (core : CoreId)
     (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n : Nat) : SystemState :=
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n : Nat)
+    (keepCurrent : Bool := false) : SystemState :=
   performFaultAnswer (PriorityInheritance.propagatePipChainCrossCore
-      (replyDonationPopInPlace (storeFaultReplyRendezvous st c server rid) c server scId home)
+      (replyDonationPopInPlace (storeFaultReplyRendezvous st c server rid) c server scId home
+        keepCurrent core)
       server core).1 c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n 0
 
 /-- **The checked donated fault reply, in place**: under `replyPopsInPlace`, a
@@ -120,13 +122,14 @@ theorem faultReplyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : 
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyDonatedAnswer st c server rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) core ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr
         ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7
-        layout rf (min mi.length layout.msgRegs.size)) := by
+        layout rf (min mi.length layout.msgRegs.size) keep) := by
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid IpcMessage.empty ct hT hSRes hG
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
@@ -156,7 +159,7 @@ theorem faultReplyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : 
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
-    hDon cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+    hDon keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performFaultReplyDonatedAnswer
   rw [faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF mi _ layout rf
@@ -189,9 +192,10 @@ theorem faultReplyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : S
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
     (hG : replyUnheldPopsInPlace st c rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyUnheldAnswer st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) ct.faultKind mi.label ct.faultIp ct.faultSp ct.faultLr
         ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7
@@ -222,7 +226,7 @@ theorem faultReplyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : S
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hAns, hcv, SystemState.unlinkReplyWaiterOpt]
-  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo, hPop keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performFaultReplyUnheldAnswer
   rw [faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF mi _ layout rf
@@ -254,15 +258,16 @@ theorem faultReplyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st :
     (hIpc : ct.ipcState = .blockedOnReply ep none)
     (hRO : ct.replyObject = some rid)
     (hG : replyUnlinkedInPlace st c rid = true)
-    (hF : ct.faultWords.isFault = true) :
+    (hF : ct.faultWords.isFault = true)
+    (keep : Bool := false) :
     replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
-        st =
+        st keep =
       .ok ((), performFaultReplyUnlinkedAnswer st c rid ct.faultKind mi.label ct.faultIp ct.faultSp
         ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
         ct.faultX7 layout rf (min mi.length layout.msgRegs.size)) := by
   have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
   obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid IpcMessage.empty core
-    (by simp [IpcMessage.empty]) hT hIpc hRO hG
+    (by simp [IpcMessage.empty]) hT hIpc hRO hG keep
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf :=
     Option.isSome_iff_exists.mp (by rw [TCB.pendingFault_isSome]; exact hF)

@@ -91,9 +91,10 @@ theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.Repl
     (hFr : S.objects.findsInPlace rid.toObjId = true)
     (hLo : storeLeavesIndexAndTypes S c.toObjId .tcb = true)
     (hFo : S.objects.findsInPlace c.toObjId = true)
-    (hLh : storeLeavesIndexAndTypes S holder.toObjId .tcb = true) :
-    applyReplyDonationOnCore S rid cv (determineTargetCore S c) =
-      .ok (replyDonationPopInPlace S c holder scId (determineTargetCore S c)) := by
+    (hLh : storeLeavesIndexAndTypes S holder.toObjId .tcb = true) (keep : Bool := false)
+    (core : CoreId := bootCoreId) :
+    applyReplyDonationOnCore S rid cv (determineTargetCore S c) keep core =
+      .ok (replyDonationPopInPlace S c holder scId (determineTargetCore S c) keep core) := by
   have hHolder : replyFrameHeadHolder? S rid = some (scId, holder) := by
     apply replyFrameHeadHolder?_of_head
     · unfold replyFrameHeadContext?
@@ -307,6 +308,19 @@ theorem descheduleAtPlacement_msg (st : SystemState) (t : SeLe4n.ThreadId) :
   · exact removeRunnableOnCore_msg r ρ μ π st t _
   · rfl
 
+/-- The return's holder deschedule, either flag, commutes with a delivery. -/
+theorem descheduleReturnedHolder_msg (keep : Bool) (core : CoreId) (st : SystemState)
+    (t : SeLe4n.ThreadId) :
+    descheduleReturnedHolder keep core (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) t =
+      (descheduleReturnedHolder keep core st t).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
+  cases keep
+  · exact descheduleAtPlacement_msg r ρ μ π st t
+  · simp only [descheduleReturnedHolder, descheduleKeepingCurrentOnCore,
+      SystemState.mapTcbInPlace_scheduler, if_true]
+    split
+    · rfl
+    · exact descheduleAtPlacement_msg r ρ μ π st t
+
 end SettleMoves
 
 /-- **The reply's donation pop commutes with a delivery** to a thread other than
@@ -327,12 +341,14 @@ theorem replyDonationPopInPlace_msg (r : SeLe4n.ThreadId)
     (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
     (π : Nat → Nat) (st : SystemState) (c holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (home : CoreId) (hNo : st.objects.noResizeDue)
-    (hH : r ≠ holder) :
-    replyDonationPopInPlace (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) c holder scId home =
-      (replyDonationPopInPlace st c holder scId home).mapTcbInPlace r
+    (hH : r ≠ holder) (keep : Bool := false) (core : CoreId := bootCoreId) :
+    replyDonationPopInPlace (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) c holder scId home
+        keep core =
+      (replyDonationPopInPlace st c holder scId home keep core).mapTcbInPlace r
         (TCB.withMessageSlots ρ μ π) := by
   unfold replyDonationPopInPlace
-  rw [popDonationSettledInPlace_msg r ρ μ π st c holder scId home hNo hH, descheduleAtPlacement_msg]
+  rw [popDonationSettledInPlace_msg r ρ μ π st c holder scId home hNo hH,
+    descheduleReturnedHolder_msg]
 
 theorem releaseRemoveOn_noResizeDue (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
     (hNo : st.objects.noResizeDue) : (st.releaseRemoveOn c s).objects.noResizeDue :=
@@ -374,10 +390,13 @@ theorem popDonationSettledInPlace_noResizeDue (st : SystemState) (c holder : SeL
 
 /-- The reply's donation pop leaves the table's size and capacity alone. -/
 theorem replyDonationPopInPlace_noResizeDue (st : SystemState) (c holder : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (home : CoreId) (hNo : st.objects.noResizeDue) :
-    (replyDonationPopInPlace st c holder scId home).objects.noResizeDue := by
+    (scId : SeLe4n.SchedContextId) (home : CoreId) (hNo : st.objects.noResizeDue)
+    (keep : Bool := false) (core : CoreId := bootCoreId) :
+    (replyDonationPopInPlace st c holder scId home keep core).objects.noResizeDue := by
   have h := popDonationSettledInPlace_noResizeDue st c holder scId home hNo
-  unfold replyDonationPopInPlace descheduleAtPlacement descheduleAt
+  unfold replyDonationPopInPlace
+  refine descheduleReturnedHolder_induct (fun _ b => b.objects.noResizeDue) keep core _ holder h ?_
+  unfold descheduleAtPlacement descheduleAt
   split
   · exact removeRunnableOnCore_noResizeDue _ _ _ h
   · exact h
@@ -474,14 +493,15 @@ theorem replyPopsInPlace_donation (st : SystemState) (c server : SeLe4n.ThreadId
       st.objects.findsInPlace c.toObjId = true ∧
       storeLeavesIndexAndTypes st rid.toObjId .reply = true ∧
       st.objects.findsInPlace rid.toObjId = true ∧
-      (∀ cv : SeLe4n.ValidThreadId, cv.val = c →
+      (∀ (keep : Bool) (core : CoreId) (cv : SeLe4n.ValidThreadId), cv.val = c →
         applyReplyDonationOnCore
             ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg)) rid cv
             (determineTargetCore
-              ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg)) c) =
+              ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg)) c)
+            keep core =
           .ok (replyDonationPopInPlace
             ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg))
-            c server scId (determineTargetCore st c))) ∧
+            c server scId (determineTargetCore st c) keep core)) ∧
       replyRecvPopDonation rid c
           ((storeReplyRendezvousReady st c server rid).mapTcbInPlace c (holdMessage msg)) =
         .ok (some (scId, server), popDonationSettledInPlace
@@ -683,10 +703,10 @@ theorem replyPopsInPlace_donation (st : SystemState) (c server : SeLe4n.ThreadId
     rw [e]
     rfl
   rw [← hDT]
-  exact ⟨fun cv hcv => applyReplyDonationOnCore_eq_inPlace T rid cv c server hcv scId sc rp.consumed
-    (holdMessage msg tc1) ht hRT hNextC hScT hHead hB hBelowT hOuter hRecip hCRes hSRes hOT hHT
-    hNe (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLC) ((hFT _).trans hFC)
-    (hLT hLS),
+  exact ⟨fun keep core cv hcv => applyReplyDonationOnCore_eq_inPlace T rid cv c server hcv scId sc
+    rp.consumed (holdMessage msg tc1) ht hRT hNextC hScT hHead hB hBelowT hOuter hRecip hCRes hSRes
+    hOT hHT hNe (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLC)
+    ((hFT _).trans hFC) (hLT hLS) keep core,
     replyRecvPopDonation_eq_inPlace T rid c server scId sc rp.consumed
     (holdMessage msg tc1) ht hRT hNextC hScT hHead hB hBelowT hOuter hRecip hCRes hSRes hOT hHT
     hNe (hLT hLsc) ((hFT _).trans hFsc) (hLT hLR) ((hFT _).trans hFR) (hLT hLC) ((hFT _).trans hFC)
@@ -704,9 +724,11 @@ registers. -/
 @[noinline] def performReplyDonatedDelivered (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : CoreId) : SystemState :=
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : CoreId) (keepCurrent : Bool := false) :
+    SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
-    (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home)
+    (replyDonationPopInPlace (storeReplyRendezvousReady st c server rid) c server scId home
+      keepCurrent core)
     server core).1
   writeDeliveredFrameIfReady X c (Architecture.regMessageFrameW layout rf len badgeWord badged)
     (fun _ => holdDeliveredBody X c layout rf len (SeLe4n.Badge.opt badgeWord badged))
@@ -734,10 +756,11 @@ theorem replyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : Syste
     (hG : replyPopsInPlace st c ct.scBindingScCode server rid = true)
     (hNoF : ct.faultWords.isFault = false)
     (hX : replyTransferInert st replier ct grant = true)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
-    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
+    (keep : Bool := false) :
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st keep =
       .ok ((), performReplyDonatedDelivered st c server rid ⟨replyHeadContextCode st rid - 1⟩
-        (determineTargetCore st c) layout rf len badgeWord badged core) := by
+        (determineTargetCore st c) layout rf len badgeWord badged core keep) := by
   replace hMsg := hMsg.symm
   obtain ⟨rp, scId, _, hRp, hN, _, _, _, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR, hDon, _⟩ :=
     replyPopsInPlace_donation st c server rid msg ct hT hSRes hG
@@ -761,19 +784,20 @@ theorem replyTransferChecked_donated_inPlace (ctx : LabelingContext) (st : Syste
     simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   have hNoP := replyDonationPopInPlace_noResizeDue _ c server scId (determineTargetCore st c) hNoS
+    keep core
   unfold replyTransferOnCoreChecked
-  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow keep]
   simp only [Bool.false_eq_true, ↓reduceIte,
     replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
   unfold endpointReplyCrossCoreDispatch
   rw [hEq]
   simp only [hRec, hsv, hAns, hcv]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
-    hDon cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
+    hDon keep core cv (SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv)]
   simp only []
   unfold performReplyDonatedDelivered
   subst hMsg
-  rw [replyDonationPopInPlace_msg c id _ id _ c server scId _ hNoS hNe,
+  rw [replyDonationPopInPlace_msg c id _ id _ c server scId _ hNoS hNe keep core,
     Architecture.regMessageFrameW_eq, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoP,
     stageDeliveredMessage_holdMessage _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ hNoP)
       (by rw [Architecture.regMessageBody_size]; exact hSz4),

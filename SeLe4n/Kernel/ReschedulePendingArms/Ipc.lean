@@ -343,12 +343,7 @@ theorem wakeThread_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Thre
     residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
     (tcbsKept_enqueueRunnableOnCore _ _ _ hInv).residentTcbKept⟩
 
-theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
-  ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
-    removeRunnableOnCore_currentKept e st tid c,
-    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]),
-    (tcbsKept_removeRunnableOnCore st tid c).residentTcbKept⟩
+
 
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/
@@ -1143,8 +1138,8 @@ theorem popUnheldReplyHead_stepCovers (e : CoreId) {st st' : SystemState}
 context's settle, and the holder's deschedule. -/
 theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId} {ownerHome : CoreId}
-    (hInv : st.objects.invExt)
-    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    {keep : Bool} {c : CoreId} (hInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome keep c = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold applyReplyDonationOnCore at h
   dsimp only at h
@@ -1159,19 +1154,23 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
         obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
         refine ⟨stepCovers_trans (stepCovers_trans h1
           (settleReturnedContext_stepCovers e _ _ _))
-          (descheduleAt_stepCovers e _ _ _), ?_⟩
-        unfold descheduleAtPlacement
-        exact descheduleAt_objects_invExt _ _ _
-          (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv)
+          (descheduleReturnedHolder_induct (fun a b => stepCovers e a b) keep c _ _
+            (stepCovers_refl e _) (by dsimp only; exact descheduleAt_stepCovers e _ _ _)), ?_⟩
+        refine descheduleReturnedHolder_induct (fun _ b => b.objects.invExt) keep c _ _ ?_ ?_
+        · exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv
+        · dsimp only; unfold descheduleAtPlacement
+          exact descheduleAt_objects_invExt _ _ _
+            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv)
       · exact keepDonatedSchedContextResolved_stepCovers e hInv h
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
 return, and the chain walk from the recorded server. -/
 theorem endpointReplyCrossCoreDispatch_stepCovers (e : CoreId) {replier target : SeLe4n.ThreadId}
-    {msg : IpcMessage} {executingCore : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    stepCovers e st (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 ∧
-      (endpointReplyCrossCoreDispatch replier target msg executingCore st).1.objects.invExt := by
+    {msg : IpcMessage} {executingCore : CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (keep : Bool := false) :
+    stepCovers e st (endpointReplyCrossCoreDispatch replier target msg executingCore st keep).1 ∧
+      (endpointReplyCrossCoreDispatch replier target msg executingCore st keep).1.objects.invExt := by
   have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
   unfold endpointReplyCrossCoreDispatch
   obtain ⟨hR, hRInv⟩ := endpointReplyOnCore_stepCovers e (replier := replier) (target := target)
@@ -1199,13 +1198,14 @@ theorem endpointReplyCrossCoreDispatch_stepCovers (e : CoreId) {replier target :
 
 theorem endpointReplyCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {executingCore : CoreId}
-    {st : SystemState} (hInv : st.objects.invExt) :
+    {st : SystemState} (hInv : st.objects.invExt) (keep : Bool := false) :
     stepCovers e st (endpointReplyCrossCoreDispatchChecked ctx replier target msg
-      executingCore st).1 ∧
-    (endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st).1.objects.invExt := by
+      executingCore st keep).1 ∧
+    (endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st
+      keep).1.objects.invExt := by
   unfold endpointReplyCrossCoreDispatchChecked
   split
-  · exact endpointReplyCrossCoreDispatch_stepCovers e hInv
+  · exact endpointReplyCrossCoreDispatch_stepCovers e hInv keep
   · exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- The fault reply's decoded outcome covers: the restart frame, or the
@@ -1234,9 +1234,9 @@ theorem faultReplyApplyOnCore_stepCovers (e : CoreId) (st : SystemState)
 abandon's deschedule. -/
 theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.ThreadId}
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {executingCore : CoreId}
-    {st : SystemState} (hInv : st.objects.invExt) :
-    stepCovers e st (faultReplyOnCore replier faulted mi regs executingCore st).1 ∧
-    (faultReplyOnCore replier faulted mi regs executingCore st).1.objects.invExt := by
+    {st : SystemState} (hInv : st.objects.invExt) (keep : Bool := false) :
+    stepCovers e st (faultReplyOnCore replier faulted mi regs executingCore st keep).1 ∧
+    (faultReplyOnCore replier faulted mi regs executingCore st keep).1.objects.invExt := by
   unfold faultReplyOnCore
   split
   · exact ⟨stepCovers_refl e st, hInv⟩
@@ -1244,9 +1244,9 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
   · exact ⟨stepCovers_refl e st, hInv⟩
   dsimp only
   obtain ⟨hR, hRInv⟩ := endpointReplyCrossCoreDispatch_stepCovers e (replier := replier)
-    (target := faulted) (msg := IpcMessage.empty) (executingCore := executingCore) hInv
-  generalize endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st = r
-    at hR hRInv
+    (target := faulted) (msg := IpcMessage.empty) (executingCore := executingCore) hInv keep
+  generalize endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st
+    keep = r at hR hRInv
   obtain ⟨st1, res⟩ := r
   dsimp only at hR hRInv ⊢
   cases res with
@@ -1260,24 +1260,26 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
     {msg : IpcMessage} {grant : Bool} {executingCore : CoreId} {st st' : SystemState}
-    (hInv : st.objects.invExt)
-    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st
+    {keep : Bool} (hInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant executingCore st keep
       = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyTransferOnCoreChecked at h
   split at h
   · have hF := faultReplyOnCore_stepCovers e (replier := replier) (faulted := callerTid)
-      (mi := mi) (regs := regs) (executingCore := executingCore) hInv
+      (mi := mi) (regs := regs) (executingCore := executingCore) hInv keep
     revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs executingCore st = r
+    generalize faultReplyOnCore replier callerTid mi regs executingCore st keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h; cases h
     | ok _ => intro h hF; cases h; exact hF
   · obtain ⟨hR, hRInv⟩ := endpointReplyCrossCoreDispatchChecked_stepCovers e (ctx := ctx)
       (replier := replier) (target := callerTid) (msg := msg) (executingCore := executingCore) hInv
+      keep
     revert h hR hRInv
-    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg executingCore st = r
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg executingCore st
+      keep = r
     obtain ⟨s, res⟩ := r
     cases res with
     | error _ => intro h; cases h

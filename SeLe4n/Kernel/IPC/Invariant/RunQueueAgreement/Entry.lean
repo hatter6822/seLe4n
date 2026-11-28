@@ -9,6 +9,7 @@ import SeLe4n.Kernel.PerCoreRescheduleEntry
 import SeLe4n.Kernel.ReschedulePendingArms.Tick
 import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 import SeLe4n.Kernel.ReplyRecvRefusalErrors
+import SeLe4n.Kernel.IPC.Invariant.EndpointsAndIpcStatesBack
 
 /-!
 # Every committing entry keeps the run-queue link agreement
@@ -584,6 +585,341 @@ theorem replyRecvTransferStoppedState_runQueueEntryStage {epId : SeLe4n.ObjId}
   exact hAll.trans ((replyRecvHolderDeschedule_runQueueStage tid holder st2).trans
     (replyRecvNothingReceived_runQueueStage _ _ _ _)).entry
 
+open SeLe4n.Model.SystemState in
+/-- **The run queues agree across a reply-receive whose receive is read after
+its reply** (WS-SX SX36.1): `replyRecvTransferStoppedState_runQueueEntryStage`
+for the after-reply composite, whose one further stop -- the receive's endpoint
+refused on the answered state -- is the nothing-received outcome there, a
+stage. -/
+theorem replyRecvTransferThenStoppedState_runQueueEntryStage
+    {recvEp : SystemState → Except KernelError SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hQ : queueHeadBlockedConsistent st)
+    (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false) :
+    SystemState.RunQueueEntryStage st (_root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+      (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant c) st) := by
+  rcases replyRecvTransferThenR_stoppedState_cases recvEp tid rid prevCaller label msg grant c st
+    with hE | ⟨hA, e, hB⟩
+  · rw [hE]; exact (RunQueueStage.refl _).entry
+  generalize _root_.SeLe4n.Kernel.RefusalCarrying.stoppedState
+    (replyRecvTransferThenR recvEp tid rid prevCaller label msg grant c) st = s at hB ⊢
+  revert hB
+  generalize replyRecvCallerFaultAnswer? st prevCaller label msg = answer
+  generalize replyRecvLegMessage answer msg = m
+  generalize (if answer.isSome = true then none else replyCapRequest st tid grant) = req
+  generalize receiverCapTarget? st prevCaller = target
+  generalize (recordedReplyServer? st prevCaller).getD tid = rs
+  intro hB
+  rcases endpointReplyRecvAnsweringBodyThenR_stopped hInv hA hB with
+    ⟨-, hS⟩ | ⟨sgi, ret?, popped, hR1, hPop1, hInvP, hTail⟩
+  · rw [hS]; exact (RunQueueStage.refl _).entry
+  have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller m c st).2 = .ok sgi? →
+      (endpointReplyOnCore tid prevCaller m c st).1.readyOrAbsent prevCaller ∧
+      prevCaller ≠ tid ∧ isIdleThreadId prevCaller = false := by
+    intro sgi hOk
+    obtain ⟨-, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+    have hT := getTcb?_of_lookupTcb _ _ _ hL
+    refine ⟨fun x hx => endpointReplyOnCore_ok_target_ready _ _ _ _ _ hInv hOk hx, ?_,
+      notIdle_of_blocked hD hT (by rw [hS]; exact fun h => by cases h)⟩
+    rintro rfl
+    obtain ⟨tcb, hT0, hRun, -⟩ := hD.runnable hCur
+    rw [hT] at hT0
+    cases hT0
+    rw [hS] at hRun
+    cases hRun
+  have hE := endpointReplyOnCore_runQueueStage tid prevCaller m c st
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+  have hC1 : (endpointReplyOnCore tid prevCaller m c st).1.scheduler.currentOnCore c = some tid :=
+    (endpointReplyOnCore_currentOnCore tid prevCaller m c st c).trans hCur
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt tid prevCaller m c st hInv
+  have hEB := endpointReplyOnCore_endpoint_backward tid prevCaller m c st hInv
+  have hCB := endpointReplyOnCore_currentOnCore tid prevCaller m c st
+  have hQ1 : ∀ sgi?, (endpointReplyOnCore tid prevCaller m c st).2 = .ok sgi? →
+      queueHeadBlockedConsistent (endpointReplyOnCore tid prevCaller m c st).1 := fun _ hOk =>
+    endpointReplyOnCore_preserves_queueHeadBlockedConsistent tid prevCaller m c st hInv hQ hOk
+  generalize endpointReplyOnCore tid prevCaller m c st = p
+    at hE hC1 hInv1 hEB hCB hQ1 hPrev hR1 hPop1 hTail
+  obtain ⟨st1, r⟩ := p
+  dsimp only at hE hC1 hInv1 hEB hCB hQ1 hPrev hR1 hPop1 hTail
+  subst hR1
+  obtain ⟨hRdy1, hNe, hNIp⟩ := hPrev _ rfl
+  have hH1 := (endpointHeadsWakeable_of hD hQ).of_frame hEB hCB (hQ1 _ rfl)
+  have hPop := hPop1
+  have hX := receiveTransferCaps_eq_done req none target popped
+  generalize receiveTransferCapsDone req none target popped = Dn at hX hTail
+  obtain ⟨xs, st1p⟩ := Dn
+  dsimp only at hTail
+  have hPopS := (replyRecvPopDonation_runQueueStage hPop).trans (receiveTransferCaps_runQueueStage hX)
+  have hIq : popped.objects.invExt :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    ((replyRecvPopDonation_runQueueStage hPop).1.links hI1 hR1).1
+  have hPE : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st1p.objects[oid]? = some (.endpoint ep) →
+      st1.objects[oid]? = some (.endpoint ep) := by
+    obtain ⟨hQE, -, -⟩ := replyRecvPopDonation_frame hInv1 hPop
+    obtain ⟨hXE, -, -⟩ := receiveTransferCaps_ipcFrame hIq hX
+    exact fun oid ep hE => hQE oid ep (hXE oid ep hE)
+  have hPC : ∀ c, st1p.scheduler.currentOnCore c = st1.scheduler.currentOnCore c := by
+    obtain ⟨-, hQC, -⟩ := replyRecvPopDonation_frame hInv1 hPop
+    intro c
+    rw [← hQC c, receiveTransferCaps_scheduler_eq hX]
+  have hPT : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st1p.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st1.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+    obtain ⟨-, -, hQT⟩ := replyRecvPopDonation_frame hInv1 hPop
+    obtain ⟨-, -, hXT⟩ := receiveTransferCaps_ipcFrame hIq hX
+    intro y tcb' hT
+    obtain ⟨t1, h1, e1⟩ := hXT y tcb' hT
+    obtain ⟨t0, h0, e0⟩ := hQT y t1 h1
+    exact ⟨t0, h0, e0.trans e1⟩
+  have hA1 : st1.activeAt tid :=
+    activeKeptStage.of_stage hE hInv hRf tid (hD.runnable hCur).activeAt
+  have hAp : st1p.activeAt tid :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
+  have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
+      (hQ1 _ rfl))
+  obtain ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+  obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
+  have AS := replyRecvAnswerCaller_runQueueEntryStage answer st1p prevCaller xs.capInfo
+    ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1) hNIp
+  obtain ⟨hHa, hCura, hActa⟩ := replyRecvAnswerCaller_receiveEntryFacts answer xs.capInfo hIp hHp
+    ((hPC c).trans hC1) hAp hNe
+  obtain ⟨hIa, hRa⟩ := AS.1.links hIp hRp
+  generalize replyRecvAnswerCaller answer st1p prevCaller xs.capInfo = st1a
+    at AS hHa hCura hActa hIa hRa hTail
+  rcases hTail with ⟨-, -, hS⟩ | ⟨epId, -, hTail⟩
+  · -- the receive's endpoint, read on the answered state, refused
+    rw [hS]
+    exact ((hE.trans hPopS).entry.trans AS).trans (replyRecvNothingReceived_runQueueStage _ _ _ _).entry
+  have RR := receiveReturnSchedContext_runQueueStage true st1a tid
+  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true hIa hHa hCura hActa
+  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
+    (receiveReturnSchedContext true st1a tid) hHR hCurR hNI hActR
+  have hAll := (((hE.trans hPopS).entry.trans AS).trans RR.entry).trans hR
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c
+    (receiveReturnSchedContext true st1a tid) = q at hAll hTail
+  rcases hTail with hS | ⟨st2, next, summary, sgi', hV, hS⟩
+  · rw [hS]; exact hAll.trans (replyRecvNothingReceived_runQueueStage _ _ _ _).entry
+  subst hV
+  rcases hS with hS | ⟨sc, holder, -, hS⟩
+  · rw [hS]; exact hAll.trans (replyRecvNothingReceived_runQueueStage _ _ _ _).entry
+  rw [hS]
+  exact hAll.trans ((replyRecvHolderDeschedule_runQueueStage tid holder st2).trans
+    (replyRecvNothingReceived_runQueueStage _ _ _ _)).entry
+
+/-- **The caller's answer keeps the executing core's current thread** where the
+answered caller is another thread: the staged frame and the restart write a TCB
+only, and the abandon deschedules the caller alone. -/
+theorem replyRecvAnswerCaller_currentOnCore (answer : Option Architecture.FaultReplyOutcome)
+    {S : SystemState} {p tid : SeLe4n.ThreadId} (capInfo : Nat) {c : CoreId}
+    (hCur : S.scheduler.currentOnCore c = some tid) (hNe : p ≠ tid) :
+    (replyRecvAnswerCaller answer S p capInfo).scheduler.currentOnCore c = some tid := by
+  cases answer with
+  | none =>
+    show (Architecture.stageDeliveredMessage S p capInfo).scheduler.currentOnCore c = some tid
+    rw [Architecture.stageDeliveredMessage_scheduler_eq]; exact hCur
+  | some o =>
+    cases o with
+    | restart frame =>
+      show (S.updateTcb p _).scheduler.currentOnCore c = some tid
+      rw [SystemState.updateTcb_scheduler]; exact hCur
+    | abandon =>
+      show (faultAbandonOnCore S p (faultAbandonCore S p)).scheduler.currentOnCore c = some tid
+      unfold faultAbandonOnCore
+      rw [SystemState.updateTcb_scheduler]
+      exact removeRunnableOnCore_currentOnCore_fwd S p _ c (Ne.symm hNe) hCur
+
+/-- **The nothing-received outcome keeps the executing core's current thread**,
+whatever holder it deschedules: a holder current there keeps the slot
+(`descheduleKeepingCurrentOnCore`), any other is removed where it is placed,
+and the priority-inheritance walk moves no current slot. -/
+theorem replyRecvNothingReceived_currentOnCore (rs : SeLe4n.ThreadId) (c : CoreId)
+    (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) {S : SystemState}
+    {tid : SeLe4n.ThreadId} (h : S.scheduler.currentOnCore c = some tid) :
+    (replyRecvNothingReceived rs c ret? S).scheduler.currentOnCore c = some tid := by
+  unfold replyRecvNothingReceived
+  cases ret? with
+  | none => rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore]; exact h
+  | some p =>
+    obtain ⟨_, holder⟩ := p
+    dsimp only
+    rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore]
+    by_cases hH : S.scheduler.currentOnCore c = some holder
+    · rw [descheduleKeepingCurrentOnCore_of_current S holder c hH]; exact h
+    · rw [descheduleKeepingCurrentOnCore_of_not_current S holder c hH]
+      unfold descheduleAtPlacement descheduleAt
+      split
+      · exact removeRunnableOnCore_currentOnCore_fwd S holder _ c (fun he => hH (he ▸ h)) h
+      · exact h
+
+/-- **The nothing-received state after a reply keeps the endpoint heads blocked
+and the executing core's current thread** (WS-SX SX36.1): the run-queue reading
+of `replyRecvNothingReceivedAfterReply_facts`. -/
+theorem replyRecvNothingReceivedAfterReply_entryFacts
+    {answer : Option Architecture.FaultReplyOutcome} {t prev rs : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {rid : SeLe4n.ReplyId}
+    {st st1 popped st1p : SystemState} {sgi : Option (CoreId × Concurrency.SgiKind)}
+    {ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {xs : CapTransferSummary}
+    (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) (hD : st.currentDequeuedUnique)
+    (hCur : st.scheduler.currentOnCore c = some t)
+    (hR : endpointReplyOnCore t prev msg c st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation rid prev st1 = .ok (ret?, popped))
+    (hX : replyRecvReplyTransfer answer st t prev grant popped = .ok (xs, st1p)) :
+    queueHeadBlockedConsistent
+        (replyRecvNothingReceived rs c ret? (replyRecvAnswerCaller answer st1p prev xs.capInfo)) ∧
+      (replyRecvNothingReceived rs c ret?
+        (replyRecvAnswerCaller answer st1p prev xs.capInfo)).scheduler.currentOnCore c = some t := by
+  obtain ⟨tcb0, hT0, hRun, -⟩ := hD.runnable hCur
+  have hNe : prev ≠ t := by
+    obtain ⟨-, tcb', ep, ex, -, hL, hS', -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _
+      (show (endpointReplyOnCore t prev msg c st).2 = .ok sgi by rw [hR])
+    have hT := getTcb?_of_lookupTcb _ _ _ hL
+    rintro rfl
+    rw [hT] at hT0
+    cases hT0
+    rw [hS'] at hRun
+    cases hRun
+  have hQ1 := endpointReplyOnCore_preserves_queueHeadBlockedConsistent t prev msg c st hInv hQ
+    (sgi? := sgi) (by rw [hR])
+  have hI1 := endpointReplyOnCore_preserves_objects_invExt t prev msg c st hInv
+  have hC1 := (endpointReplyOnCore_currentOnCore t prev msg c st c).trans hCur
+  rw [hR] at hI1 hC1 hQ1
+  have hI2 := replyRecvPopDonation_preserves_objects_invExt rid prev st1 popped ret? hI1 hPop
+  have hC2 := ((replyRecvPopDonation_frame hI1 hPop).2.1 c).trans hC1
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have hIp := receiveTransferCaps_objects_invExt hI2 hX
+  have hCp : st1p.scheduler.currentOnCore c = some t := by
+    rw [receiveTransferCaps_scheduler_eq hX]; exact hC2
+  have hIa := replyRecvAnswerCaller_preserves_objects_invExt answer st1p prev xs.capInfo hIp
+  obtain ⟨hPE, -, hPT⟩ := replyRecvPopDonation_frame hI1 hPop
+  obtain ⟨hXE, -, hXT⟩ := receiveTransferCaps_ipcFrame hI2 hX
+  obtain ⟨hE, hT⟩ := replyRecvAnswerCaller_ipcBackward answer st1p prev xs.capInfo hIp
+  have B := ((show EndpointsAndIpcStatesBack st1 popped from ⟨hPE, hPT⟩).trans
+    (show EndpointsAndIpcStatesBack popped st1p from ⟨hXE, hXT⟩)).trans
+    ((show EndpointsAndIpcStatesBack st1p _ from ⟨hE, hT⟩).trans
+      (replyRecvNothingReceived_endpointsAndIpcStatesBack rs c ret? _ hIa))
+  exact ⟨B.queueHeadBlocked hQ1, replyRecvNothingReceived_currentOnCore rs c ret?
+    (replyRecvAnswerCaller_currentOnCore answer xs.capInfo hCp hNe)⟩
+
+/-- **The holder-only deschedule keeps core `c`'s current thread** (WS-SX
+SX36.2): the holder current there stays, and another holder's deschedule does
+not touch the slot. -/
+theorem descheduleKeepingCurrentOnCore_currentOnCore_kept {S : SystemState}
+    {holder t : SeLe4n.ThreadId} {c : CoreId} (h : S.scheduler.currentOnCore c = some t) :
+    (descheduleKeepingCurrentOnCore S holder c).scheduler.currentOnCore c = some t := by
+  by_cases hH : S.scheduler.currentOnCore c = some holder
+  · rw [descheduleKeepingCurrentOnCore_of_current S holder c hH]; exact h
+  · rw [descheduleKeepingCurrentOnCore_of_not_current S holder c hH]
+    unfold descheduleAtPlacement descheduleAt
+    split
+    · exact removeRunnableOnCore_currentOnCore_fwd S holder _ c (fun he => hH (he ▸ h)) h
+    · exact h
+
+/-- **The reply's return, keeping the current slot, keeps core `c`'s current
+thread** (WS-SX SX36.2): the pop, the return and the settle write no current
+slot, and the holder's deschedule is the holder-only one at `c`. -/
+theorem applyReplyDonationOnCore_keep_currentOnCore {st st' : SystemState}
+    {rid : SeLe4n.ReplyId} {targetV : SeLe4n.ValidThreadId} {ownerHome c : CoreId}
+    {t : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid targetV ownerHome true c = .ok st')
+    (hCur : st.scheduler.currentOnCore c = some t) :
+    st'.scheduler.currentOnCore c = some t := by
+  unfold applyReplyDonationOnCore at h
+  dsimp only at h
+  split at h
+  · exact ((popUnheldReplyHead_frame hInv h).2.1 c).trans hCur
+  repeat' (first | split at h | dsimp only at h)
+  all_goals first
+    | (cases h; done)
+    | exact ((keepDonatedSchedContextResolved_frame hInv h).2.1 c).trans hCur
+    | skip
+  all_goals
+    rename_i st1 hRet
+    cases h
+    rw [descheduleReturnedHolder_true]
+    refine descheduleKeepingCurrentOnCore_currentOnCore_kept ?_
+    rw [SchedContextOps.settleReturnedContext_currentOnCore]
+    refine Eq.trans ?_ hCur
+    exact returnDonatedSchedContextResolved_lift (P := fun s =>
+      s.scheduler.currentOnCore c = st.scheduler.currentOnCore c) hRet
+      (fun n s hS => by
+        show s.scheduler.currentOnCore c = _
+        rw [returnDonatedSchedContext_scheduler_eq st s _ _ _ n hS]; rfl)
+
+/-- **The cross-core reply, keeping the current slot, keeps core `c`'s current
+thread** (WS-SX SX36.2): the reply leg and the chain walk write no current slot,
+and the return keeps it. -/
+theorem endpointReplyCrossCoreDispatch_keep_currentOnCore {replier target t : SeLe4n.ThreadId}
+    {msg : IpcMessage} {c : CoreId} {st st' : SystemState} {x : Option (CoreId × SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : endpointReplyCrossCoreDispatch replier target msg c st true = (st', .ok x))
+    (hCur : st.scheduler.currentOnCore c = some t) :
+    st'.scheduler.currentOnCore c = some t := by
+  have hC1 := endpointReplyOnCore_currentOnCore replier target msg c st c
+  have hI1 := endpointReplyOnCore_preserves_objects_invExt replier target msg c st hInv
+  unfold endpointReplyCrossCoreDispatch at h
+  generalize endpointReplyOnCore replier target msg c st = p at h hC1 hI1
+  obtain ⟨st1, r⟩ := p
+  dsimp only at h hC1 hI1
+  have hC := hC1.trans hCur
+  cases r with
+  | error e => cases h
+  | ok sgi =>
+    dsimp only at h
+    repeat' (first | split at h | dsimp only at h)
+    all_goals first
+      | (cases h; done)
+      | (cases h; exact hC)
+      | (cases h; rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore]; exact hC)
+      | (rename_i hRet; cases h; rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore]
+         exact applyReplyDonationOnCore_keep_currentOnCore hI1 hRet hC)
+      | (rename_i hRet; cases h; exact applyReplyDonationOnCore_keep_currentOnCore hI1 hRet hC)
+
+/-- **The `.reply` arm's transition, keeping the current slot, keeps core `c`'s
+current thread** (WS-SX SX36.2), where the answered caller is not that thread:
+the reply, its capability transfer and the caller's answer write no other
+current slot. -/
+theorem replyTransferOnCoreChecked_keep_currentOnCore {ctx : LabelingContext}
+    {replier callerTid t : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st true = .ok ((), st'))
+    (hCur : st.scheduler.currentOnCore c = some t) (hNe : callerTid ≠ t) :
+    st'.scheduler.currentOnCore c = some t := by
+  unfold replyTransferOnCoreChecked at h
+  split at h
+  · split at h
+    · rename_i st1 x hF
+      cases h
+      unfold faultReplyOnCore at hF
+      split at hF
+      · cases hF
+      split at hF
+      · cases hF
+      dsimp only at hF
+      split at hF
+      · cases hF
+      rename_i st2 sgi hD
+      cases hF
+      exact replyRecvAnswerCaller_currentOnCore (some _) 0
+        (endpointReplyCrossCoreDispatch_keep_currentOnCore hInv hD hCur) hNe
+    · cases h
+  · split at h
+    · rename_i st1 x hD
+      split at h
+      · rename_i summary st2 hX
+        cases h
+        unfold endpointReplyCrossCoreDispatchChecked at hD
+        split at hD
+        · have hC := endpointReplyCrossCoreDispatch_keep_currentOnCore hInv hD hCur
+          unfold replyTransferCaps at hX
+          exact replyRecvAnswerCaller_currentOnCore none _
+            (by rw [receiveTransferCaps_scheduler_eq hX]; exact hC) hNe
+        · cases hD
+      · cases h
+    · cases h
+
 /-- **The ABI dispatch keeps the agreement**: the argument spill, then the
 checked entry, a capability-fault delivery, or a refusal record. -/
 theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
@@ -626,16 +962,40 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
-        hEq | ⟨_, hd, -, -, hEq⟩ | hA
+        hEq | ⟨_, hd, -, -, hEq⟩ | hA | hB
       · rw [hEq]; exact (RunQueueStage.refl _).entry
       · rw [hEq]; exact cancelReplyHolder_runQueueEntryStage _ hd e
-      · obtain ⟨t, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
+      · obtain ⟨t, _, _, _, _, _, _, _, _, _, hCt, -, -, hEq⟩ := hA.stopped
         rw [hCur1] at hCt
         cases hCt
         rw [hEq]
+        refine replyRecvEntryRefusalTaint_induct (fun x => SystemState.RunQueueEntryStage _ x)
+          (fun _ _ x hx => SystemState.RunQueueEntryStage.trans hx
+            (RunQueueStage.of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+              applySyscallTaint_invExt (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler])).entry) ?_
         exact replyRecvTransferStoppedState_runQueueEntryStage E1.objInv E1.refined E1.dequeued
           E1.queueHeads hCur1 hNI
-    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
+      · -- WS-SX SX36.1: the after-reply stop is a stage
+        obtain ⟨t, -, decoded', gate, rid, prev, badge, grant, -, hCt, -, -, -, -, hEq⟩ := hB
+        rw [hCur1] at hCt
+        cases hCt
+        rw [hEq]
+        refine replyRecvAfterReplyRefusalTaint_induct (fun x => SystemState.RunQueueEntryStage _ x)
+          (fun _ _ x hx => SystemState.RunQueueEntryStage.trans hx
+            (RunQueueStage.of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _)
+              applySyscallTaint_invExt (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+              (by rw [applySyscallTaint_scheduler])).entry) ?_
+        rcases replyRecvAnsweringThenR_stoppedState_cases ctx (replyRecvReceiveEndpoint ctx gate tid)
+            decoded' tid e rid prev badge grant _ with h0 | ⟨st1, hR, h1⟩ | h2
+        · rw [h0]; exact (RunQueueStage.refl _).entry
+        · rw [h1]; exact replyTransferOnCoreChecked_runQueueEntryStage E1.objInv E1.dequeued hR
+        · rw [h2]
+          exact replyRecvTransferThenStoppedState_runQueueEntryStage E1.objInv E1.refined
+            E1.dequeued E1.queueHeads hCur1 hNI
+    have hFF : ∀ f, Platform.FFI.syscallCapFaultAt ctx SeLe4n.arm64DefaultLayout
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
             (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke =
@@ -647,10 +1007,36 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
           = some tid := by
       intro f hF
       rcases cancelReceiveBusyReply_cases_of_fault E1.objInv hCur1 hE hF with
-        hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
-      · exact ⟨E1.queueHeads, hCur1⟩
-      · exact ⟨cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
+        hEq | ⟨_, hd, -, -, hEq⟩ | hB
+      · rw [hEq]; exact ⟨E1.queueHeads, hCur1⟩
+      · rw [hEq]
+        exact ⟨cancelReplyHolder_queueHeadBlockedConsistent _ hd e E1.objInv E1.queueHeadCancelFacts,
           by rw [cancelReplyHolder_currentOnCore]; exact hCur1⟩
+      · -- WS-SX SX36.1: the after-reply fault fires on the entry state, on the
+        -- state the signal arm's reply left, or on the nothing-received state
+        rcases hB.fault_stop E1.objInv hCur1 hE hF with ⟨s0, hTS, hS | ⟨prev, mi, regs, msg, grant,
+            st1, hR, hS⟩ | ⟨rid, prev, label, msg, grant, st1, popped, st1p, sgi, ret?, xs, hR, hPop,
+            hX, hS⟩⟩ <;>
+          refine hTS (fun x => queueHeadBlockedConsistent x ∧ x.scheduler.currentOnCore e = some tid)
+            (fun _ _ x hx => ⟨queueHeadBlockedConsistent_of_readViewAgreement
+              (ipcReadViewAgreement.of_objectsAgreeOffTaint
+                (applySyscallTaint_objectsAgreeOffTaint _ _ _)) hx.1,
+              by rw [applySyscallTaint_scheduler]; exact hx.2⟩) ?_ <;>
+          rw [hS]
+        · exact ⟨E1.queueHeads, hCur1⟩
+        · obtain ⟨tcb0, hT0, hRun, -⟩ := E1.dequeued.runnable hCur1
+          refine ⟨(replyTransferOnCoreChecked_receiveLegFacts E1.objInv E1.queueHeads
+            (fun x hx => by rw [hT0] at hx; cases hx; exact hRun) hR).1, ?_⟩
+          -- The signal arm's reply keeps the executing core's current thread: the
+          -- answered caller waits for its reply, so it is not that ready thread.
+          have hNe : prev ≠ tid := by
+            rintro rfl
+            have hA := replyRecvCallerAwaitsReply_of_replyTransferOnCoreChecked_ok hR
+            unfold replyRecvCallerAwaitsReply lookupTcb at hA
+            cases hRes : prev.isReserved <;> simp [hRes, hT0, hRun] at hA
+          exact replyTransferOnCoreChecked_keep_currentOnCore E1.objInv hR hCur1 hNe
+        · exact replyRecvNothingReceivedAfterReply_entryFacts E1.objInv E1.queueHeads E1.dequeued
+            hCur1 hR hPop hX
     obtain ⟨hIR, hRR⟩ := hS.1.links E1.objInv E1.refined
     have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
     generalize cancelReceiveBusyReply ctx e
@@ -734,7 +1120,8 @@ theorem stageCallerReturnFor_runQueueStage (caller? : Option SeLe4n.ThreadId)
   | resumes => exact RunQueueStage.refl _
 
 /-- **The syscall step keeps the agreement**: the ABI dispatch, the caller's
-return staging, the local scheduling point, the residency settlement and the
+return staging, the drop of a caller whose lent context went back, the local
+scheduling point, the residency settlement and the
 ledger drains. -/
 theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
@@ -747,7 +1134,10 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
     x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
-    (((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
+    ((((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
+    (dropReturnedContextCaller_runQueueStage
+      (contextReturnableAtEntry (syscallNumberIsReplyRecv syscallId) st (st.scheduler.currentOnCore e))
+      (st.scheduler.currentOnCore e) _ e).entry).trans
     (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
     (settleThenActivateOnCore_runQueueEntryStage _ e)).trans
     (clearLedgers_runQueueStage' _).entry).toOn _)
