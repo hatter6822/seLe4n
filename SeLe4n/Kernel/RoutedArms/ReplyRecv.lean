@@ -33,8 +33,10 @@ open SeLe4n.Model
 
 set_option maxHeartbeats 400000 in
 /-- **The reply-receive arm**: `replyRecvOperandCheckedKW` on the operand and
-the reply-receive's arm and taint step (`replyRecvOperandArmThenTaintR`) over
-the caller's message registers, its results reported; a refusal of the receive
+the reply-receive's arm and taint step in continuation form
+(`replyRecvRoutedArmK`, `replyRecvOperandArmThenTaintR`'s) over the caller's
+message registers, its results reported, every refusal of the arm told apart
+in the one decoder (`replyRecvRoutedRefusal`); a refusal of the receive
 capability that writes nothing runs the after-reply route where the reply
 answers (`replyRecvAfterReplyRoutedArm`).  The arm inlines the reply-receive's
 whole checked transition, whose compilation takes more than the default
@@ -45,8 +47,10 @@ heartbeats. -/
   match st.getObject? tid.toObjId with
   | some (.tcb tcb) =>
     replyRecvOperandCheckedKW ctx (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
-      (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length
-        extraCaps label tid executingCore (syscallRequiredRight .replyRecv))
+      (fun c s noCap => replyRecvRoutedArmK ctx executingCore tid capWord tcb.registerContext
+        false length extraCaps label
+        (fun cap => endpointReplyRecvCheckedArmR ctx SeLe4n.arm64DefaultLayout
+          tcb.registerContext length extraCaps label tid executingCore cap) c s noCap)
       st entryReportGeneral (entryReportPushOk 1)
       (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
         (entryReportPushErrorW 1)
@@ -96,10 +100,17 @@ theorem replyRecvRoutedArm_eq (ctx : LabelingContext) (executingCore : Concurren
           (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout tcb.registerContext)
           (SeLe4n.CPtr.ofWord
             (SeLe4n.readRegWord tcb.registerContext SeLe4n.arm64DefaultLayout.replyReg))
-          length extraCaps label) tid executingCore 0 _ st _ _ _ _ _ _ _ tcb rfl hT rfl
+          length extraCaps label) tid executingCore 0
+        (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext
+          length extraCaps label tid executingCore (syscallRequiredRight .replyRecv))
+        _ st _ _ _ _ _ _ _ tcb ?hK rfl hT rfl
         (fun cap hRes hG => replyRecvOperandArmThenTaintR_gateRefused ctx _ _ _ _ _ _ _ cap st
           hRes hG)
         (replyRecvAnswersOn_eq ctx _ tid tcb st _ hT rfl)).trans ?_
+      case hK =>
+        funext c s noCap
+        exact replyRecvRoutedArmK_eq ctx executingCore tid capWord tcb.registerContext length extraCaps
+          label c s noCap
       have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
         (threadId_isEqSome_iff _ _).2 hCur
       rw [hIs, dispatchOperandCheckedKW_reportReply]

@@ -1436,7 +1436,7 @@ theorem replyRecvEntryRefusalTaint_eq_step (ctx : LabelingContext) (tid : SeLe4n
         cases replyRecvReplyAnswers ctx st tid c with
         | false => rfl
         | true =>
-          simp only [↓reduceIte]
+          simp -iota only [↓reduceIte]
           rw [replyRecvRefusalTaint_eq_step]
           cases c with
           | mk cv =>
@@ -1445,8 +1445,8 @@ theorem replyRecvEntryRefusalTaint_eq_step (ctx : LabelingContext) (tid : SeLe4n
           | object epId =>
             dsimp only
             have hSc : receiveTaintSourceCode st cap = receiveLegSourceCode st epId := by
-              simp only [receiveTaintSourceCode, receiveLegSourceCode, hTg]
-              cases st.getEndpoint? epId <;> rfl
+              unfold receiveTaintSourceCode receiveLegSourceCode
+              rw [hTg] <;> rfl
             rw [hSc, replyRecvReceiveLegRefusalTaint_eq_step]
           | _ =>
             dsimp only
@@ -1460,18 +1460,28 @@ theorem replyRecvEntryRefusalTaint_self (ctx : LabelingContext) (tid : SeLe4n.Th
     (xc : Nat) (replyAddr : SeLe4n.CPtr) (cap : Capability) (st : SystemState) :
     replyRecvEntryRefusalTaint ctx tid xc replyAddr cap st st = st := by
   unfold replyRecvEntryRefusalTaint
-  split
-  · rfl
-  · split
-    · rename_i c _ _ _
-      split
-      · rename_i hA
-        simp only [replyRecvReplyAnswers, Bool.and_eq_true] at hA
-        cases hTg : cap.target <;> dsimp only <;>
-          (try rw [replyRecvReceiveLegRefusalTaint_self]) <;>
-          unfold replyRecvRefusalTaint <;> rw [if_pos hA.2]
-      · rfl
-    · rfl
+  cases callerExtraCapsFault? st tid xc with
+  | some _ => rfl
+  | none =>
+    dsimp only
+    cases resolveReplyRecvReplyR st tid replyAddr with
+    | error e => rfl
+    | ok r =>
+      cases r with
+      | none => rfl
+      | some q =>
+        obtain ⟨rid, c, b, g⟩ := q
+        dsimp only
+        cases hA : replyRecvReplyAnswers ctx st tid c with
+        | false => rfl
+        | true =>
+          have hW : replyRecvCallerAwaitsReply st c = true := by
+            unfold replyRecvReplyAnswers at hA
+            exact (Bool.and_eq_true_iff.1 hA).2
+          rw [if_pos rfl]
+          cases hTg : cap.target <;> dsimp only <;>
+            (try rw [replyRecvReceiveLegRefusalTaint_self]) <;>
+            unfold replyRecvRefusalTaint <;> rw [if_pos hW]
 
 /-- The compiled refusal step on the state handed in is that state. -/
 theorem replyRecvEntryRefusalStep_self (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
@@ -1535,7 +1545,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
       replace hType : syscallTargetAccepted .replyRecv st cap = true := by simpa using hType
       by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
       · simp -iota only [hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte,
-          withTaintWordsAt_eq, TaintWords.mk_fields]
+          withTaintWordsAt_eq, TaintWords.mk_fields, replyRecvEntryRefusalStepW_fields]
         rw [endpointReplyRecvCheckedArmR_eq ctx decoded tid executingCore
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
           cap layout rf st hRR hRegs hReply rfl (by unfold callerCspaceRoot; rw [hTcb])]
@@ -1621,7 +1631,7 @@ theorem replyRecvOperandArmThenTaintR_refuses_unchanged (ctx : LabelingContext)
   rw [if_neg hIdle]
   cases hA : syscallTargetAccepted .replyRecv st cap
   · exact ⟨_, rfl⟩
-  simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  simp -iota only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
   cases hRt : cap.hasRight (syscallRequiredRight .replyRecv)
   · exact ⟨_, rfl⟩
   have hFl : ∀ epId, cap.target = .object epId →
@@ -1631,16 +1641,20 @@ theorem replyRecvOperandArmThenTaintR_refuses_unchanged (ctx : LabelingContext)
     · rw [hA] at h; cases h
     · rw [hRt] at h; cases h
     · exact h
-  simp only [↓reduceIte, withTaintWordsAt_eq, TaintWords.mk_fields]
+  simp -iota only [↓reduceIte, withTaintWordsAt_eq, TaintWords.mk_fields,
+    replyRecvEntryRefusalStepW_fields]
   unfold endpointReplyRecvCheckedArmR
   cases hT : cap.target with
   | object epId =>
     dsimp only
     rw [hFl epId hT]
-    simp only [Bool.not_false, ↓reduceIte, replyRecvEntryRefusalStep_self]
+    simp -iota only [Bool.not_false, ↓reduceIte]
+    dsimp only
+    rw [replyRecvEntryRefusalStep_self]
     exact ⟨_, rfl⟩
   | _ =>
-    simp only [replyRecvEntryRefusalStep_self]
+    dsimp only
+    rw [replyRecvEntryRefusalStep_self]
     exact ⟨_, rfl⟩
 
 /-- **Today's reply-receive route refuses wherever the after-reply route runs,
@@ -1688,7 +1702,7 @@ theorem dispatchOperandCheckedR_replyRecv_refuses_of_refusedOnEntry (ctx : Label
       obtain ⟨e, hE⟩ := hE
       rw [lookupSlotK_eq]
       unfold replyRecvReceiveEndpoint syscallResolveCap at hE
-      simp only [replyRecvCallerGate, SyscallGate.lookupSlot_mk] at hE
+      simp -iota only [replyRecvCallerGate, SyscallGate.lookupSlot_mk] at hE
       cases hL : lookupSlot tcb decoded.capAddr st with
       | error f => exact ⟨_, rfl⟩
       | ok ref =>
@@ -2302,7 +2316,8 @@ theorem replyRecvLongOperandArmThenTaintR_eq (ctx : LabelingContext)
       replace hType : syscallTargetAccepted .replyRecv st cap = true := by simpa using hType
       by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
       · simp -iota only [hType, Bool.not_true, Bool.false_eq_true, hRight, ↓reduceIte,
-          withTaintWordsAt_eq, TaintWords.mk_fields]
+          withTaintWordsAt_eq, TaintWords.mk_fields,
+          replyRecvEntryRefusalStepW_fields]
         rw [endpointReplyRecvLongCheckedArmR_eq ctx decoded tid executingCore
           { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr, requiredRight := syscallRequiredRight decoded.syscallId }
           cap rf capAddr st hRR hR hRegs hReply rfl (by unfold callerCspaceRoot; rw [hTcb])

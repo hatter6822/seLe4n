@@ -56,17 +56,21 @@ so nothing is built and the state is not held. -/
       (fun _ _ _ _ _ => true)
 
 /-- **The reply-receive's operand route, its refusals asked whether the reply
-answers first**: `dispatchOperandCheckedKW` on `.replyRecv`, where each refusal
-of the receive capability that writes nothing -- the operand's failed lookup,
-an empty slot, a capability of the wrong type or without its right (the arm's
-refusal on the state it was handed), and an endpoint whose flow gate refuses
-the receive, tested before the arm -- first asks `answers` of the state it was
-handed, and runs `after` on it where the reply answers.  The route that
-commits asks nothing, and every refusal the arm returns past those is handed to
-`kArmErr` untested. -/
+answers first**: `dispatchOperandCheckedKW` on `.replyRecv`, its arm and the
+telling apart of its result in one continuation (`armK`, run once, handed
+whether the gate refused the capability, as `noCapRefusalW` is handed it),
+where each refusal of the receive capability that writes nothing -- the
+operand's failed lookup, an empty slot, a capability of the wrong type or
+without its right (the arm's refusal on the state it was handed), and an
+endpoint whose flow gate refuses the receive, tested before the arm -- first
+asks `answers` of the state it was handed, and runs `after` on it where the
+reply answers.  The route that commits asks nothing, and every refusal the arm
+returns past those is handed to `kArmErr` untested. -/
 @[inline] def replyRecvOperandCheckedKW {β : Type} (ctx : LabelingContext)
     (capAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (xc : Nat) (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
+    (xc : Nat)
+    (armK : Option Capability → SystemState → Bool → β)
+    (st : SystemState)
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
@@ -87,12 +91,9 @@ commits asks nothing, and every refusal the arm returns past those is handed to
             if slotHeldNone c then
               if answers st then after st else onLookup (.invalidCapability 0) st
             else
-              let k := fun noCap => noCapRefusalW noCap kArmOk kArmErr
-                (fun e s => if answers s then after s else onLookup e s) (arm c st)
-              if receiveRefusedAt .replyRecv tid st c then k true
-              else if receiveSlotEndpointRefused ctx tid c then
-                (if answers st then after st else k false)
-              else k false))
+              let refused := receiveRefusedAt .replyRecv tid st c
+              if !refused && receiveSlotEndpointRefused ctx tid c && answers st then after st
+              else armK c st refused))
   | some _ => kPre (.error (.illegalState, st))
   | none => kPre (.error (.objectNotFound, st))
 
@@ -302,13 +303,17 @@ asks there is whether the after-reply route runs; where it does, every path
 reaches such a refusal, and where it does not, every question answers no. -/
 theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (xc : Nat) (arm : Option Capability → RefusalCarrying Unit) (st : SystemState)
+    (xc : Nat) (arm : Option Capability → RefusalCarrying Unit)
+    (armK : Option Capability → SystemState → Bool → β)
+    (st : SystemState)
     (kPre : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kArmOk : SystemState → β)
     (kArmErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
     (onLookup : KernelError → SystemState → β)
     (onLookupAtW : SeLe4n.CPtr → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
     (answers : SystemState → Bool) (after : SystemState → β) (tcb : TCB)
+    (hArmK : armK = fun c s noCap => noCapRefusalW noCap kArmOk kArmErr
+      (fun e s => if answers s then after s else onLookup e s) (arm c s))
     (hSid : decoded.syscallId = .replyRecv)
     (hT : st.getObject? tid.toObjId = some (.tcb tcb)) (hX : xc = 0)
     (hArm : ∀ cap, SeLe4n.Kernel.capTargetsReservedKernelObject cap = false →
@@ -316,7 +321,7 @@ theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
       arm (some cap) st = .error (.invalidCapability 0, st))
     (hAns : answers st =
       (replyRecvAnsweringReply? ctx (replyRecvCallerGate decoded tid tcb) decoded tid st).isSome) :
-    replyRecvOperandCheckedKW ctx decoded.capAddr tid executingCore xc arm st kPre kArmOk kArmErr
+    replyRecvOperandCheckedKW ctx decoded.capAddr tid executingCore xc armK st kPre kArmOk kArmErr
         onLookup onLookupAtW answers after =
       if (replyRecvRefusedOnEntry? ctx decoded tid st).isSome then
         (if (st.scheduler.currentOnCore executingCore).isEqSome tid then after st
@@ -324,7 +329,7 @@ theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
       else
         dispatchOperandCheckedKW .replyRecv decoded.capAddr tid executingCore xc arm st kPre
           kArmOk kArmErr onLookup onLookupAtW := by
-  subst hX
+  subst hX hArmK
   have hSite : ∀ e, replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb) tid st =
       .error e → answers st = (replyRecvRefusedOnEntry? ctx decoded tid st).isSome :=
     fun e hE => by rw [hAns, replyRecvRefusedOnEntry?_isSome_of_refused hT hE]
@@ -358,7 +363,7 @@ theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
         simp only [Bool.false_eq_true, ↓reduceIte] at hE0 ⊢
         rw [receiveRefusedAt_some]
         cases hG : receiveGateRefuses .replyRecv tid st cap
-        · simp only [Bool.false_eq_true, ↓reduceIte]
+        · simp only [Bool.not_false, Bool.true_and, Bool.false_eq_true, ↓reduceIte]
           unfold receiveGateRefuses at hG
           rw [receiveBoundRefuses_replyRecv] at hG
           have hAcc : syscallTargetAccepted .replyRecv st cap = true := by
@@ -372,7 +377,7 @@ theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
           rw [hAcc, hRt] at hE0
           simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hE0
           cases hF : receiveSlotEndpointRefused ctx tid (some cap)
-          · simp only [Bool.false_eq_true, ↓reduceIte]
+          · simp only [Bool.false_and, Bool.false_eq_true, ↓reduceIte]
             unfold receiveSlotEndpointRefused at hF
             dsimp only at hF
             cases hTg : cap.target with
@@ -390,7 +395,7 @@ theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
               rw [replyRecvRefusedOnEntry?_of_ok hT hE0]
               rfl
             | _ => all_goals (rw [hTg] at hF; cases hF)
-          · simp only [↓reduceIte]
+          · simp only [Bool.true_and, ↓reduceIte]
             unfold receiveSlotEndpointRefused at hF
             dsimp only at hF
             have hEr : ∃ e, replyRecvReceiveEndpoint ctx (replyRecvCallerGate decoded tid tcb)
@@ -407,7 +412,7 @@ theorem replyRecvOperandCheckedKW_eq {β : Type} (ctx : LabelingContext)
             obtain ⟨e, hEr⟩ := hEr
             rw [hSite _ hEr]
             all_goals (cases (replyRecvRefusedOnEntry? ctx decoded tid st).isSome <;> rfl)
-        · simp only [↓reduceIte]
+        · simp only [Bool.not_true, Bool.false_and, Bool.false_eq_true, ↓reduceIte]
           rw [hArm cap hRes hG]
           unfold receiveGateRefuses at hG
           rw [receiveBoundRefuses_replyRecv, Bool.or_false] at hG
@@ -488,5 +493,282 @@ written and the reply answers. -/
       tid executingCore st entryReportResolved entryReportLookupFor
       (fun _ => entryReportGeneral (.error (.illegalState, st)))
   | _ => entryReportGeneral (.error (.illegalState, st))
+
+/-- **The reply-receive's operand arm in continuation form**: the slot check,
+gate, checked arm `checked` and taint step of `replyRecvOperandArmThenTaintR`
+(and its long form), a commit handed to `kOk` with its taint step applied, a
+refusal before the arm to `kRefused` as its error and state, and a refusal of
+the arm to `kStep` as its error and state with the words the entry route's
+refusal step reads, captured before the arm
+(`replyRecvOperandArmThenTaintKE_eq`).  No pair is built around a refusal.
+Inlined as written into each routed arm that runs it, so it is no compiled
+function of its own. -/
+@[macro_inline] def replyRecvOperandArmThenTaintKE {β : Type} (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (extraCaps : Nat)
+    (tid : SeLe4n.ThreadId) (requiredRight : AccessRight)
+    (checked : Capability → RefusalCarrying Unit)
+    (operand : Option Capability) (st : SystemState) (kOk : SystemState → β)
+    (kRefused : KernelError → SystemState → β)
+    (kStep : Nat → Nat → Bool → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      UInt64 → UInt64 → Nat → Bool → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      UInt64 → UInt64 → Nat → Bool → KernelError → SystemState → β) : β :=
+  match operand with
+  | none => kRefused (.invalidCapability 0) st
+  | some cap =>
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then kRefused (.invalidCapability 0) st
+      else if !syscallTargetAccepted .replyRecv st cap then kRefused (.invalidCapability 0) st
+      else if cap.hasRight requiredRight then
+        let signalCode := receiveTaintSignalCode st tid cap
+        let sourceCode := receiveTaintSourceCode st cap
+        let callerCode := replyRecvTaintCallerCode st tid layout rf extraCaps
+        let answered := replyRecvAnsweringCallerCode ctx tid
+          (SeLe4n.readRegWord rf layout.replyReg) extraCaps st
+        let awaited := senderAwaitsReceiveOfCode st sourceCode
+        withTaintWordsAt st (notifObjOfCode signalCode) fun n0 n1 n2 n3 n4 n5 n6 n7 nc ns =>
+        withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
+        withTaintWordsAt st tid.toObjId fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
+        match checked cap st with
+        | .error (e, s) =>
+            kStep answered sourceCode awaited b0 b1 b2 b3 b4 b5 b6 b7 bc bs
+              a0 a1 a2 a3 a4 a5 a6 a7 ac as e s
+        | .ok ((), stPost) =>
+            kOk (replyRecvTaintStep signalCode sourceCode callerCode tid
+              ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩
+              ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ stPost)
+      else kRefused (syscallMissingRightError .replyRecv) st
+
+/-- **The continuation-form arm is the reply-receive's arm, its result told
+apart**: a commit to `kOk`, a refusal to `kErr`, with the entry route's
+refusal step applied to the state of a refusal of the checked arm, as
+`replyRecvOperandArmThenTaintR` applies it.  Unconditional. -/
+theorem replyRecvOperandArmThenTaintKE_eq {β : Type} (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (operand : Option Capability) (st : SystemState) (kOk : SystemState → β)
+    (kErr kRefused : KernelError → SystemState → β)
+    (kStep : Nat → Nat → Bool → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      UInt64 → UInt64 → Nat → Bool → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      UInt64 → UInt64 → Nat → Bool → KernelError → SystemState → β)
+    (hR : ∀ e s, kRefused e s = kErr e s)
+    (hS : ∀ n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s,
+      kStep n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s =
+        kErr e (replyRecvEntryRefusalStepW n c w tid b0 b1 b2 b3 b4 b5 b6 b7 bc bs
+          a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) :
+    replyRecvOperandArmThenTaintKE ctx layout rf extraCaps tid requiredRight
+        (fun cap => endpointReplyRecvCheckedArmR ctx layout rf len extraCaps label tid
+          executingCore cap) operand st kOk kRefused kStep =
+      match replyRecvOperandArmThenTaintR ctx layout rf len extraCaps label tid executingCore
+          requiredRight operand st with
+      | .ok ((), s) => kOk s
+      | .error (e, s) => kErr e s := by
+  have hS' : (fun n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s =>
+      kErr e (replyRecvEntryRefusalStepW n c w tid b0 b1 b2 b3 b4 b5 b6 b7 bc bs
+        a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) = kStep := by
+    funext n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s
+    exact (hS n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s).symm
+  have hR' : kErr = kRefused := funext fun e => funext fun s => (hR e s).symm
+  subst hS' hR'
+  unfold replyRecvOperandArmThenTaintKE replyRecvOperandArmThenTaintR
+  cases operand with
+  | none => rfl
+  | some cap =>
+    dsimp only
+    cases SeLe4n.Kernel.capTargetsReservedKernelObject cap
+    · cases syscallTargetAccepted .replyRecv st cap
+      · rfl
+      · cases cap.hasRight requiredRight
+        · rfl
+        · dsimp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte, withTaintWordsAt]
+          cases endpointReplyRecvCheckedArmR ctx layout rf len extraCaps label tid executingCore
+              cap st with
+          | error p => obtain ⟨e, s⟩ := p; rfl
+          | ok p => obtain ⟨⟨⟩, s⟩ := p; rfl
+    · rfl
+
+/-- The long continuation-form arm is the long arm, its result told apart, as
+the short one's (`replyRecvOperandArmThenTaintKE_eq`).  Unconditional. -/
+theorem replyRecvLongOperandArmThenTaintKE_eq {β : Type} (ctx : LabelingContext)
+    (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
+    (operand : Option Capability) (st : SystemState) (kOk : SystemState → β)
+    (kErr kRefused : KernelError → SystemState → β)
+    (kStep : Nat → Nat → Bool → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      UInt64 → UInt64 → Nat → Bool → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      UInt64 → UInt64 → Nat → Bool → KernelError → SystemState → β)
+    (hR : ∀ e s, kRefused e s = kErr e s)
+    (hS : ∀ n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s,
+      kStep n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s =
+        kErr e (replyRecvEntryRefusalStepW n c w tid b0 b1 b2 b3 b4 b5 b6 b7 bc bs
+          a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) :
+    replyRecvOperandArmThenTaintKE ctx SeLe4n.arm64DefaultLayout rf extraCaps tid requiredRight
+        (fun cap => endpointReplyRecvLongCheckedArmR ctx rf len extraCaps label tid
+          executingCore cap) operand st kOk kRefused kStep =
+      match replyRecvLongOperandArmThenTaintR ctx rf len extraCaps label tid executingCore
+          requiredRight operand st with
+      | .ok ((), s) => kOk s
+      | .error (e, s) => kErr e s := by
+  have hS' : (fun n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s =>
+      kErr e (replyRecvEntryRefusalStepW n c w tid b0 b1 b2 b3 b4 b5 b6 b7 bc bs
+        a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) = kStep := by
+    funext n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s
+    exact (hS n c w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s).symm
+  have hR' : kErr = kRefused := funext fun e => funext fun s => (hR e s).symm
+  subst hS' hR'
+  unfold replyRecvOperandArmThenTaintKE replyRecvLongOperandArmThenTaintR
+  cases operand with
+  | none => rfl
+  | some cap =>
+    dsimp only
+    cases SeLe4n.Kernel.capTargetsReservedKernelObject cap
+    · cases syscallTargetAccepted .replyRecv st cap
+      · rfl
+      · cases cap.hasRight requiredRight
+        · rfl
+        · dsimp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte, withTaintWordsAt]
+          cases endpointReplyRecvLongCheckedArmR ctx rf len extraCaps label tid executingCore
+              cap st with
+          | error p => obtain ⟨e, s⟩ := p; rfl
+          | ok p => obtain ⟨⟨⟩, s⟩ := p; rfl
+    · rfl
+
+/-- A routed reply-receive's refusal of its arm reported as words: the reply
+capability's failed lookup at the reply register's address, any other refusal
+under the entry's resolved continuation (`replyLookupRefusalW`). -/
+@[inline] def replyRecvRoutedArmErrW (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) :
+    Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → SystemState :=
+  replyLookupRefusalW true tid (replyRecvReplyAddr rf) (entryReportPushErrorW 1)
+    (entryReportPushLookupAtW (replyRecvReplyAddr rf).word)
+
+/-- A routed reply-receive's refusal of the receive capability with nothing
+written: the after-reply route where the reply answers on the state the
+refusal carries (`replyRecvAfterReplyRoutedArm`, its message words the long
+reply's where `long`), the entry's lookup report otherwise. -/
+@[inline] def replyRecvRoutedLookupRefusal (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat) (e : KernelError)
+    (s : SystemState) : SystemState :=
+  if replyRecvAnswersOn ctx tid (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)
+      extraCaps s then
+    replyRecvAfterReplyRoutedArm ctx executingCore tid capWord
+      (cond long (longReplyRegs s tid rf length)
+        (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf))
+      length extraCaps label s
+  else entryReportLookup e s
+
+/-- **The routed reply-receive's refusal decoder**: every refusal exit of the
+reply-receive's routed arms joins it, with the refusal's error and state as
+two arguments, so no pair is built around a refusal and the refusal is told
+apart once, here (`replyRecvRoutedRefusal_eq`): the entry route's refusal
+step on the state (`replyRecvEntryRefusalStepW`, the identity where
+`answered` is `0`, as for every refusal before the checked arm), then the
+refusal reported as the entry's operand route reports it (`noCapRefusalW`). -/
+@[noinline] def replyRecvRoutedRefusal (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat)
+    (answered sourceCode : Nat) (awaited : Bool)
+    (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool)
+    (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
+    (noCap : Bool) (e : KernelError) (s : SystemState) : SystemState :=
+  noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+    (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps label)
+    (.error (e, replyRecvEntryRefusalStepW answered sourceCode awaited tid
+      b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s))
+
+/-- **The decoder is the operand route's report of the refusal, the refusal
+step applied to its state.**  Unconditional. -/
+theorem replyRecvRoutedRefusal_eq (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat)
+    (answered sourceCode : Nat) (awaited : Bool)
+    (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool)
+    (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
+    (noCap : Bool) (e : KernelError) (s : SystemState) :
+    replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps label
+        answered sourceCode awaited b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as
+        noCap e s =
+      noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+        (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps
+          label)
+        (.error (e, replyRecvEntryRefusalStepW answered sourceCode awaited tid
+          b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) := rfl
+
+/-- The decoder on a refusal before the checked arm, its words `0`, is the
+operand route's report of the refusal on the state it carries. -/
+theorem replyRecvRoutedRefusal_zero (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat)
+    (noCap : Bool) (e : KernelError) (s : SystemState) :
+    replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps label
+        0 0 false 0 0 0 0 0 0 0 0 0 false 0 0 0 0 0 0 0 0 0 false noCap e s =
+      noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+        (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps
+          label) (.error (e, s)) := rfl
+
+/-- **The routed reply-receive's operand arm**: the continuation-form arm
+(`replyRecvOperandArmThenTaintKE`) over the short or long checked arm
+`checked`, a
+commit reported, every refusal handed to the one decoder
+(`replyRecvRoutedRefusal`), a refusal before the checked arm with its words
+`0` (`replyRecvRoutedArmK_eq`, `replyRecvLongRoutedArmK_eq`).  Inlined as
+written into the routed arm. -/
+@[macro_inline] def replyRecvRoutedArmK (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat)
+    (checked : Capability → RefusalCarrying Unit)
+    (c : Option Capability) (s : SystemState) (noCap : Bool) : SystemState :=
+  replyRecvOperandArmThenTaintKE ctx SeLe4n.arm64DefaultLayout rf extraCaps tid
+    (syscallRequiredRight .replyRecv) checked c s (entryReportPushOk 1)
+    (fun e s' => replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps
+      label 0 0 false 0 0 0 0 0 0 0 0 0 false 0 0 0 0 0 0 0 0 0 false noCap e s')
+    (fun n c' w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s' =>
+      replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps label n c' w
+        b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as noCap e s')
+
+/-- **The routed operand arm is the reply-receive's arm, reported**: the
+operand route's report (`noCapRefusalW`) of `replyRecvOperandArmThenTaintR`'s
+result.  Unconditional. -/
+theorem replyRecvRoutedArmK_eq (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (length extraCaps label : Nat)
+    (c : Option Capability) (s : SystemState) (noCap : Bool) :
+    replyRecvRoutedArmK ctx executingCore tid capWord rf false length extraCaps label
+        (fun cap => endpointReplyRecvCheckedArmR ctx SeLe4n.arm64DefaultLayout rf length
+          extraCaps label tid executingCore cap) c s noCap =
+      noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+        (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf false length extraCaps
+          label)
+        (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf length extraCaps label
+          tid executingCore (syscallRequiredRight .replyRecv) c s) := by
+  unfold replyRecvRoutedArmK
+  rw [replyRecvOperandArmThenTaintKE_eq ctx SeLe4n.arm64DefaultLayout rf length extraCaps label
+    tid executingCore _ c s _
+    (fun e s' => noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+      (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf false length extraCaps
+        label) (.error (e, s'))) _ _ (by intros; rfl) (by intros; rfl)]
+  rcases replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf length extraCaps label
+    tid executingCore (syscallRequiredRight .replyRecv) c s with ⟨e, s'⟩ | ⟨⟨⟩, s'⟩ <;> rfl
+
+/-- The long routed operand arm is the long reply-receive's arm, reported.
+Unconditional. -/
+theorem replyRecvLongRoutedArmK_eq (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (length extraCaps label : Nat)
+    (c : Option Capability) (s : SystemState) (noCap : Bool) :
+    replyRecvRoutedArmK ctx executingCore tid capWord rf true length extraCaps label
+        (fun cap => endpointReplyRecvLongCheckedArmR ctx rf length extraCaps label tid
+          executingCore cap) c s noCap =
+      noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+        (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf true length extraCaps
+          label)
+        (replyRecvLongOperandArmThenTaintR ctx rf length extraCaps label tid executingCore
+          (syscallRequiredRight .replyRecv) c s) := by
+  unfold replyRecvRoutedArmK
+  rw [replyRecvLongOperandArmThenTaintKE_eq ctx rf length extraCaps label
+    tid executingCore _ c s _
+    (fun e s' => noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+      (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf true length extraCaps
+        label) (.error (e, s'))) _ _ (by intros; rfl) (by intros; rfl)]
+  rcases replyRecvLongOperandArmThenTaintR ctx rf length extraCaps label
+    tid executingCore (syscallRequiredRight .replyRecv) c s with ⟨e, s'⟩ | ⟨⟨⟩, s'⟩ <;> rfl
 
 end SeLe4n.Kernel

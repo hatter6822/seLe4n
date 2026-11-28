@@ -975,6 +975,26 @@ state as it is where it answers none. -/
     replyRecvRefusalTaintStep (c + 1) ⟨c⟩ tid wT
       (receiveLegRefusalTaintStep sourceCode awaited tid wS s)
 
+/-- **The entry route's refusal step, out of line, on words**
+(`replyRecvEntryRefusalTaintStep`): the words captured before the arm cross as
+scalars, so each refusal site of an arm calls it once, the step compiled once
+rather than at every site, and no record is built
+(`replyRecvEntryRefusalStepW_fields`). -/
+@[noinline] def replyRecvEntryRefusalStepW (answered sourceCode : Nat) (awaited : Bool)
+    (tid : SeLe4n.ThreadId) (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool)
+    (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool) (s : SystemState) : SystemState :=
+  replyRecvEntryRefusalTaintStep answered sourceCode awaited tid
+    ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s
+
+/-- The out-of-line refusal step on a record's fields is the step on the
+records.  Unconditional. -/
+theorem replyRecvEntryRefusalStepW_fields (answered sourceCode : Nat) (awaited : Bool)
+    (tid : SeLe4n.ThreadId) (wT wS : TaintWords) (s : SystemState) :
+    replyRecvEntryRefusalStepW answered sourceCode awaited tid
+        wT.tag0 wT.tag1 wT.tag2 wT.tag3 wT.tag4 wT.tag5 wT.tag6 wT.tag7 wT.count wT.saturated
+        wS.tag0 wS.tag1 wS.tag2 wS.tag3 wS.tag4 wS.tag5 wS.tag6 wS.tag7 wS.count wS.saturated s =
+      replyRecvEntryRefusalTaintStep answered sourceCode awaited tid wT wS s := rfl
+
 /-- WS-ZA ZA4.7: the reply-receive's slot check, gate, arm and taint step on
 the capability its operand resolved to.  A refusal of the arm carries the
 state the arm stopped in, with an answering reply-receive's flow taken through
@@ -1004,8 +1024,8 @@ words captured before the arm (`replyRecvEntryRefusalTaint`,
           match endpointReplyRecvCheckedArmR ctx layout rf len extraCaps label tid executingCore
               cap st with
           | .error (e, s) =>
-              .error (e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid
-                ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s)
+              .error (e, replyRecvEntryRefusalStepW answered sourceCode awaited tid
+                b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s)
           | .ok ((), stPost) =>
               .ok ((), replyRecvTaintStep signalCode sourceCode callerCode tid
                 ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
@@ -1455,8 +1475,8 @@ short one's (`replyRecvEntryRefusalTaint`, `replyRecvLongOperandArmThenTaintR_eq
           match endpointReplyRecvLongCheckedArmR ctx rf len extraCaps label tid executingCore
               cap st with
           | .error (e, s) =>
-              .error (e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid
-                ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ s)
+              .error (e, replyRecvEntryRefusalStepW answered sourceCode awaited tid
+                b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s)
           | .ok ((), stPost) =>
               .ok ((), replyRecvTaintStep signalCode sourceCode callerCode tid
                 ⟨n0, n1, n2, n3, n4, n5, n6, n7, nc, ns⟩ ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩

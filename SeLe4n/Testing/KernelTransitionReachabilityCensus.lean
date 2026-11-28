@@ -1220,6 +1220,12 @@ def nonExecutedTransitionsPlain : List Name :=
   -- continuation form (`replyRecvRoutedK`), proven to hand on what it returns
   -- (`replyRecvRoutedR_eq`).
   , `SeLe4n.Kernel.replyRecvRoutedR
+  -- The reply-receive's operand arms with their taint steps, which the routed
+  -- arms run in continuation form, every refusal told apart in one decoder
+  -- (`replyRecvRoutedArmK_eq`, `replyRecvLongRoutedArmK_eq`,
+  -- `replyRecvRoutedRefusal_eq`).
+  , `SeLe4n.Kernel.replyRecvOperandArmThenTaintR
+  , `SeLe4n.Kernel.replyRecvLongOperandArmThenTaintR
   -- The signal's, wait's, receive's, invocation's, audited call's and
   -- five-word invocations' route specifications and their operand dispatch,
   -- which the compiled entry runs as the routed arms and the operand's

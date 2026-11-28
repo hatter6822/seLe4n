@@ -4936,9 +4936,21 @@ run_check "INVARIANT" rg -n '^theorem replyRecvAfterReplyRunR_eq($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem replyRecvAfterReplyRefusalTaint_induct($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^        \| \.error \(e, s\) =>\n          \.error \(e, replyRecvRefusalTaintStep callerCode prevCaller tid\n            ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩\n            \(receiveLegRefusalTaintStep so aw tid ' SeLe4n/Kernel/API.lean
 # WS-SX SX36: the entry-resolved route's refusal carries the same rule, its
-# answered caller and sender read before the arm.
-run_check "INVARIANT" rg -n -U '^          \| \.error \(e, s\) =>\n              \.error \(e, replyRecvEntryRefusalTaintStep answered sourceCode awaited tid\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# answered caller and sender read before the arm, the step out of line on the
+# captured words and definitionally the step on their records.
+run_check "INVARIANT" rg -n -U '^          \| \.error \(e, s\) =>\n              \.error \(e, replyRecvEntryRefusalStepW answered sourceCode awaited tid\n                b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s\)$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvEntryRefusalStepW [^\n]*\n(    [^\n]*\n)*  replyRecvEntryRefusalTaintStep answered sourceCode awaited tid\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvEntryRefusalTaint_eq_step($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvEquations.lean
+# Compiled, the routed arms run the arm in continuation form, every refusal
+# exit a call of the one decoder with the error and the state apart, and the
+# decoder telling the refusal apart once.
+run_check "INVARIANT" rg -n -U '^        \| \.error \(e, s\) =>\n            kStep answered sourceCode awaited b0 b1 b2 b3 b4 b5 b6 b7 bc bs\n              a0 a1 a2 a3 a4 a5 a6 a7 ac as e s$' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n -U '^    \(fun n c. w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s. =>\n      replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps label n c. w\n' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvRoutedRefusal [^\n]*\n(    [^\n]*\n)*  noCapRefusalW noCap \(entryReportPushOk 1\) \(replyRecvRoutedArmErrW tid rf\)\n' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n -U '^    replyRecvOperandCheckedKW ctx \(SeLe4n\.CPtr\.ofWord capWord\) tid executingCore xc\n      \(fun c s noCap => replyRecvRoutedArmK ctx ' SeLe4n/Kernel/RoutedArms/ReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvRoutedRefusal_eq($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvRoutedArmK_eq($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongRoutedArmK_eq($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/ReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def dispatchCheckedImplArm [^\n]*\n(    [^\n]*\n|  [^\n]*\n)*[^\n]*replyRecvAfterReplyRunR ctx gate decoded tid executingCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvAnsweringThenR_eq_reporting($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecvAfterReply.lean
 run_check "INVARIANT" rg -n -U '^              match replyRecvTransferOnCoreR epId tid rid prevCaller mi\.label msg\n                  replyGrant executingCore st with\n              \| \.ok \(summary, st.\) =>\n                  \.ok \(\(\), Architecture\.stageDeliveredMessage st. tid summary\.capInfo\)\n              \| \.error es => \.error es\)$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

@@ -165,10 +165,13 @@ DECLARED_TAINT_WRITERS = {
     # route's (`replyRecvAfterReplyRunR_eq`).  The entry-resolved route's
     # refusal follows the same rule on the entry state
     # (`replyRecvEntryRefusalTaint`), compiled without the plan
-    # (`replyRecvEntryRefusalTaintStep`, `replyRecvEntryRefusalTaint_eq_step`).
+    # (`replyRecvEntryRefusalTaintStep`, `replyRecvEntryRefusalTaint_eq_step`),
+    # out of line on the captured words (`replyRecvEntryRefusalStepW`,
+    # definitionally that step: `replyRecvEntryRefusalStepW_fields`).
     "SeLe4n.Kernel.checkedArmTaint",
     "SeLe4n.Kernel.replyRecvEntryRefusalTaint",
     "SeLe4n.Kernel.replyRecvEntryRefusalTaintStep",
+    "SeLe4n.Kernel.replyRecvEntryRefusalStepW",
     "SeLe4n.Kernel.replyRecvAfterReplyTaint",
     "SeLe4n.Kernel.replyRecvRefusalTaint",
     "SeLe4n.Kernel.replyRecvReceiveLegRefusalTaint",
@@ -281,6 +284,12 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.callLongOperandArmThenTaintR",
     "SeLe4n.Kernel.replyLongOperandArmThenTaintR",
     "SeLe4n.Kernel.replyRecvLongOperandArmThenTaintR",
+    # WS-SX SX36: the reply-receive's arm in continuation form and the routed
+    # arms' refusal decoder (`replyRecvOperandArmThenTaintKE_eq`,
+    # `replyRecvRoutedRefusal_eq`: the arm's result told apart, the refusal
+    # step applied as the arm applies it).
+    "SeLe4n.Kernel.replyRecvOperandArmThenTaintKE",
+    "SeLe4n.Kernel.replyRecvRoutedRefusal",
     "SeLe4n.Kernel.transferringOperandArmThenTaintR",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only
