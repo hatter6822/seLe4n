@@ -999,8 +999,13 @@ theorem replyRecvEntryRefusalStepW_fields (answered sourceCode : Nat) (awaited :
 the capability its operand resolved to.  A refusal of the arm carries the
 state the arm stopped in, with an answering reply-receive's flow taken through
 words captured before the arm (`replyRecvEntryRefusalTaint`,
-`replyRecvOperandArmThenTaintR_eq`). -/
-@[inline] def replyRecvOperandArmThenTaintR (ctx : LabelingContext)
+`replyRecvOperandArmThenTaintR_eq`).
+
+A specification: the routed arms run it in continuation form
+(`replyRecvOperandArmThenTaintKE`, proven equal by
+`replyRecvOperandArmThenTaintKE_eq`), so no compiled path calls it and no code
+is generated for it, as for `dispatchReplyRecvCheckedR`. -/
+noncomputable def replyRecvOperandArmThenTaintR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
@@ -1450,8 +1455,12 @@ replier's overflow words into the caller's buffer
 /-- The long reply-receive's slot check, gate, arm and taint step on the
 capability its operand resolved to (`endpointReplyRecvLongCheckedArmR`), its
 taint the short reply-receive's (`replyRecvTaintStep`), and its refusals the
-short one's (`replyRecvEntryRefusalTaint`, `replyRecvLongOperandArmThenTaintR_eq`). -/
-@[inline] def replyRecvLongOperandArmThenTaintR (ctx : LabelingContext)
+short one's (`replyRecvEntryRefusalTaint`, `replyRecvLongOperandArmThenTaintR_eq`).
+
+A specification, as the short one is: the routed long arm runs it in
+continuation form (`replyRecvLongOperandArmThenTaintKE_eq`), so no code is
+generated for it. -/
+noncomputable def replyRecvLongOperandArmThenTaintR (ctx : LabelingContext)
     (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (operand : Option Capability) : RefusalCarrying Unit :=

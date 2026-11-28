@@ -655,24 +655,62 @@ reply's where `long`), the entry's lookup report otherwise. -/
       length extraCaps label s
   else entryReportLookup e s
 
-/-- **The routed reply-receive's refusal decoder**: every refusal exit of the
-reply-receive's routed arms joins it, with the refusal's error and state as
-two arguments, so no pair is built around a refusal and the refusal is told
-apart once, here (`replyRecvRoutedRefusal_eq`): the entry route's refusal
+/-- **The routed reply-receive's refusal decoder, on words**: a refusal of
+the reply-receive's routed arms, its error as its discriminant `d` and payload
+words (as `noCapRefusalW` hands them to its error continuation), reported as
+the entry's operand route reports it (`replyRecvRoutedArmErrW`).  Out of line,
+and nothing it takes is a cell, so no exit builds a `KernelError`. -/
+@[noinline] def replyRecvRoutedRefusalW (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile)
+    (d : Nat) (w0 w1 w2 w3 w4 : UInt64) (s : SystemState) : SystemState :=
+  replyRecvRoutedArmErrW tid rf d w0 w1 w2 w3 w4 s
+
+/-- The routed reply-receive's refusal of the operand's empty slot
+(`noCapRefusalW`'s lookup continuation, its error the closed
+`.invalidCapability 0`), out of line. -/
+@[noinline] def replyRecvRoutedRefusalL (ctx : LabelingContext)
+    (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
+    (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat) (e : KernelError)
+    (s : SystemState) : SystemState :=
+  replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps label e s
+
+/-- **The routed reply-receive's refusal**: the refusal told apart first, each
+error with a payload down to its words (`noCapRefusalW`), so the join point a
+routed arm's refusals meet at is specialised per constructor and builds
+nothing; then, in each of the two continuations, the entry route's refusal
 step on the state (`replyRecvEntryRefusalStepW`, the identity where
-`answered` is `0`, as for every refusal before the checked arm), then the
-refusal reported as the entry's operand route reports it (`noCapRefusalW`). -/
-@[noinline] def replyRecvRoutedRefusal (ctx : LabelingContext)
+`answered` is `0`, as for every refusal before the checked arm) and the
+decoder (`replyRecvRoutedRefusalW`, `replyRecvRoutedRefusalL`).  Each
+continuation is two calls, so the join point it becomes is shared by every
+exit rather than copied into each (`replyRecvRoutedRefusal_eq`). -/
+@[inline] def replyRecvRoutedRefusal (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (capWord : UInt64)
     (rf : SeLe4n.RegisterFile) (long : Bool) (length extraCaps label : Nat)
     (answered sourceCode : Nat) (awaited : Bool)
     (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool)
     (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
     (noCap : Bool) (e : KernelError) (s : SystemState) : SystemState :=
-  noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
-    (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps label)
-    (.error (e, replyRecvEntryRefusalStepW answered sourceCode awaited tid
-      b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s))
+  noCapRefusalW noCap (entryReportPushOk 1)
+    (fun d w0 w1 w2 w3 w4 s' => replyRecvRoutedRefusalW tid rf d w0 w1 w2 w3 w4
+      (replyRecvEntryRefusalStepW answered sourceCode awaited tid
+        b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s'))
+    (fun e' s' => replyRecvRoutedRefusalL ctx executingCore tid capWord rf long length extraCaps
+      label e' (replyRecvEntryRefusalStepW answered sourceCode awaited tid
+        b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s'))
+    (.error (e, s))
+
+/-- **A refusal's state mapped before it is told apart is mapped in each
+continuation**: `noCapRefusalW` reads only the refusal's error, so a map of
+its state commutes with the split.  Unconditional. -/
+theorem noCapRefusalW_error_map {β : Type} (noCap : Bool) (kOk : SystemState → β)
+    (kErr : Nat → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → SystemState → β)
+    (onLookup : KernelError → SystemState → β) (f : SystemState → SystemState)
+    (e : KernelError) (s : SystemState) :
+    noCapRefusalW noCap kOk (fun d w0 w1 w2 w3 w4 s' => kErr d w0 w1 w2 w3 w4 (f s'))
+        (fun e' s' => onLookup e' (f s')) (.error (e, s)) =
+      noCapRefusalW noCap kOk kErr onLookup (.error (e, f s)) := by
+  cases e with
+  | failedLookup w lf => cases lf <;> rfl
+  | _ => rfl
 
 /-- **The decoder is the operand route's report of the refusal, the refusal
 step applied to its state.**  Unconditional. -/
@@ -690,7 +728,10 @@ theorem replyRecvRoutedRefusal_eq (ctx : LabelingContext)
         (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps
           label)
         (.error (e, replyRecvEntryRefusalStepW answered sourceCode awaited tid
-          b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) := rfl
+          b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as s)) :=
+  noCapRefusalW_error_map noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
+    (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps label)
+    _ e s
 
 /-- The decoder on a refusal before the checked arm, its words `0`, is the
 operand route's report of the refusal on the state it carries. -/
@@ -702,7 +743,9 @@ theorem replyRecvRoutedRefusal_zero (ctx : LabelingContext)
         0 0 false 0 0 0 0 0 0 0 0 0 false 0 0 0 0 0 0 0 0 0 false noCap e s =
       noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
         (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf long length extraCaps
-          label) (.error (e, s)) := rfl
+          label) (.error (e, s)) :=
+  replyRecvRoutedRefusal_eq ctx executingCore tid capWord rf long length extraCaps label
+    0 0 false 0 0 0 0 0 0 0 0 0 false 0 0 0 0 0 0 0 0 0 false noCap e s
 
 /-- **The routed reply-receive's operand arm**: the continuation-form arm
 (`replyRecvOperandArmThenTaintKE`) over the short or long checked arm
@@ -718,8 +761,10 @@ written into the routed arm. -/
     (c : Option Capability) (s : SystemState) (noCap : Bool) : SystemState :=
   replyRecvOperandArmThenTaintKE ctx SeLe4n.arm64DefaultLayout rf extraCaps tid
     (syscallRequiredRight .replyRecv) checked c s (entryReportPushOk 1)
-    (fun e s' => replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps
-      label 0 0 false 0 0 0 0 0 0 0 0 0 false 0 0 0 0 0 0 0 0 0 false noCap e s')
+    (fun e s' => noCapRefusalW noCap (entryReportPushOk 1)
+      (fun d w0 w1 w2 w3 w4 s'' => replyRecvRoutedRefusalW tid rf d w0 w1 w2 w3 w4 s'')
+      (fun e' s'' => replyRecvRoutedRefusalL ctx executingCore tid capWord rf long length
+        extraCaps label e' s'') (.error (e, s')))
     (fun n c' w b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as e s' =>
       replyRecvRoutedRefusal ctx executingCore tid capWord rf long length extraCaps label n c' w
         b0 b1 b2 b3 b4 b5 b6 b7 bc bs a0 a1 a2 a3 a4 a5 a6 a7 ac as noCap e s')
@@ -744,7 +789,8 @@ theorem replyRecvRoutedArmK_eq (ctx : LabelingContext)
     tid executingCore _ c s _
     (fun e s' => noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
       (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf false length extraCaps
-        label) (.error (e, s'))) _ _ (by intros; rfl) (by intros; rfl)]
+        label) (.error (e, s'))) _ _ (by intros; rfl)
+    (by intros; exact replyRecvRoutedRefusal_eq ..)]
   rcases replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf length extraCaps label
     tid executingCore (syscallRequiredRight .replyRecv) c s with ⟨e, s'⟩ | ⟨⟨⟩, s'⟩ <;> rfl
 
@@ -767,7 +813,8 @@ theorem replyRecvLongRoutedArmK_eq (ctx : LabelingContext)
     tid executingCore _ c s _
     (fun e s' => noCapRefusalW noCap (entryReportPushOk 1) (replyRecvRoutedArmErrW tid rf)
       (replyRecvRoutedLookupRefusal ctx executingCore tid capWord rf true length extraCaps
-        label) (.error (e, s'))) _ _ (by intros; rfl) (by intros; rfl)]
+        label) (.error (e, s'))) _ _ (by intros; rfl)
+    (by intros; exact replyRecvRoutedRefusal_eq ..)]
   rcases replyRecvLongOperandArmThenTaintR ctx rf length extraCaps label
     tid executingCore (syscallRequiredRight .replyRecv) c s with ⟨e, s'⟩ | ⟨⟨⟩, s'⟩ <;> rfl
 
